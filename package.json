@@ -11,7 +11,9 @@
   },
   "dependencies": {
     "vant": "^4.9.22",
-    "vue": "beta"
+    "vue": "beta",
+    "vue-imask": "^7.6.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.4",

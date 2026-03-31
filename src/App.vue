@@ -1,48 +1,32 @@
 <script setup>
 import { ref, computed } from 'vue'
 import * as XLSX from 'xlsx'
+import { useShiftCalculator } from './composables/useShiftCalculator.js'
+import {
+  formatHours,
+  formatMoney,
+  formatRate,
+  roundTo,
+} from './utils/number.js'
+import {
+  getTodayDate,
+  isValidTime,
+  normalizeTimeInput,
+  sanitizeTimeInput,
+} from './utils/time.js'
+import {
+  createWorkRecord,
+  normalizeWorkRecord,
+} from './utils/workRecord.js'
 
-/**
- * =========================================================
- * 1. 使用者輸入資料
- * 畫面上由使用者直接輸入或選擇的欄位
- * =========================================================
- */
-
-
-
-/**
- * 工作起訖時間，格式：HH:mm（24 小時制）
- * 例：
- * - 早班：06:00 ~ 15:45
- * - 中班：15:45 ~ 23:50
- * - 晚班：23:45 ~ 06:00
- */
 const workDate = ref(getTodayDate())
 const startTime = ref('23:45')
 const endTime = ref('06:00')
-
- //日期
 const showDatePicker = ref(false)
-const showStartPicker = ref(false)
-const showEndPicker = ref(false)
+const dataManagementSections = ref([])
+const editingRecordId = ref(null)
+const records = ref([])
 
-const startPickerValue = ref([startTime.value])
-const endPickerValue = ref([endTime.value])
-
-const confirmStartTime = ({ selectedValues }) => {
-  const value = selectedValues[0]
-  startTime.value = value
-  startPickerValue.value = [value]
-  showStartPicker.value = false
-}
-
-const confirmEndTime = ({ selectedValues }) => {
-  const value = selectedValues[0]
-  endTime.value = value
-  endPickerValue.value = [value]
-  showEndPicker.value = false
-}
 const confirmDate = ({ selectedValues }) => {
   workDate.value = `${selectedValues[0]}-${selectedValues[1]}-${selectedValues[2]}`
   showDatePicker.value = false
@@ -63,545 +47,114 @@ const datePickerValue = computed({
     workDate.value = `${val[0]}-${val[1]}-${val[2]}`
   },
 })
-
-const timeOptions = computed(() => {
-  const values = []
-
-  for (let hour = 0; hour < 24; hour++) {
-    for (let minute = 0; minute < 60; minute += 15) {
-      const timeText = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
-      values.push({
-        text: timeText,
-        value: timeText,
-      })
-    }
-  }
-
-  return values
-})
-
-/**
- * =========================================================
- * 2. 薪資規則設定
- * 依 payslip 預設，可由畫面手動調整
- * =========================================================
- */
-
-// Level 1 基本時薪
 const baseRate = ref(25.06)
-
-// Casual loading 25%
 const casualLoadingRate = ref(6.265)
-
-// Shift loading 25%
 const shiftLoadingRate = ref(6.265)
-
-// 星期五打卡、跨到星期六時，星期六那段的 ordinary load
 const saturdayOrdLoadingRate = ref(12.53)
-
-// 星期六打卡上班時，星期六工時的加班算法
 const timeHalfRate = ref(37.59)
 const doubleRate = ref(50.12)
-
-// 星期日 ordinary load
 const sundayLoadingRate = ref(18.795)
-
-// PPE 津貼（每週一次，不算在單日薪資內）
 const ppeAllowance = ref(5.0)
-
-// 每次 smoko 扣除分鐘數
 const smokoMinutesPerBreak = ref(30)
 
-//判斷這一班是星期幾開始ㄊ
-const shiftStartDay = computed(() => {
-  if (!workDate.value) return null
-  const start = new Date(`${workDate.value}T${startTime.value}`)
-  return start.getDay() // 0=Sun, 5=Fri, 6=Sat
+const handleStartTimeInput = (value) => {
+  startTime.value = sanitizeTimeInput(value)
+}
+
+const handleEndTimeInput = (value) => {
+  endTime.value = sanitizeTimeInput(value)
+}
+
+const handleStartTimeBlur = () => {
+  startTime.value = normalizeTimeInput(startTime.value)
+}
+
+const handleEndTimeBlur = () => {
+  endTime.value = normalizeTimeInput(endTime.value)
+}
+
+const startTimeError = computed(() => {
+  if (!startTime.value) return ''
+  return isValidTime(startTime.value) ? '' : '請輸入合法時間，例如 21:43'
 })
 
-/**
- * =========================================================
- * 3. 週資料容器
- * 用來累積本週匯入或手動加入的每日紀錄
- * =========================================================
- */
-const records = ref([])
-
-/**
- * =========================================================
- * 4. 日期與時間工具函式
- * 負責日期初始化、字串轉分鐘、原始工時計算
- * =========================================================
- */
-
-/**
- * 取得今天日期
- * 回傳格式：YYYY-MM-DD
- */
-function getTodayDate() {
-  const today = new Date()
-
-  const year = today.getFullYear()
-  const month = String(today.getMonth() + 1).padStart(2, '0')
-  const day = String(today.getDate()).padStart(2, '0')
-
-  return `${year}-${month}-${day}`
-}
-
-/**
- * 將 HH:mm 轉成總分鐘數
- * 例如：23:45 -> 1425
- */
-const parseTimeToMinutes = (timeText) => {
-  if (!timeText) return null
-
-  const match = timeText.match(/^(\d{2}):(\d{2})$/)
-  if (!match) return null
-
-  const hour = Number(match[1])
-  const minute = Number(match[2])
-
-  return hour * 60 + minute
-}
-
-/**
- * 計算整段班的原始工時
- * 若結束時間 <= 開始時間，視為跨日
- */
-const calculateWorkMinutes = (startText, endText) => {
-  const startMinutes = parseTimeToMinutes(startText)
-  const endMinutes = parseTimeToMinutes(endText)
-
-  if (startMinutes === null || endMinutes === null) {
-    return null
-  }
-
-  let totalMinutes = 0
-  let crossesMidnight = false
-
-  if (endMinutes <= startMinutes) {
-    crossesMidnight = true
-    totalMinutes = 24 * 60 - startMinutes + endMinutes
-  } else {
-    totalMinutes = endMinutes - startMinutes
-  }
-
-  return {
-    startMinutes,
-    endMinutes,
-    totalMinutes,
-    crossesMidnight,
-  }
-}
-
-/**
- * 四捨五入到指定位數，避免 JS 浮點數誤差
- */
-const roundTo = (value, digits = 2) => {
-  const factor = 10 ** digits
-  return Math.round((Number(value) + Number.EPSILON) * factor) / factor
-}
-
-/**
- * 費率顯示：最多 3 位，不要一堆尾數
- * 例如：
- * 25.06 -> 25.06
- * 6.265 -> 6.265
- * 5.000 -> 5
- */
-const formatRate = (value) => {
-  return String(roundTo(value, 3)).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')
-}
-
-/**
- * 24 小時制時間顯示
- */
-const format24HourTime = (timeText) => {
-  return timeText || '--:--'
-}
-
-/**
- * 將分鐘格式化成小時字串
- * 例如：345 -> 5.75
- */
-const formatHours = (minutes) => {
-  return (minutes / 60).toFixed(2)
-}
-
-/**
- * 將金額格式化成小數點後兩位
- */
-const formatMoney = (value) => {
-  return roundTo(value, 2).toFixed(2)
-}
-
-/**
- * =========================================================
- * 5. 班別切段工具
- * 將整段班切成平日 / 星期六 / 星期日分鐘數
- * =========================================================
- */
-
-/**
- * 取得本次班別的實際起訖 datetime
- * 若為跨日班，會自動把結束時間加一天
- */
-const getShiftDateTimeRange = () => {
-  if (!workDate.value || !startTime.value || !endTime.value) return null
-
-  const start = new Date(`${workDate.value}T${startTime.value}`)
-  const end = new Date(`${workDate.value}T${endTime.value}`)
-
-  if (end <= start) {
-    end.setDate(end.getDate() + 1)
-  }
-
-  return { start, end }
-}
-
-/**
- * 以 15 分鐘為單位切段
- * 將原始班別拆成：
- * - 平日分鐘
- * - 星期六分鐘
- * - 星期日分鐘
- */
-const getDayTypeMinutes = (start, end) => {
-  let weekdayMinutes = 0
-  let saturdayMinutes = 0
-  let sundayMinutes = 0
-
-  const current = new Date(start)
-
-  while (current < end) {
-    const next = new Date(current)
-    next.setMinutes(next.getMinutes() + 15)
-
-    if (next > end) {
-      next.setTime(end.getTime())
-    }
-
-    const diffMinutes = (next - current) / 60000
-    const day = current.getDay() // 0=星期日, 6=星期六
-
-    if (day === 6) {
-      saturdayMinutes += diffMinutes
-    } else if (day === 0) {
-      sundayMinutes += diffMinutes
-    } else {
-      weekdayMinutes += diffMinutes
-    }
-
-    current.setTime(next.getTime())
-  }
-
-  return {
-    weekdayMinutes,
-    saturdayMinutes,
-    sundayMinutes,
-  }
-}
-
-/**
- * 計算兩個時間區段的重疊分鐘數
- */
-const getOverlapMinutes = (rangeStart, rangeEnd, blockStart, blockEnd) => {
-  const start = Math.max(rangeStart.getTime(), blockStart.getTime())
-  const end = Math.min(rangeEnd.getTime(), blockEnd.getTime())
-
-  if (end <= start) return 0
-  return (end - start) / 60000
-}
-
-/**
- * 依 smoko 規則建立 break 視窗
- *
- * 規則：
- * - 1 次 smoko：扣在第 1 個 4 小時區段尾端
- * - 2 次 smoko：分別扣在第 1、2 個 4 小時區段尾端
- *
- * 例如：
- * 20:45 上班，30 分鐘 break
- * 第 1 次 break：00:15 ~ 00:45
- * 第 2 次 break：04:15 ~ 04:45
- */
-const getSmokoWindows = (shiftStart, shiftEnd, smokoCount, smokoMinutes) => {
-  const windows = []
-
-  const blockEndOffsets = []
-
-  if (smokoCount >= 1) blockEndOffsets.push(240) // 第 1 個 4 小時結束點
-  if (smokoCount >= 2) blockEndOffsets.push(480) // 第 2 個 4 小時結束點
-
-  for (const offsetMinutes of blockEndOffsets) {
-    const blockEnd = new Date(shiftStart.getTime() + offsetMinutes * 60000)
-
-    // break 結束時間不能超過下班時間
-    const breakEnd = blockEnd > shiftEnd ? shiftEnd : blockEnd
-
-    // break 往前推 smokoMinutes
-    const breakStart = new Date(
-      Math.max(
-        shiftStart.getTime(),
-        breakEnd.getTime() - smokoMinutes * 60000,
-      ),
-    )
-
-    if (breakEnd > breakStart) {
-      windows.push({
-        start: breakStart,
-        end: breakEnd,
-      })
-    }
-  }
-
-  return windows
-}
-
-/**
- * 原始班別切段結果
- * 尚未扣 smoko
- */
-const segmentedMinutes = computed(() => {
-  const range = getShiftDateTimeRange()
-
-  if (!range) {
-    return {
-      weekdayMinutes: 0,
-      saturdayMinutes: 0,
-      sundayMinutes: 0,
-    }
-  }
-
-  return getDayTypeMinutes(range.start, range.end)
+const endTimeError = computed(() => {
+  if (!endTime.value) return ''
+  return isValidTime(endTime.value) ? '' : '請輸入合法時間，例如 03:42'
 })
 
-/**
- * =========================================================
- * 6. 工時與薪資計算
- * 包含 smoko、夜班判斷、計薪工時與薪資拆分
- * =========================================================
- */
-
-/**
- * smoko 規則：
- * - 滿 8 小時：2 次
- * - 滿 6 小時：1 次
- * - 其他：0 次
- */
-const getSmokoCount = (totalMinutes) => {
-  if (totalMinutes >= 8 * 60) return 2
-  if (totalMinutes >= 6 * 60) return 1
-  return 0
-}
-
-/**
- * 本次班別的工時摘要
- * 包含：
- * - 原始總分鐘數
- * - 是否跨日
- * - smoko 次數
- * - smoko 扣除分鐘數
- * - 實際計薪分鐘數
- */
-const workSummary = computed(() => {
-  const result = calculateWorkMinutes(startTime.value, endTime.value)
-
-  if (!result) return null
-
-  const smokoCount = getSmokoCount(result.totalMinutes)
-  const smokoDeductMinutes = smokoCount * smokoMinutesPerBreak.value
-  const paidMinutes = result.totalMinutes - smokoDeductMinutes
-
-  return {
-    ...result,
-    smokoCount,
-    smokoDeductMinutes,
-    paidMinutes,
-  }
+const {
+  workSummary,
+  isNightShift,
+  paidSegmentedMinutes,
+  saturdayRuleBreakdown,
+  payBreakdown,
+} = useShiftCalculator({
+  workDate,
+  startTime,
+  endTime,
+  smokoMinutesPerBreak,
+  baseRate,
+  casualLoadingRate,
+  shiftLoadingRate,
+  saturdayOrdLoadingRate,
+  timeHalfRate,
+  doubleRate,
+  sundayLoadingRate,
 })
-
-/**
- * 夜班判斷
- * 目前規則：只要跨日就視為夜班
- */
-const isNightShift = computed(() => {
-  return workSummary.value?.crossesMidnight ?? false
-})
-
-/**
- * 將實際計薪分鐘數按比例分攤到：
- * - 平日
- * - 星期六
- * - 星期日
- *
- * 目前採比例分配，尚未做到「smoko 精準扣在哪一天」
- */
-const paidSegmentedMinutes = computed(() => {
-  if (!workSummary.value) {
-    return {
-      weekdayPaidMinutes: 0,
-      saturdayPaidMinutes: 0,
-      sundayPaidMinutes: 0,
-    }
-  }
-
-  const { weekdayMinutes, saturdayMinutes, sundayMinutes } = segmentedMinutes.value
-  const smokoDeductMinutes = workSummary.value.smokoDeductMinutes
-
-  return applySmokoDeductionToSegments(
-    weekdayMinutes,
-    saturdayMinutes,
-    sundayMinutes,
-    smokoDeductMinutes,
-  )
-})
-
-
-
-
-const saturdayRuleBreakdown = computed(() => {
-  const saturdayPaidMinutes = paidSegmentedMinutes.value.saturdayPaidMinutes
-
-  if (!saturdayPaidMinutes) {
-    return {
-      satOrdMinutes: 0,
-      timeHalfMinutes: 0,
-      doubleMinutes: 0,
-    }
-  }
-
-  // 星期五打卡跨到星期六 => Sat ORD
-  if (shiftStartDay.value === 5) {
-    return {
-      satOrdMinutes: saturdayPaidMinutes,
-      timeHalfMinutes: 0,
-      doubleMinutes: 0,
-    }
-  }
-
-  // 星期六打卡 => overtime
-  if (shiftStartDay.value === 6) {
-    return {
-      satOrdMinutes: 0,
-      timeHalfMinutes: Math.min(saturdayPaidMinutes, 180),
-      doubleMinutes: Math.max(saturdayPaidMinutes - 180, 0),
-    }
-  }
-
-  return {
-    satOrdMinutes: 0,
-    timeHalfMinutes: 0,
-    doubleMinutes: 0,
-  }
-})
-
-/**
- * 單日薪資拆分
- * 不含 tax / super，也不含每週一次 PPE
- */
-const payBreakdown = computed(() => {
-  if (!workSummary.value) return null
-
-  const weekdayHours = roundTo(paidSegmentedMinutes.value.weekdayPaidMinutes / 60, 4)
-  const saturdayHours = roundTo(paidSegmentedMinutes.value.saturdayPaidMinutes / 60, 4)
-  const sunOrdHours = roundTo(paidSegmentedMinutes.value.sundayPaidMinutes / 60, 4)
-  const paidHours = roundTo(workSummary.value.paidMinutes / 60, 4)
-
-  const satOrdHours = roundTo(
-    saturdayRuleBreakdown.value.satOrdMinutes / 60,
-    4,
-  )
-
-  const timeHalfHours = roundTo(
-    saturdayRuleBreakdown.value.timeHalfMinutes / 60,
-    4,
-  )
-
-  const doubleHours = roundTo(
-    saturdayRuleBreakdown.value.doubleMinutes / 60,
-    4,
-  )
-
-  const basePay = roundTo(paidHours * baseRate.value, 2)
-  const casualPay = roundTo(paidHours * casualLoadingRate.value, 2)
-  const shiftPay = isNightShift.value
-    ? roundTo(paidHours * shiftLoadingRate.value, 2)
-    : 0
-
-  const satOrdPay = roundTo(
-    satOrdHours * saturdayOrdLoadingRate.value,
-    2,
-  )
-
-  const timeHalfPay = roundTo(timeHalfHours * timeHalfRate.value, 2)
-  const doublePay = roundTo(doubleHours * doubleRate.value, 2)
-  const sunOrdPay = roundTo(sunOrdHours * sundayLoadingRate.value, 2)
-
-  const grossPay = roundTo(
-    basePay +
-      casualPay +
-      shiftPay +
-      satOrdPay +
-      timeHalfPay +
-      doublePay +
-      sunOrdPay,
-    2,
-  )
-
-  return {
-    weekdayHours,
-    saturdayHours,
-    sunOrdHours,
-    satOrdHours,
-    timeHalfHours,
-    doubleHours,
-    basePay,
-    casualPay,
-    shiftPay,
-    satOrdPay,
-    timeHalfPay,
-    doublePay,
-    sunOrdPay,
-    grossPay,
-  }
-})
-
-/**
- * =========================================================
- * 7. 週統計
- * 針對 records 內已加入的資料做加總
- * =========================================================
- */
 
 /**
  * 本週薪資小計
- * 暫時直接加總 records，尚未依日期過濾週別
+ * 目前仍依 records 直接加總，不額外做週別切分。
+ *
+ * 假設：
+ * - 「本週列表」以使用者手動加入或匯入的內容為準。
+ * - 不根據日期自動判斷 payroll week，避免默默改變你的薪資規則。
  */
 const weeklySubtotal = computed(() => {
-  return records.value.reduce((sum, record) => {
-    return sum + record.grossPay
-  }, 0)
+  return roundTo(
+    records.value.reduce((sum, record) => sum + record.grossPay, 0),
+    2,
+  )
 })
 
 /**
- * PPE 為每週一次
- * 目前規則：只要本週列表有紀錄，就加一次
+ * PPE 為每週一次。
+ *
+ * 假設：
+ * - 只要本週列表中至少有一筆 WorkRecord，就加一次 PPE。
+ * - 目前不依日期拆不同週次，維持你原本的規則。
  */
 const weeklyPPE = computed(() => {
-  return records.value.length > 0 ? ppeAllowance.value : 0
+  return records.value.length > 0 ? roundTo(ppeAllowance.value, 2) : 0
 })
 
-/**
- * 本週總薪資
- */
 const weeklyTotal = computed(() => {
-  return weeklySubtotal.value + weeklyPPE.value
+  return roundTo(weeklySubtotal.value + weeklyPPE.value, 2)
+})
+
+const isEditingRecord = computed(() => editingRecordId.value !== null)
+
+/**
+ * 本週列表顯示順序：
+ * - 日期由早到晚
+ * - 同一天再依開始時間由早到晚
+ *
+ * 這裡只調整 UI 顯示順序，不改 records 原本保存的資料內容。
+ */
+const sortedRecords = computed(() => {
+  return [...records.value].sort((a, b) => {
+    if (a.workDate !== b.workDate) {
+      return a.workDate.localeCompare(b.workDate)
+    }
+
+    return a.startTime.localeCompare(b.startTime)
+  })
 })
 
 /**
  * =========================================================
- * 8. 匯入 / 匯出 / 列表操作
+ * 匯入 / 匯出 / 列表操作
  * 負責單日 JSON、週 XLSX、列表暫存
  * =========================================================
  */
@@ -612,17 +165,15 @@ const weeklyTotal = computed(() => {
 const exportTodayJson = () => {
   if (!workSummary.value || !payBreakdown.value) return
 
-  const todayRecord = {
-    id: Date.now(),
+  const todayRecord = createWorkRecord({
     workDate: workDate.value,
     startTime: startTime.value,
     endTime: endTime.value,
-    totalMinutes: workSummary.value.totalMinutes,
-    smokoCount: workSummary.value.smokoCount,
-    smokoDeductMinutes: workSummary.value.smokoDeductMinutes,
-    paidMinutes: workSummary.value.paidMinutes,
-    grossPay: roundTo(payBreakdown.value.grossPay, 2),
-  }
+    workSummary: workSummary.value,
+    paidSegmentedMinutes: paidSegmentedMinutes.value,
+    saturdayRuleBreakdown: saturdayRuleBreakdown.value,
+    payBreakdown: payBreakdown.value,
+  })
 
   const jsonString = JSON.stringify(todayRecord, null, 2)
   const blob = new Blob([jsonString], { type: 'application/json' })
@@ -636,22 +187,56 @@ const exportTodayJson = () => {
   URL.revokeObjectURL(url)
 }
 
+const exportWeeklyJson = () => {
+  if (records.value.length === 0) return
+
+  const jsonString = JSON.stringify(records.value, null, 2)
+  const blob = new Blob([jsonString], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'weekly-records.json'
+  link.click()
+
+  URL.revokeObjectURL(url)
+}
+
 /**
  * 匯入多個 JSON 檔，轉成 records 列表
  */
-const importJsonFiles = async (event) => {
-  const files = Array.from(event.target.files || [])
+const importJsonFiles = async (payload) => {
+  const uploaderFiles = Array.isArray(payload) ? payload : [payload]
+  const eventFiles = Array.from(payload?.target?.files || [])
+  const files = eventFiles.length > 0
+    ? eventFiles
+    : uploaderFiles
+        .map((item) => item?.file || item)
+        .filter(Boolean)
+
   const importedRecords = []
 
   for (const file of files) {
     const text = await file.text()
     const jsonData = JSON.parse(text)
-    importedRecords.push(jsonData)
+
+    if (Array.isArray(jsonData)) {
+      importedRecords.push(
+        ...jsonData.map((record) => normalizeWorkRecord(record)),
+      )
+      continue
+    }
+
+    importedRecords.push(normalizeWorkRecord(jsonData))
   }
 
-  records.value = importedRecords.sort((a, b) =>
-    a.workDate.localeCompare(b.workDate),
-  )
+  records.value = importedRecords.sort((a, b) => {
+    if (a.workDate === b.workDate) {
+      return b.startTime.localeCompare(a.startTime)
+    }
+
+    return b.workDate.localeCompare(a.workDate)
+  })
 }
 
 /**
@@ -668,8 +253,20 @@ const exportWeeklyXlsx = () => {
     smoko次數: record.smokoCount,
     smoko扣除分鐘: record.smokoDeductMinutes,
     計薪工時分鐘: record.paidMinutes,
-    計薪工時小時: roundTo(record.paidMinutes / 60, 2),
-    當日薪資: roundTo(record.grossPay, 2),
+    平日分鐘: record.weekdayPaidMinutes,
+    星期六分鐘: record.saturdayPaidMinutes,
+    星期日分鐘: record.sundayPaidMinutes,
+    SatOrd分鐘: record.satOrdMinutes,
+    THalf分鐘: record.timeHalfMinutes,
+    Double分鐘: record.doubleMinutes,
+    BasePay: record.basePay,
+    CasualPay: record.casualPay,
+    ShiftPay: record.shiftPay,
+    SatOrdPay: record.satOrdPay,
+    THalfPay: record.timeHalfPay,
+    DoublePay: record.doublePay,
+    SunOrdPay: record.sunOrdPay,
+    當日總薪資: record.grossPay,
   }))
 
   const ws = XLSX.utils.json_to_sheet(exportRows)
@@ -685,70 +282,57 @@ const exportWeeklyXlsx = () => {
  */
 const addTodayRecordToList = () => {
   if (!workSummary.value || !payBreakdown.value) return
+  if (!isValidTime(startTime.value) || !isValidTime(endTime.value)) return
 
-  const todayRecord = {
-    id: Date.now(),
+  const todayRecord = createWorkRecord({
     workDate: workDate.value,
     startTime: startTime.value,
     endTime: endTime.value,
-    totalMinutes: workSummary.value.totalMinutes,
-    smokoCount: workSummary.value.smokoCount,
-    smokoDeductMinutes: workSummary.value.smokoDeductMinutes,
-    paidMinutes: workSummary.value.paidMinutes,
-    grossPay: Number(payBreakdown.value.grossPay.toFixed(2)),
+    workSummary: workSummary.value,
+    paidSegmentedMinutes: paidSegmentedMinutes.value,
+    saturdayRuleBreakdown: saturdayRuleBreakdown.value,
+    payBreakdown: payBreakdown.value,
+  })
+
+  if (isEditingRecord.value) {
+    records.value = records.value.map((record) => {
+      if (record.id !== editingRecordId.value) return record
+
+      return {
+        ...todayRecord,
+        id: record.id,
+      }
+    })
+    editingRecordId.value = null
+    return
   }
 
   records.value.unshift(todayRecord)
 }
 
 /**
- * 依日期切出原始分鐘數後，再把 smoko 扣到各段
- * 目前規則：
- * - smoko 優先從 weekday 扣
- * - weekday 不夠再扣 saturday
- * - saturday 不夠再扣 sunday
+ * 編輯列表中的單筆資料時，只回填原始輸入欄位，再沿用目前既有計算流程重算。
  *
- * 你之後如果想改成「從最後發生的時段開始扣」也很好改
+ * 假設：
+ * - 編輯後重新儲存時，會使用目前畫面上的費率設定重新計算該筆資料。
+ * - 這裡不回復歷史費率，避免默默引入新的薪資規則或資料模型。
  */
-/**
- * smoko 優先從後面時段扣
- * 順序：weekday -> saturday -> sunday
- * 因為像 Sunday night 班，smoko 通常比較像扣在 00:00 後那段
- */
-const applySmokoDeductionToSegments = (
-  weekdayMinutes,
-  saturdayMinutes,
-  sundayMinutes,
-  smokoDeductMinutes,
-) => {
-  let remainingSmoko = smokoDeductMinutes
+const editRecord = (record) => {
+  editingRecordId.value = record.id
+  workDate.value = record.workDate
+  startTime.value = record.startTime
+  endTime.value = record.endTime
+}
 
-  let weekdayPaidMinutes = weekdayMinutes
-  let saturdayPaidMinutes = saturdayMinutes
-  let sundayPaidMinutes = sundayMinutes
+const cancelEditingRecord = () => {
+  editingRecordId.value = null
+}
 
-  if (remainingSmoko > 0) {
-    const deduct = Math.min(weekdayPaidMinutes, remainingSmoko)
-    weekdayPaidMinutes -= deduct
-    remainingSmoko -= deduct
-  }
+const deleteRecord = (recordId) => {
+  records.value = records.value.filter((record) => record.id !== recordId)
 
-  if (remainingSmoko > 0) {
-    const deduct = Math.min(saturdayPaidMinutes, remainingSmoko)
-    saturdayPaidMinutes -= deduct
-    remainingSmoko -= deduct
-  }
-
-  if (remainingSmoko > 0) {
-    const deduct = Math.min(sundayPaidMinutes, remainingSmoko)
-    sundayPaidMinutes -= deduct
-    remainingSmoko -= deduct
-  }
-
-  return {
-    weekdayPaidMinutes,
-    saturdayPaidMinutes,
-    sundayPaidMinutes,
+  if (editingRecordId.value === recordId) {
+    editingRecordId.value = null
   }
 }
 
@@ -774,32 +358,34 @@ const applySmokoDeductionToSegments = (
             input-align="right"
             @click="showDatePicker = true"
           />
-
         <van-field
-          label="開始時間"
           :model-value="startTime"
-          readonly
-          clickable
+          label="開始時間"
+          placeholder="請輸入 HH:mm，例如 21:43"
           input-align="right"
-          @click="showStartPicker = true"
-        >
-        </van-field>
-
+          type="text"
+          inputmode="numeric"
+          maxlength="5"
+          @update:model-value="handleStartTimeInput"
+          @blur="handleStartTimeBlur"
+        />
+        <div v-if="startTimeError" class="field-error">
+          {{ startTimeError }}
+        </div>
         <van-field
-          label="結束時間"
           :model-value="endTime"
-          readonly
-          clickable
+          label="結束時間"
+          placeholder="請輸入 HH:mm，例如 03:42"
           input-align="right"
-          @click="showEndPicker = true"
-        >
-        </van-field>
-          <van-field
-            v-model.number="smokoMinutesPerBreak"
-            label="每次 smoko 分鐘"
-            type="number"
-            input-align="right"
-          />
+          type="text"
+          inputmode="numeric"
+          maxlength="5"
+          @update:model-value="handleEndTimeInput"
+          @blur="handleEndTimeBlur"
+        />
+        <div v-if="endTimeError" class="field-error">
+          {{ endTimeError }}
+        </div>
       </van-cell-group>
     </div>
 
@@ -920,58 +506,158 @@ const applySmokoDeductionToSegments = (
         <van-cell title="時間格式" value="24 小時制，每 15 分鐘一格" />
       </van-cell-group>
     </div>
-<div class="section" v-if="payBreakdown">
-  </div>
-  <h2>操作</h2>
-  <div class="button-group">
-    <van-button block type="primary" @click="exportTodayJson">
-      匯出今日 JSON
-    </van-button>
+    <div class="workflow">
+      <div class="section" v-if="payBreakdown || records.length > 0">
+        <h2>本週操作</h2>
+        <div class="section-card">
+          <p class="section-note">
+            先把今天的計算結果加入本週；如果列表中有寫錯，也可以直接編輯或刪除單筆。
+          </p>
+          <div class="weekly-actions">
+            <van-button
+              v-if="payBreakdown"
+              block
+              type="primary"
+              @click="addTodayRecordToList"
+            >
+              {{ isEditingRecord ? '更新這筆紀錄' : '加入本週列表' }}
+            </van-button>
+            <van-button
+              v-if="isEditingRecord"
+              block
+              plain
+              type="default"
+              @click="cancelEditingRecord"
+            >
+              取消編輯
+            </van-button>
+          </div>
+        </div>
+      </div>
 
-    <van-button
-      block
-      plain
-      type="warning"
-      style="margin-top: 12px"
-      @click="addTodayRecordToList"
-    >
-      加入本週列表
-    </van-button>
+      <div class="section">
+        <h2>本週列表</h2>
+        <div class="section-card section-card--tight">
+          <div v-if="records.length === 0" class="empty-state">
+            <div class="empty-state__title">還沒有本週紀錄</div>
+            <div class="empty-state__text">
+              先確認今天的工時與薪資，再按「加入本週列表」。
+            </div>
+          </div>
 
-    <van-button
-      block
-      plain
-      type="success"
-      style="margin-top: 12px"
-      @click="exportWeeklyXlsx"
-    >
-      匯出本週 XLSX
-    </van-button>
-  </div>
-</div>
+          <div v-else>
+            <div
+              v-for="record in sortedRecords"
+              :key="record.id"
+              class="weekly-record"
+            >
+              <div class="weekly-record__top">
+                <div>
+                  <div class="weekly-record__date">{{ record.workDate }}</div>
+                  <div class="weekly-record__time">
+                    {{ record.startTime }} - {{ record.endTime }}
+                  </div>
+                </div>
+                <div class="weekly-record__pay">
+                  ${{ formatMoney(record.grossPay) }}
+                </div>
+              </div>
+              <div class="weekly-record__meta">
+                <span>計薪 {{ formatHours(record.paidMinutes) }} 小時</span>
+                <span>smoko {{ record.smokoCount }} 次</span>
+                <span v-if="record.shiftPay > 0">夜班</span>
+              </div>
+              <div class="weekly-record__actions">
+                <van-button
+                  size="small"
+                  plain
+                  type="primary"
+                  @click="editRecord(record)"
+                >
+                  編輯
+                </van-button>
+                <van-button
+                  size="small"
+                  plain
+                  type="danger"
+                  @click="deleteRecord(record.id)"
+                >
+                  刪除
+                </van-button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-<div class="section">
-  <h2>本週紀錄列表</h2>
+      <div class="section">
+        <h2>本週總結</h2>
+        <div class="section-card weekly-summary-card">
+          <div class="weekly-summary__row">
+            <span class="weekly-summary__label">本週小計</span>
+            <span class="weekly-summary__value">${{ formatMoney(weeklySubtotal) }}</span>
+          </div>
+          <div class="weekly-summary__row">
+            <span class="weekly-summary__label">PPE</span>
+            <span class="weekly-summary__value">${{ formatMoney(weeklyPPE) }}</span>
+          </div>
+          <div class="weekly-summary__total">
+            <div class="weekly-summary__total-label">本週總薪資</div>
+            <div class="weekly-summary__total-value">${{ formatMoney(weeklyTotal) }}</div>
+          </div>
+        </div>
+      </div>
 
-  <van-empty v-if="records.length === 0" description="目前沒有本週紀錄" />
+      <div class="section" v-if="payBreakdown || records.length > 0">
+        <h2>資料管理</h2>
+        <van-collapse v-model="dataManagementSections" class="data-management-collapse">
+          <van-collapse-item name="data-management" title="匯入 / 匯出資料">
+            <div class="button-group">
+              <p class="section-note section-note--compact">
+                這裡放備份與匯入功能，不影響每天主要使用流程。
+              </p>
+              <van-button block plain type="default" @click="exportTodayJson">
+                匯出今日 JSON
+              </van-button>
 
-  <div v-else class="record-list">
-    <van-card
-      v-for="record in records"
-      :key="record.id"
-      :title="record.workDate"
-      :desc="`${record.startTime} - ${record.endTime}`"
-    >
-      <template #tags>
-        <van-tag plain type="primary">
-          工時 {{ formatHours(record.paidMinutes) }} 小時
-        </van-tag>
-        <van-tag plain type="success" style="margin-left: 8px">
-          ${{ formatMoney(record.grossPay) }}
-        </van-tag>
-      </template>
-    </van-card>
-  </div>
+              <div class="import-export-row">
+                <van-button
+                  block
+                  plain
+                  type="primary"
+                  :disabled="records.length === 0"
+                  @click="exportWeeklyJson"
+                >
+                  匯出本週 JSON
+                </van-button>
+
+                <van-uploader
+                  class="import-uploader"
+                  :after-read="importJsonFiles"
+                  accept=".json,application/json"
+                  multiple
+                >
+                  <van-button block plain type="danger" class="import-button">
+                    匯入 JSON
+                  </van-button>
+                </van-uploader>
+              </div>
+
+              <van-button
+                block
+                plain
+                type="success"
+                style="margin-top: 12px"
+                :disabled="records.length === 0"
+                @click="exportWeeklyXlsx"
+              >
+                匯出本週 XLSX
+              </van-button>
+            </div>
+          </van-collapse-item>
+        </van-collapse>
+      </div>
+    </div>
 </div>
 
 <van-popup v-model:show="showDatePicker" position="bottom" round>
@@ -980,26 +666,6 @@ const applySmokoDeductionToSegments = (
     title="選擇工作日期"
     @confirm="confirmDate"
     @cancel="showDatePicker = false"
-  />
-</van-popup>
-
-<van-popup v-model:show="showStartPicker" position="bottom" round>
-  <van-picker
-    :columns="timeOptions"
-    :model-value="startPickerValue"
-    title="選擇開始時間"
-    @confirm="confirmStartTime"
-    @cancel="showStartPicker = false"
-  />
-</van-popup>
-
-<van-popup v-model:show="showEndPicker" position="bottom" round>
-  <van-picker
-    :columns="timeOptions"
-    :model-value="endPickerValue"
-    title="選擇結束時間"
-    @confirm="confirmEndTime"
-    @cancel="showEndPicker = false"
   />
 </van-popup>
 
@@ -1037,6 +703,34 @@ const applySmokoDeductionToSegments = (
   padding: 0 16px;
 }
 
+.workflow {
+  margin-top: 4px;
+}
+
+.section-card {
+  margin: 0 16px;
+  padding: 16px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.05);
+}
+
+.section-card--tight {
+  padding: 0;
+  overflow: hidden;
+}
+
+.section-note {
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #646566;
+}
+
+.section-note--compact {
+  margin-bottom: 12px;
+}
+
 .native-input {
   width: 100%;
   border: none;
@@ -1050,5 +744,194 @@ const applySmokoDeductionToSegments = (
 :deep(.gross-cell .van-cell__value) {
   font-weight: 700;
   color: #1989fa;
+
+}
+.field-error {
+  color: #ee0a24;
+  font-size: 12px;
+  padding: 6px 16px 0;
+}
+
+.button-group {
+  padding: 4px 0 0;
+}
+
+.weekly-actions {
+  display: grid;
+  gap: 12px;
+}
+
+.weekly-actions :deep(.van-button--primary) {
+  min-height: 48px;
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: 0 10px 24px rgba(25, 137, 250, 0.22);
+}
+
+.weekly-actions :deep(.van-button--danger.is-plain),
+.weekly-actions :deep(.van-button--danger.van-button--plain) {
+  min-height: 40px;
+  font-size: 14px;
+}
+
+.empty-state {
+  padding: 22px 16px;
+  text-align: center;
+}
+
+.empty-state__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #323233;
+}
+
+.empty-state__text {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #646566;
+}
+
+.weekly-record {
+  margin: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+  border: 1px solid #eef2f7;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+}
+
+.weekly-record__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.weekly-record__date {
+  font-size: 15px;
+  font-weight: 700;
+  color: #323233;
+}
+
+.weekly-record__pay {
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 800;
+  color: #1989fa;
+  white-space: nowrap;
+}
+
+.weekly-record__time {
+  margin-top: 8px;
+  font-size: 14px;
+  color: #646566;
+}
+
+.weekly-record__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.weekly-record__meta span {
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #f5f7fb;
+  font-size: 12px;
+  font-weight: 600;
+  color: #5f6773;
+}
+
+.weekly-record__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.weekly-summary-card {
+  padding: 14px 16px 16px;
+}
+
+.weekly-summary__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.weekly-summary__label {
+  font-size: 14px;
+  color: #646566;
+}
+
+.weekly-summary__value {
+  font-size: 15px;
+  font-weight: 600;
+  color: #323233;
+}
+
+.weekly-summary__total {
+  margin-top: 12px;
+  padding-top: 14px;
+  border-top: 1px solid #eef2f7;
+}
+
+.weekly-summary__total-label {
+  font-size: 13px;
+  color: #646566;
+}
+
+.weekly-summary__total-value {
+  margin-top: 6px;
+  font-size: 30px;
+  line-height: 1.1;
+  font-weight: 800;
+  color: #1989fa;
+}
+
+.import-export-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.import-uploader {
+  display: block;
+}
+
+.import-uploader :deep(.van-uploader__wrapper) {
+  display: block;
+}
+
+.import-button {
+  border-style: dashed;
+  background: #fff5f5;
+}
+
+.data-management-collapse {
+  margin: 0 16px;
+  overflow: hidden;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+  opacity: 0.96;
+}
+
+:deep(.data-management-collapse .van-cell) {
+  padding: 16px;
+}
+
+:deep(.data-management-collapse .van-collapse-item__content) {
+  padding: 0 16px 16px;
+}
+
+:deep(.data-management-collapse .van-collapse-item__title) {
+  font-size: 15px;
+  color: #4b5563;
 }
 </style>

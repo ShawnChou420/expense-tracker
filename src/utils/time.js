@@ -19,13 +19,13 @@ export function getTodayDate() {
 export function parseTimeToMinutes(timeText) {
   if (!timeText) return null
 
-  const match = timeText.match(/^(\d{2}):(\d{2})$/)
-  if (!match) return null
+  const match = timeText.match(/^(\d{2}):(\d{2})$/)//正則表達式 只能輸入時間格式24:59
+  if (!match) return null//如果不符合就回傳null
 
-  const hour = Number(match[1])
-  const minute = Number(match[2])
+  const hour = Number(match[1])//23
+  const minute = Number(match[2])//59
 
-  return hour * 60 + minute
+  return hour * 60 + minute //時間乘以60計算出分鐘數
 }
 
 /**

@@ -17,12 +17,15 @@ import { roundTo } from './number.js'
  * @property {number} weekdayPaidMinutes
  * @property {number} saturdayPaidMinutes
  * @property {number} sundayPaidMinutes
+ * @property {number} holidayPaidMinutes
  * @property {number} satOrdMinutes
  * @property {number} timeHalfMinutes
  * @property {number} doubleMinutes
  * @property {number} basePay
  * @property {number} casualPay
  * @property {number} shiftPay
+ * @property {number} holidayPenaltyRate
+ * @property {number} holidayPenaltyPay
  * @property {number} satOrdPay
  * @property {number} timeHalfPay
  * @property {number} doublePay
@@ -42,12 +45,15 @@ const defaultWorkRecord = {
   weekdayPaidMinutes: 0,
   saturdayPaidMinutes: 0,
   sundayPaidMinutes: 0,
+  holidayPaidMinutes: 0,
   satOrdMinutes: 0,
   timeHalfMinutes: 0,
   doubleMinutes: 0,
   basePay: 0,
   casualPay: 0,
   shiftPay: 0,
+  holidayPenaltyRate: 0,
+  holidayPenaltyPay: 0,
   satOrdPay: 0,
   timeHalfPay: 0,
   doublePay: 0,
@@ -70,6 +76,9 @@ export function normalizeWorkRecord(record = {}) {
     ...defaultWorkRecord,
     ...record,
     id: Number(record.id ?? defaultWorkRecord.id),
+    workDate: String(record.workDate ?? defaultWorkRecord.workDate),
+    startTime: String(record.startTime ?? defaultWorkRecord.startTime),
+    endTime: String(record.endTime ?? defaultWorkRecord.endTime),
     totalMinutes: roundTo(Number(record.totalMinutes ?? 0), 2),
     smokoCount: Number(record.smokoCount ?? 0),
     smokoDeductMinutes: roundTo(Number(record.smokoDeductMinutes ?? 0), 2),
@@ -77,12 +86,15 @@ export function normalizeWorkRecord(record = {}) {
     weekdayPaidMinutes: roundTo(Number(record.weekdayPaidMinutes ?? 0), 2),
     saturdayPaidMinutes: roundTo(Number(record.saturdayPaidMinutes ?? 0), 2),
     sundayPaidMinutes: roundTo(Number(record.sundayPaidMinutes ?? 0), 2),
+    holidayPaidMinutes: roundTo(Number(record.holidayPaidMinutes ?? 0), 2),
     satOrdMinutes: roundTo(Number(record.satOrdMinutes ?? 0), 2),
     timeHalfMinutes: roundTo(Number(record.timeHalfMinutes ?? 0), 2),
     doubleMinutes: roundTo(Number(record.doubleMinutes ?? 0), 2),
     basePay: roundTo(Number(record.basePay ?? 0), 2),
     casualPay: roundTo(Number(record.casualPay ?? 0), 2),
     shiftPay: roundTo(Number(record.shiftPay ?? 0), 2),
+    holidayPenaltyRate: roundTo(Number(record.holidayPenaltyRate ?? 0), 3),
+    holidayPenaltyPay: roundTo(Number(record.holidayPenaltyPay ?? 0), 2),
     satOrdPay: roundTo(Number(record.satOrdPay ?? 0), 2),
     timeHalfPay: roundTo(Number(record.timeHalfPay ?? 0), 2),
     doublePay: roundTo(Number(record.doublePay ?? 0), 2),
@@ -99,6 +111,7 @@ export function normalizeWorkRecord(record = {}) {
  * - 每次加入本週列表都建立新 id，沿用現有 Date.now() 行為。
  */
 export function createWorkRecord({
+  id,
   workDate,
   startTime,
   endTime,
@@ -108,7 +121,7 @@ export function createWorkRecord({
   payBreakdown,
 }) {
   return normalizeWorkRecord({
-    id: Date.now(),
+    id: id ?? Date.now(),
     workDate,
     startTime,
     endTime,
@@ -119,12 +132,15 @@ export function createWorkRecord({
     weekdayPaidMinutes: paidSegmentedMinutes.weekdayPaidMinutes,
     saturdayPaidMinutes: paidSegmentedMinutes.saturdayPaidMinutes,
     sundayPaidMinutes: paidSegmentedMinutes.sundayPaidMinutes,
+    holidayPaidMinutes: payBreakdown.holidayHours * 60,
     satOrdMinutes: saturdayRuleBreakdown.satOrdMinutes,
     timeHalfMinutes: saturdayRuleBreakdown.timeHalfMinutes,
     doubleMinutes: saturdayRuleBreakdown.doubleMinutes,
     basePay: payBreakdown.basePay,
     casualPay: payBreakdown.casualPay,
     shiftPay: payBreakdown.shiftPay,
+    holidayPenaltyRate: payBreakdown.holidayPenaltyRate,
+    holidayPenaltyPay: payBreakdown.holidayPenaltyPay,
     satOrdPay: payBreakdown.satOrdPay,
     timeHalfPay: payBreakdown.timeHalfPay,
     doublePay: payBreakdown.doublePay,

@@ -15,6 +15,10 @@ import {
   sanitizeTimeInput,
 } from './utils/time.js'
 import {
+  getNswPublicHolidayLabel,
+  getNswPublicHolidayShortLabel,
+} from './utils/holidays.js'
+import {
   createWorkRecord,
   normalizeWorkRecord,
 } from './utils/workRecord.js'
@@ -27,9 +31,41 @@ const dataManagementSections = ref([])
 const editingRecordId = ref(null)
 const records = ref([])
 
-const confirmDate = ({ selectedValues }) => {
-  workDate.value = `${selectedValues[0]}-${selectedValues[1]}-${selectedValues[2]}`
+const confirmDate = (selectedDate) => {
+  const year = selectedDate.getFullYear()
+  const month = String(selectedDate.getMonth() + 1).padStart(2, '0')
+  const day = String(selectedDate.getDate()).padStart(2, '0')
+
+  workDate.value = `${year}-${month}-${day}`
   showDatePicker.value = false
+}
+
+const parseWorkDate = (dateText) => {
+  const [year, month, day] = dateText.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
+const calendarDefaultDate = computed(() => parseWorkDate(workDate.value))
+const calendarMinDate = new Date(2025, 0, 1)
+const calendarMaxDate = new Date(2027, 11, 31)
+
+const selectedHolidayLabel = computed(() => {
+  if (!workDate.value) return ''
+  return getNswPublicHolidayLabel(parseWorkDate(workDate.value))
+})
+
+const holidayCalendarFormatter = (day) => {
+  if (!day.date) return day
+
+  const holidayLabel = getNswPublicHolidayShortLabel(day.date)
+
+  if (!holidayLabel) return day
+
+  return {
+    ...day,
+    className: `${day.className || ''} holiday-day`.trim(),
+    bottomInfo: holidayLabel,
+  }
 }
 
 const updateRate = (targetRef, value, digits = 3) => {
@@ -38,15 +74,6 @@ const updateRate = (targetRef, value, digits = 3) => {
   targetRef.value = roundTo(parsed, digits)
 }
 
-const datePickerValue = computed({
-  get() {
-    const [year, month, day] = workDate.value.split('-')
-    return [year, month, day]
-  },
-  set(val) {
-    workDate.value = `${val[0]}-${val[1]}-${val[2]}`
-  },
-})
 const baseRate = ref(25.06)
 const casualLoadingRate = ref(6.265)
 const shiftLoadingRate = ref(6.265)
@@ -56,6 +83,7 @@ const doubleRate = ref(50.12)
 const sundayLoadingRate = ref(18.795)
 const ppeAllowance = ref(5.0)
 const smokoMinutesPerBreak = ref(30)
+const withholdingTaxRate = ref(0.12)
 
 const handleStartTimeInput = (value) => {
   startTime.value = sanitizeTimeInput(value)
@@ -86,6 +114,7 @@ const endTimeError = computed(() => {
 const {
   workSummary,
   isNightShift,
+  holidaySummary,
   paidSegmentedMinutes,
   saturdayRuleBreakdown,
   payBreakdown,
@@ -102,6 +131,49 @@ const {
   doubleRate,
   sundayLoadingRate,
 })
+
+const buildWorkRecordFromInputs = ({
+  id,
+  workDate: inputWorkDate,
+  startTime: inputStartTime,
+  endTime: inputEndTime,
+}) => {
+  const tempWorkDate = ref(inputWorkDate)
+  const tempStartTime = ref(inputStartTime)
+  const tempEndTime = ref(inputEndTime)
+
+  const {
+    workSummary: tempWorkSummary,
+    paidSegmentedMinutes: tempPaidSegmentedMinutes,
+    saturdayRuleBreakdown: tempSaturdayRuleBreakdown,
+    payBreakdown: tempPayBreakdown,
+  } = useShiftCalculator({
+    workDate: tempWorkDate,
+    startTime: tempStartTime,
+    endTime: tempEndTime,
+    smokoMinutesPerBreak,
+    baseRate,
+    casualLoadingRate,
+    shiftLoadingRate,
+    saturdayOrdLoadingRate,
+    timeHalfRate,
+    doubleRate,
+    sundayLoadingRate,
+  })
+
+  if (!tempWorkSummary.value || !tempPayBreakdown.value) return null
+
+  return createWorkRecord({
+    id,
+    workDate: inputWorkDate,
+    startTime: inputStartTime,
+    endTime: inputEndTime,
+    workSummary: tempWorkSummary.value,
+    paidSegmentedMinutes: tempPaidSegmentedMinutes.value,
+    saturdayRuleBreakdown: tempSaturdayRuleBreakdown.value,
+    payBreakdown: tempPayBreakdown.value,
+  })
+}
 
 /**
  * 本週薪資小計
@@ -131,6 +203,22 @@ const weeklyPPE = computed(() => {
 
 const weeklyTotal = computed(() => {
   return roundTo(weeklySubtotal.value + weeklyPPE.value, 2)
+})
+
+/**
+ * 預扣稅估算
+ *
+ * 假設：
+ * - 目前先依使用者這期 payslip 的 12% 扣稅比例估算。
+ * - 這是週總結層級的預估值，不回推到單日 WorkRecord。
+ * - 未納入澳洲實際 withholding table、super 或其他稅務調整。
+ */
+const weeklyTaxEstimate = computed(() => {
+  return roundTo(weeklyTotal.value * withholdingTaxRate.value, 2)
+})
+
+const weeklyNetTotal = computed(() => {
+  return roundTo(weeklyTotal.value - weeklyTaxEstimate.value, 2)
 })
 
 const isEditingRecord = computed(() => editingRecordId.value !== null)
@@ -165,15 +253,13 @@ const sortedRecords = computed(() => {
 const exportTodayJson = () => {
   if (!workSummary.value || !payBreakdown.value) return
 
-  const todayRecord = createWorkRecord({
+  const todayRecord = buildWorkRecordFromInputs({
     workDate: workDate.value,
     startTime: startTime.value,
     endTime: endTime.value,
-    workSummary: workSummary.value,
-    paidSegmentedMinutes: paidSegmentedMinutes.value,
-    saturdayRuleBreakdown: saturdayRuleBreakdown.value,
-    payBreakdown: payBreakdown.value,
   })
+
+  if (!todayRecord) return
 
   const jsonString = JSON.stringify(todayRecord, null, 2)
   const blob = new Blob([jsonString], { type: 'application/json' })
@@ -222,12 +308,29 @@ const importJsonFiles = async (payload) => {
 
     if (Array.isArray(jsonData)) {
       importedRecords.push(
-        ...jsonData.map((record) => normalizeWorkRecord(record)),
+        ...jsonData
+          .map((record) => normalizeWorkRecord(record))
+          .map((record) => {
+            return buildWorkRecordFromInputs({
+              id: record.id,
+              workDate: record.workDate,
+              startTime: record.startTime,
+              endTime: record.endTime,
+            }) ?? record
+          }),
       )
       continue
     }
 
-    importedRecords.push(normalizeWorkRecord(jsonData))
+    const normalizedRecord = normalizeWorkRecord(jsonData)
+    importedRecords.push(
+      buildWorkRecordFromInputs({
+        id: normalizedRecord.id,
+        workDate: normalizedRecord.workDate,
+        startTime: normalizedRecord.startTime,
+        endTime: normalizedRecord.endTime,
+      }) ?? normalizedRecord,
+    )
   }
 
   records.value = importedRecords.sort((a, b) => {
@@ -245,7 +348,49 @@ const importJsonFiles = async (payload) => {
 const exportWeeklyXlsx = () => {
   if (records.value.length === 0) return
 
-  const exportRows = records.value.map((record) => ({
+  const sortedExportRecords = [...records.value].sort((a, b) => {
+    if (a.workDate !== b.workDate) {
+      return a.workDate.localeCompare(b.workDate)
+    }
+
+    return a.startTime.localeCompare(b.startTime)
+  })
+
+  let cumulativePaidHours = 0
+  const totalRawMinutes = sortedExportRecords.reduce((sum, record) => sum + record.totalMinutes, 0)
+  const totalSmokoCount = sortedExportRecords.reduce((sum, record) => sum + record.smokoCount, 0)
+  const totalSmokoDeductMinutes = sortedExportRecords.reduce((sum, record) => sum + record.smokoDeductMinutes, 0)
+  const totalPaidMinutes = sortedExportRecords.reduce((sum, record) => sum + record.paidMinutes, 0)
+  const totalWeekdayMinutes = sortedExportRecords.reduce((sum, record) => sum + record.weekdayPaidMinutes, 0)
+  const totalSaturdayMinutes = sortedExportRecords.reduce((sum, record) => sum + record.saturdayPaidMinutes, 0)
+  const totalSundayMinutes = sortedExportRecords.reduce((sum, record) => sum + record.sundayPaidMinutes, 0)
+  const totalHolidayMinutes = sortedExportRecords.reduce((sum, record) => sum + record.holidayPaidMinutes, 0)
+  const totalSatOrdMinutes = sortedExportRecords.reduce((sum, record) => sum + record.satOrdMinutes, 0)
+  const totalTimeHalfMinutes = sortedExportRecords.reduce((sum, record) => sum + record.timeHalfMinutes, 0)
+  const totalDoubleMinutes = sortedExportRecords.reduce((sum, record) => sum + record.doubleMinutes, 0)
+  const totalBasePay = roundTo(sortedExportRecords.reduce((sum, record) => sum + record.basePay, 0), 2)
+  const totalCasualPay = roundTo(sortedExportRecords.reduce((sum, record) => sum + record.casualPay, 0), 2)
+  const totalShiftPay = roundTo(sortedExportRecords.reduce((sum, record) => sum + record.shiftPay, 0), 2)
+  const totalHolidayPenaltyPay = roundTo(sortedExportRecords.reduce((sum, record) => sum + record.holidayPenaltyPay, 0), 2)
+  const totalSatOrdPay = roundTo(sortedExportRecords.reduce((sum, record) => sum + record.satOrdPay, 0), 2)
+  const totalTimeHalfPay = roundTo(sortedExportRecords.reduce((sum, record) => sum + record.timeHalfPay, 0), 2)
+  const totalDoublePay = roundTo(sortedExportRecords.reduce((sum, record) => sum + record.doublePay, 0), 2)
+  const totalSunOrdPay = roundTo(sortedExportRecords.reduce((sum, record) => sum + record.sunOrdPay, 0), 2)
+  const totalGrossPay = roundTo(sortedExportRecords.reduce((sum, record) => sum + record.grossPay, 0), 2)
+  const totalPaidHours = roundTo(totalPaidMinutes / 60, 4)
+  const totalBaseHours = roundTo((totalPaidMinutes - totalTimeHalfMinutes - totalDoubleMinutes) / 60, 4)
+  const totalTimeHalfHours = roundTo(totalTimeHalfMinutes / 60, 4)
+  const totalDoubleHours = roundTo(totalDoubleMinutes / 60, 4)
+  const totalHolidayHours = roundTo(totalHolidayMinutes / 60, 4)
+  const totalShiftHours = roundTo(
+    shiftLoadingRate.value > 0 ? totalShiftPay / shiftLoadingRate.value : 0,
+    4,
+  )
+
+  const exportRows = sortedExportRecords.map((record) => {
+    cumulativePaidHours = roundTo(cumulativePaidHours + record.paidMinutes / 60, 4)
+
+    return ({
     日期: record.workDate,
     開始時間: record.startTime,
     結束時間: record.endTime,
@@ -256,23 +401,76 @@ const exportWeeklyXlsx = () => {
     平日分鐘: record.weekdayPaidMinutes,
     星期六分鐘: record.saturdayPaidMinutes,
     星期日分鐘: record.sundayPaidMinutes,
+    節日分鐘: record.holidayPaidMinutes,
     SatOrd分鐘: record.satOrdMinutes,
     THalf分鐘: record.timeHalfMinutes,
     Double分鐘: record.doubleMinutes,
     BasePay: record.basePay,
     CasualPay: record.casualPay,
     ShiftPay: record.shiftPay,
+    OrdinaryHours: roundTo(
+      (record.paidMinutes - record.timeHalfMinutes - record.doubleMinutes) / 60,
+      4,
+    ),
+    'PH/OL Rate': record.holidayPenaltyRate,
+    'PH/OL Pay': record.holidayPenaltyPay,
     SatOrdPay: record.satOrdPay,
     THalfPay: record.timeHalfPay,
     DoublePay: record.doublePay,
     SunOrdPay: record.sunOrdPay,
     當日總薪資: record.grossPay,
-  }))
+    加總工時: cumulativePaidHours,
+  })
+  })
+
+  exportRows.push({
+    日期: '合計',
+    開始時間: '',
+    結束時間: '',
+    原始工時分鐘: totalRawMinutes,
+    smoko次數: totalSmokoCount,
+    smoko扣除分鐘: totalSmokoDeductMinutes,
+    計薪工時分鐘: totalPaidMinutes,
+    平日分鐘: totalWeekdayMinutes,
+    星期六分鐘: totalSaturdayMinutes,
+    星期日分鐘: totalSundayMinutes,
+    節日分鐘: totalHolidayMinutes,
+    SatOrd分鐘: totalSatOrdMinutes,
+    THalf分鐘: totalTimeHalfMinutes,
+    Double分鐘: totalDoubleMinutes,
+    BasePay: totalBasePay,
+    CasualPay: totalCasualPay,
+    ShiftPay: totalShiftPay,
+    OrdinaryHours: totalBaseHours,
+    'PH/OL Rate': '',
+    'PH/OL Pay': totalHolidayPenaltyPay,
+    SatOrdPay: totalSatOrdPay,
+    THalfPay: totalTimeHalfPay,
+    DoublePay: totalDoublePay,
+    SunOrdPay: totalSunOrdPay,
+    當日總薪資: totalGrossPay,
+    加總工時: totalPaidHours,
+  })
+
+  const payslipCompareRows = [
+    { 項目: 'POULTRY PROCESSING AWARD - CASUAL - LEVEL 1', 工時: totalBaseHours, 費率: baseRate.value, 金額: totalBasePay },
+    { 項目: 'T/Half', 工時: totalTimeHalfHours, 費率: timeHalfRate.value, 金額: totalTimeHalfPay },
+    { 項目: 'Double', 工時: totalDoubleHours, 費率: doubleRate.value, 金額: totalDoublePay },
+    { 項目: 'CASUAL LOADING 25%', 工時: totalBaseHours, 費率: casualLoadingRate.value, 金額: totalCasualPay },
+    { 項目: 'P/HOL PENALTY 150%', 工時: totalHolidayHours, 費率: roundTo(baseRate.value * 1.5, 3), 金額: totalHolidayPenaltyPay },
+    { 項目: 'SHIFT 25%', 工時: totalShiftHours, 費率: shiftLoadingRate.value, 金額: totalShiftPay },
+    { 項目: 'SUN ORD LOAD 75%', 工時: roundTo(totalSundayMinutes / 60, 4), 費率: sundayLoadingRate.value, 金額: totalSunOrdPay },
+    { 項目: 'PPE & TOOL ALLOWANCE', 工時: '', 費率: '', 金額: weeklyPPE.value },
+    { 項目: 'GROSS（不含 PPE）', 工時: totalPaidHours, 費率: '', 金額: totalGrossPay },
+    { 項目: 'WEEK TOTAL（含 PPE）', 工時: totalPaidHours, 費率: '', 金額: roundTo(totalGrossPay + weeklyPPE.value, 2) },
+  ]
 
   const ws = XLSX.utils.json_to_sheet(exportRows)
+  const compareWs = XLSX.utils.json_to_sheet(payslipCompareRows)
   const wb = XLSX.utils.book_new()
 
   XLSX.utils.book_append_sheet(wb, ws, 'Weekly Summary')
+  XLSX.utils.book_append_sheet(wb, compareWs, 'Payslip Compare')
   XLSX.writeFile(wb, 'weekly-summary.xlsx')
 }
 
@@ -284,15 +482,13 @@ const addTodayRecordToList = () => {
   if (!workSummary.value || !payBreakdown.value) return
   if (!isValidTime(startTime.value) || !isValidTime(endTime.value)) return
 
-  const todayRecord = createWorkRecord({
+  const todayRecord = buildWorkRecordFromInputs({
     workDate: workDate.value,
     startTime: startTime.value,
     endTime: endTime.value,
-    workSummary: workSummary.value,
-    paidSegmentedMinutes: paidSegmentedMinutes.value,
-    saturdayRuleBreakdown: saturdayRuleBreakdown.value,
-    payBreakdown: payBreakdown.value,
   })
+
+  if (!todayRecord) return
 
   if (isEditingRecord.value) {
     records.value = records.value.map((record) => {
@@ -350,13 +546,19 @@ const deleteRecord = (recordId) => {
     <div class="section">
       <h2>輸入資料</h2>
         <van-cell-group inset>
-          <van-field
-            label="工作日期"
-            :model-value="workDate"
-            readonly
-            clickable
+        <van-field
+          label="工作日期"
+          :model-value="workDate"
+          readonly
+          clickable
             input-align="right"
+            is-link
             @click="showDatePicker = true"
+          />
+          <van-cell
+            v-if="selectedHolidayLabel"
+            title="國定假日"
+            :value="selectedHolidayLabel"
           />
         <van-field
           :model-value="startTime"
@@ -402,6 +604,11 @@ const deleteRecord = (recordId) => {
         <van-cell title="smoko 扣除" :value="`${workSummary.smokoDeductMinutes} 分鐘`" />
         <van-cell title="實際計薪工時" :value="`${formatHours(workSummary.paidMinutes)} 小時`" />
         <van-cell title="平日工時" :value="`${formatHours(paidSegmentedMinutes.weekdayPaidMinutes)} 小時`"/>
+        <van-cell
+          v-if="holidaySummary.holidayPaidMinutes > 0"
+          title="P/HOL 工時"
+          :value="`${formatHours(holidaySummary.holidayPaidMinutes)} 小時`"
+        />
         <van-cell title="Sat ORD 工時" :value="`${formatHours(saturdayRuleBreakdown.satOrdMinutes)} 小時`" />
         <van-cell title="T/Half 工時" :value="`${formatHours(saturdayRuleBreakdown.timeHalfMinutes)} 小時`" />
         <van-cell title="Double 工時" :value="`${formatHours(saturdayRuleBreakdown.doubleMinutes)} 小時`" />
@@ -415,7 +622,17 @@ const deleteRecord = (recordId) => {
       <van-cell-group inset>
         <van-cell title="Base Pay" :value="`$${formatMoney(payBreakdown.basePay)}`" />
         <van-cell title="CASUAL LOADING 25%" :value="`$${formatMoney(payBreakdown.casualPay)}`" />
-        <van-cell title="SHIFT 25%" :value="`$${formatMoney(payBreakdown.shiftPay)}`" />
+        <van-cell
+          v-if="payBreakdown.shiftPay > 0"
+          title="SHIFT 25%"
+          :value="`$${formatMoney(payBreakdown.shiftPay)}`"
+        />
+        <van-cell
+          v-if="payBreakdown.holidayPenaltyPay > 0"
+          title="PH/OL PENALTY 150%"
+          :label="holidaySummary.holidayPaidMinutes > 0 ? `節日時數 ${formatHours(holidaySummary.holidayPaidMinutes)} 小時，費率 $${formatMoney(payBreakdown.holidayPenaltyRate)}` : ''"
+          :value="`$${formatMoney(payBreakdown.holidayPenaltyPay)}`"
+        />
         <van-cell title="SAT ORD 50%" :value="`$${formatMoney(payBreakdown.satOrdPay)}`" />
         <van-cell title="T/Half" :value="`$${formatMoney(payBreakdown.timeHalfPay)}`" />
         <van-cell title="Double" :value="`$${formatMoney(payBreakdown.doublePay)}`" />
@@ -500,10 +717,10 @@ const deleteRecord = (recordId) => {
     <!-- 備註 -->
     <div class="section">
       <h2>規則備註</h2>
-      <van-cell-group inset>
-        <van-cell title="smoko 規則" value="滿 6 小時 1 次，滿 8 小時 2 次" />
-        <van-cell title="夜班判定" value="目前以跨日視為夜班" />
-        <van-cell title="時間格式" value="24 小時制，每 15 分鐘一格" />
+        <van-cell-group inset>
+        <van-cell title="smoko 規則" value="滿 4 小時 1 次，滿 8 小時 2 次" />
+        <van-cell title="夜班判定" value="跨日或凌晨 06:00 前開工視為夜班" />
+        <van-cell title="節日判定" value="目前以 NSW public holiday 日曆為準" />
       </van-cell-group>
     </div>
     <div class="workflow">
@@ -565,6 +782,15 @@ const deleteRecord = (recordId) => {
               <div class="weekly-record__meta">
                 <span>計薪 {{ formatHours(record.paidMinutes) }} 小時</span>
                 <span>smoko {{ record.smokoCount }} 次</span>
+                <span v-if="record.holidayPaidMinutes > 0">
+                  P/HOL {{ formatHours(record.holidayPaidMinutes) }} 小時
+                </span>
+                <span v-if="record.timeHalfMinutes > 0">
+                  T/Half {{ formatHours(record.timeHalfMinutes) }} 小時
+                </span>
+                <span v-if="record.doubleMinutes > 0">
+                  Double {{ formatHours(record.doubleMinutes) }} 小時
+                </span>
                 <span v-if="record.shiftPay > 0">夜班</span>
               </div>
               <div class="weekly-record__actions">
@@ -601,9 +827,17 @@ const deleteRecord = (recordId) => {
             <span class="weekly-summary__label">PPE</span>
             <span class="weekly-summary__value">${{ formatMoney(weeklyPPE) }}</span>
           </div>
-          <div class="weekly-summary__total">
-            <div class="weekly-summary__total-label">本週總薪資</div>
+          <div class="weekly-summary__total weekly-summary__total--gross">
+            <div class="weekly-summary__total-label">本週總薪資（稅前）</div>
             <div class="weekly-summary__total-value">${{ formatMoney(weeklyTotal) }}</div>
+          </div>
+          <div class="weekly-summary__row weekly-summary__row--tax">
+            <span class="weekly-summary__label">預估扣稅 12%</span>
+            <span class="weekly-summary__value weekly-summary__value--tax">-${{ formatMoney(weeklyTaxEstimate) }}</span>
+          </div>
+          <div class="weekly-summary__total weekly-summary__total--net">
+            <div class="weekly-summary__total-label">本週實領（稅後預估）</div>
+            <div class="weekly-summary__total-value weekly-summary__total-value--net">${{ formatMoney(weeklyNetTotal) }}</div>
           </div>
         </div>
       </div>
@@ -660,14 +894,17 @@ const deleteRecord = (recordId) => {
     </div>
 </div>
 
-<van-popup v-model:show="showDatePicker" position="bottom" round>
-  <van-date-picker
-    v-model="datePickerValue"
-    title="選擇工作日期"
-    @confirm="confirmDate"
-    @cancel="showDatePicker = false"
-  />
-</van-popup>
+<van-calendar
+  v-model:show="showDatePicker"
+  title="選擇工作日期"
+  :default-date="calendarDefaultDate"
+  :min-date="calendarMinDate"
+  :max-date="calendarMaxDate"
+  :show-confirm="false"
+  :formatter="holidayCalendarFormatter"
+  switch-mode="year-month"
+  @confirm="confirmDate"
+/>
 
 </template>
 
@@ -745,6 +982,20 @@ const deleteRecord = (recordId) => {
   font-weight: 700;
   color: #1989fa;
 
+}
+
+:deep(.holiday-day) {
+  color: #ee0a24;
+}
+
+:deep(.holiday-day .van-calendar__bottom-info) {
+  color: #ee0a24;
+  font-size: 10px;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 .field-error {
   color: #ee0a24;
@@ -874,10 +1125,32 @@ const deleteRecord = (recordId) => {
   color: #323233;
 }
 
+.weekly-summary__row--tax {
+  padding-top: 14px;
+  margin-top: 10px;
+  border-top: 1px dashed #e7ebf1;
+}
+
+.weekly-summary__value--tax {
+  color: #8c6b00;
+}
+
 .weekly-summary__total {
   margin-top: 12px;
   padding-top: 14px;
   border-top: 1px solid #eef2f7;
+}
+
+.weekly-summary__total--gross {
+  margin-top: 10px;
+}
+
+.weekly-summary__total--net {
+  margin-top: 10px;
+  padding: 16px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #f5faff 0%, #eef7ff 100%);
+  border-top: none;
 }
 
 .weekly-summary__total-label {
@@ -891,6 +1164,10 @@ const deleteRecord = (recordId) => {
   line-height: 1.1;
   font-weight: 800;
   color: #1989fa;
+}
+
+.weekly-summary__total-value--net {
+  color: #0f8a5f;
 }
 
 .import-export-row {

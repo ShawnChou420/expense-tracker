@@ -25,7 +25,7 @@ export function parseTimeToMinutes(timeText) {
   const hour = Number(match[1])//23
   const minute = Number(match[2])//59
 
-  return hour * 60 + minute //時間乘以60計算出分鐘數
+  return hour * 60 + minute //時間乘以60,計算出分鐘數
 }
 
 /**

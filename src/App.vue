@@ -22,6 +22,90 @@ import {
   createWorkRecord,
   normalizeWorkRecord,
 } from './utils/workRecord.js'
+import { onMounted } from 'vue'
+
+// --- 新增幣別與匯率相關狀態 ---
+const currentCurrency = ref('AUD')
+const showCurrencyPicker = ref(false)
+const exchangeRates = ref({ AUD: 1 }) // 預設澳幣為 1
+
+// 幣別選單
+const currencyColumns = [
+  { text: '🇦🇺 澳幣 (AUD)', value: 'AUD' },
+  { text: '🇹🇼 台幣 (TWD)', value: 'TWD' },
+  { text: '🇳🇿 紐西蘭幣 (NZD)', value: 'NZD' },
+  { text: '🇨🇳 人民幣 (CNY)', value: 'CNY' },
+  { text: '🇰🇷 韓元 (KRW)', value: 'KRW' },
+  { text: '🇹🇭 泰銖 (THB)', value: 'THB' },
+  { text: '🇻🇳 越南盾 (VND)', value: 'VND' },
+  { text: '🇺🇸 美金 (USD)', value: 'USD' },
+  { text: '🇨🇦 加幣 (CAD)', value: 'CAD' }
+]
+
+// 擴充所有幣別的貨幣符號對照表
+const currencySymbol = computed(() => {
+  const symbols = { 
+    AUD: '$', 
+    NZD: 'NZ$', 
+    TWD: 'NT$', 
+    CNY: '¥', 
+    KRW: '₩', 
+    THB: '฿', 
+    VND: '₫', 
+    USD: 'US$', 
+    CAD: 'CA$' 
+  }
+  return symbols[currentCurrency.value] || '$'
+})
+
+// ✨ 新增：自動根據當前幣別抓取國旗 Emoji
+const currencyFlag = computed(() => {
+  const flags = {
+    AUD: '🇦🇺',
+    NZD: '🇳🇿',
+    TWD: '🇹🇼',
+    CNY: '🇨🇳',
+    KRW: '🇰🇷',
+    THB: '🇹🇭',
+    VND: '🇻🇳',
+    USD: '🇺🇸',
+    CAD: '🇨🇦'
+  }
+  return flags[currentCurrency.value] || '🪙'
+})
+
+// 取得公開的即時匯率
+const fetchExchangeRates = async () => {
+  try {
+    const res = await fetch('https://open.er-api.com/v6/latest/AUD')
+    const data = await res.json()
+    if (data && data.rates) {
+      exchangeRates.value = data.rates
+    }
+  } catch (error) {
+    console.error('無法取得匯率資料', error)
+  }
+}
+
+onMounted(() => {
+  fetchExchangeRates()
+})
+
+// 元件載入時去抓匯率
+onMounted(() => {
+  fetchExchangeRates()
+})
+
+const onCurrencyConfirm = ({ selectedOptions }) => {
+  currentCurrency.value = selectedOptions[0].value
+  showCurrencyPicker.value = false
+}
+
+// --- 計算換算後的最終金額 ---
+const convertedNetTotal = computed(() => {
+  const rate = exchangeRates.value[currentCurrency.value] || 1
+  return roundTo(weeklyNetTotal.value * rate, 2)
+})
 
 const workDate = ref(getTodayDate())
 const startTime = ref('23:45')
@@ -816,31 +900,60 @@ const deleteRecord = (recordId) => {
         </div>
       </div>
 
-      <div class="section">
-        <h2>本週總結</h2>
-        <div class="section-card weekly-summary-card">
-          <div class="weekly-summary__row">
-            <span class="weekly-summary__label">本週小計</span>
-            <span class="weekly-summary__value">${{ formatMoney(weeklySubtotal) }}</span>
-          </div>
-          <div class="weekly-summary__row">
-            <span class="weekly-summary__label">PPE</span>
-            <span class="weekly-summary__value">${{ formatMoney(weeklyPPE) }}</span>
-          </div>
-          <div class="weekly-summary__total weekly-summary__total--gross">
-            <div class="weekly-summary__total-label">本週總薪資（稅前）</div>
-            <div class="weekly-summary__total-value">${{ formatMoney(weeklyTotal) }}</div>
-          </div>
-          <div class="weekly-summary__row weekly-summary__row--tax">
-            <span class="weekly-summary__label">預估扣稅 12%</span>
-            <span class="weekly-summary__value weekly-summary__value--tax">-${{ formatMoney(weeklyTaxEstimate) }}</span>
-          </div>
-          <div class="weekly-summary__total weekly-summary__total--net">
-            <div class="weekly-summary__total-label">本週實領（稅後預估）</div>
-            <div class="weekly-summary__total-value weekly-summary__total-value--net">${{ formatMoney(weeklyNetTotal) }}</div>
-          </div>
-        </div>
+<div class="section">
+  <h2>本週總結</h2>
+  <div class="section-card weekly-summary-card">
+    
+    <div class="weekly-summary__row">
+      <span class="weekly-summary__label">目前顯示幣別</span>
+      <van-button size="small" plain type="primary" @click="showCurrencyPicker = true">
+        切換 ({{ currentCurrency }})
+      </van-button>
+    </div>
+
+    <div class="weekly-summary__row">
+      <span class="weekly-summary__label">本週小計 (AUD)</span>
+      <span class="weekly-summary__value">${{ formatMoney(weeklySubtotal) }}</span>
+    </div>
+    <div class="weekly-summary__row">
+      <span class="weekly-summary__label">PPE (AUD)</span>
+      <span class="weekly-summary__value">${{ formatMoney(weeklyPPE) }}</span>
+    </div>
+
+    <div class="weekly-summary__row" style="margin-top: 8px; border-top: 1px dashed #ebedf0; padding-top: 8px;">
+      <span class="weekly-summary__label" style="font-size: 13px; color: #646566;">本週總薪資（稅前）(AUD)</span>
+      <span class="weekly-summary__value" style="font-size: 14px; color: #646566; font-weight: 500;">${{ formatMoney(weeklyTotal) }}</span>
+    </div>
+    
+    <div class="weekly-summary__row weekly-summary__row--tax" style="margin-bottom: 8px;">
+      <span class="weekly-summary__label">預估扣稅 12% (AUD)</span>
+      <span class="weekly-summary__value weekly-summary__value--tax">-${{ formatMoney(weeklyTaxEstimate) }}</span>
+    </div>
+
+    <div class="weekly-summary__total weekly-summary__total--net">
+      <div class="weekly-summary__total-label">本週實領（稅後預估）</div>
+      <div class="weekly-summary__total-value weekly-summary__total-value--net">
+        <span style="margin-right: 4px;">{{ currencyFlag }}</span>
+        {{ currencySymbol }}{{ formatMoney(convertedNetTotal) }}
+        <span style="font-size: 14px; font-weight: normal; color: #969799; margin-left: 2px;">{{ currentCurrency }}</span>
       </div>
+      
+      <div v-if="currentCurrency !== 'AUD'" style="font-size: 12px; color: #969799; margin-top: 6px; font-weight: normal; text-align: right;">
+        匯率參考: 1 AUD = {{ exchangeRates[currentCurrency] }} {{ currentCurrency }}
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<van-popup v-model:show="showCurrencyPicker" position="bottom" round>
+  <van-picker
+    title="選擇換算幣別"
+    :columns="currencyColumns"
+    @confirm="onCurrencyConfirm"
+    @cancel="showCurrencyPicker = false"
+  />
+</van-popup>
 
       <div class="section" v-if="payBreakdown || records.length > 0">
         <h2>資料管理</h2>

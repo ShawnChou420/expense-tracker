@@ -24,6 +24,29 @@ import {
 } from './utils/workRecord.js'
 import { onMounted } from 'vue'
 
+// --- 新增：控制時間選擇器彈出視窗的開關 ---
+const showStartTimePicker = ref(false)
+const showEndTimePicker = ref(false)
+
+// --- 新增：過濾器，讓分鐘只顯示 5 的倍數 ---
+const filterTime = (type, options) => {
+  if (type === 'minute') {
+    return options.filter((option) => Number(option.value) % 5 === 0)
+  }
+  return options
+}
+
+// 當使用者在選擇器按下確認時的處理
+const onStartTimeConfirm = ({ selectedValues }) => {
+  startTime.value = selectedValues.join(':') // 把 ['08', '05'] 變成 '08:05'
+  showStartTimePicker.value = false
+}
+
+const onEndTimeConfirm = ({ selectedValues }) => {
+  endTime.value = selectedValues.join(':')
+  showEndTimePicker.value = false
+  }
+
 // --- 新增幣別與匯率相關狀態 ---
 const currentCurrency = ref('AUD')
 const showCurrencyPicker = ref(false)
@@ -645,33 +668,40 @@ const deleteRecord = (recordId) => {
             :value="selectedHolidayLabel"
           />
         <van-field
-          :model-value="startTime"
-          label="開始時間"
-          placeholder="請輸入 HH:mm，例如 21:43"
-          input-align="right"
-          type="text"
-          inputmode="numeric"
-          maxlength="5"
-          @update:model-value="handleStartTimeInput"
-          @blur="handleStartTimeBlur"
+          v-model="startTime"
+          is-link
+          readonly
+          label="上班時間"
+          placeholder="請選擇時間"
+          @click="showStartTimePicker = true"
         />
-        <div v-if="startTimeError" class="field-error">
-          {{ startTimeError }}
-        </div>
+
+        <van-popup v-model:show="showStartTimePicker" position="bottom" round>
+          <van-time-picker
+            title="上班時間"
+            :filter="filterTime"
+            @confirm="onStartTimeConfirm"
+            @cancel="showStartTimePicker = false"
+          />
+        </van-popup>
+
         <van-field
-          :model-value="endTime"
-          label="結束時間"
-          placeholder="請輸入 HH:mm，例如 03:42"
-          input-align="right"
-          type="text"
-          inputmode="numeric"
-          maxlength="5"
-          @update:model-value="handleEndTimeInput"
-          @blur="handleEndTimeBlur"
+          v-model="endTime"
+          is-link
+          readonly
+          label="下班時間"
+          placeholder="請選擇時間"
+          @click="showEndTimePicker = true"
         />
-        <div v-if="endTimeError" class="field-error">
-          {{ endTimeError }}
-        </div>
+
+        <van-popup v-model:show="showEndTimePicker" position="bottom" round>
+          <van-time-picker
+            title="下班時間"
+            :filter="filterTime"
+            @confirm="onEndTimeConfirm"
+            @cancel="showEndTimePicker = false"
+          />
+        </van-popup>
       </van-cell-group>
     </div>
 

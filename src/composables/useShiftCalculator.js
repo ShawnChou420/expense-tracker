@@ -8,6 +8,7 @@ export function useShiftCalculator({
   startTime,
   endTime,
   smokoMinutesPerBreak,
+  smokoCountOverride,
   baseRate,
   casualLoadingRate,
   shiftLoadingRate,
@@ -75,8 +76,9 @@ export function useShiftCalculator({
   const getSmokoWindows = (shiftStart, shiftEnd, smokoCount, smokoMinutes) => {
     const windows = []
     const offsets = []
-    if (smokoCount >= 1) offsets.push(4 * 60) // 4小時
-    if (smokoCount >= 2) offsets.push(8 * 60) // 8小時
+    if (smokoCount >= 1) offsets.push(4 * 60)  // 4小時
+    if (smokoCount >= 2) offsets.push(8 * 60)  // 8小時
+    if (smokoCount >= 3) offsets.push(12 * 60) // 12小時
 
     for (const offsetMinutes of offsets) {
       const blockEnd = new Date(shiftStart.getTime() + offsetMinutes * 60000)
@@ -143,7 +145,9 @@ export function useShiftCalculator({
     const result = calculateWorkMinutes(startTime.value, endTime.value)
     if (!result) return null
 
-    const smokoCount = getSmokoCount(result.totalMinutes)
+    const smokoCount = (smokoCountOverride?.value != null)
+      ? Math.min(3, Math.max(0, Number(smokoCountOverride.value) || 0))
+      : getSmokoCount(result.totalMinutes)
     const smokoDeductMinutes = smokoCount * smokoMinutesPerBreak.value
     
     return {

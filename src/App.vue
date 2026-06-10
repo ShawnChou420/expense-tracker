@@ -25,8 +25,9 @@ import {
 import { showToast } from 'vant'
 
 // --- 狀態切換與清潔日 ---
-const shiftType = ref('normal') // normal: 正常, leave: 請假, standdown: 早退/停工
+const shiftType = ref('normal') // normal: 正常, leave: 請假
 const isCleaningDay = ref(false)
+const remark = ref('') // ✨ 新增：當日自訂備註狀態
 
 // --- 控制時間選擇器彈出視窗的開關 ---
 const showStartTimePicker = ref(false)
@@ -127,6 +128,7 @@ const calendarDefaultDate = computed(() => parseWorkDate(workDate.value))
 const calendarMinDate = new Date(2025, 0, 1)
 const calendarMaxDate = new Date(2027, 11, 31)
 
+// 點擊日曆上的某一天
 const onDateSelect = (date) => {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -139,11 +141,13 @@ const onDateSelect = (date) => {
     endTime.value = existingRecord.endTime
     shiftType.value = existingRecord.shiftType || 'normal'
     isCleaningDay.value = existingRecord.isCleaningDay || false
+    remark.value = existingRecord.remark || '' // 精準回填歷史備註
     return
   }
 
   const dayOfWeek = date.getDay()
   shiftType.value = 'normal'
+  remark.value = '' // 全新的一天清空備註输入框
 
   if (dayOfWeek === 0) {
     startTime.value = '20:45'
@@ -172,7 +176,7 @@ const selectedHolidayLabel = computed(() => {
   return getNswPublicHolidayLabel(parseWorkDate(workDate.value))
 })
 
-// ✨ 日曆優化：完美處理文字換行與金額顯示
+// ✨ 日曆格式化：支援國定假日、清潔日、金額、備註特殊金底色堆疊
 const holidayCalendarFormatter = (day) => {
   if (!day.date) return day
 
@@ -195,27 +199,27 @@ const holidayCalendarFormatter = (day) => {
   }
 
   const record = records.value.find((r) => r.workDate === dateStr)
+  let classNames = []
+
   if (record) {
     if (record.shiftType === 'leave') {
       infoParts.push('休假')
     } else {
       const convertedPay = record.grossPay * currentExchangeRate.value
-      // 加入加號與金額，若停工可標註
-      if (record.shiftType === 'standdown') {
-        infoParts.push(`停工`)
-      }
       infoParts.push(`+${currencySymbol.value}${formatMoney(convertedPay)}`)
+    }
+    classNames.push(record.shiftType === 'leave' ? 'record-leave-day' : 'record-work-day')
+    
+    // 💡 核心亮點：若該日期含有備註，塞入專屬的識別 class
+    if (record.remark && record.remark.trim() !== '') {
+      classNames.push('has-remark-day')
     }
   }
 
   day.bottomInfo = infoParts.join('\n')
   
-  let classNames = []
   if (isHoliday) classNames.push('holiday-day')
   if (isTue) classNames.push('cleaning-day')
-  if (record) {
-    classNames.push(record.shiftType === 'leave' ? 'record-leave-day' : 'record-work-day')
-  }
   
   day.className = `${day.className || ''} ${classNames.join(' ')}`.trim()
   return day
@@ -279,7 +283,7 @@ const {
   sundayLoadingRate,
 })
 
-// ✨ 核心修復：徹底阻絕「請假」產生薪資
+// 🐛 BUG 完美修復：當狀態為請假時，100% 寫死生成 0 元數據，斬草除根
 const buildWorkRecordFromInputs = ({
   id,
   workDate: inputWorkDate,
@@ -287,10 +291,10 @@ const buildWorkRecordFromInputs = ({
   endTime: inputEndTime,
   smokoCountOverride: inputSmokoCountOverride = null,
   shiftType: inputShiftType = 'normal',
-  isCleaningDay: inputIsCleaningDay = false
+  isCleaningDay: inputIsCleaningDay = false,
+  remark: inputRemark = ''
 }) => {
   
-  // 🚨 如果是請假，直接強制回傳 0 的紀錄，不進底層計算機
   if (inputShiftType === 'leave') {
     const record = createWorkRecord({
       id,
@@ -304,10 +308,10 @@ const buildWorkRecordFromInputs = ({
     })
     record.shiftType = 'leave'
     record.isCleaningDay = false
+    record.remark = inputRemark
     return record
   }
 
-  // 正常計算邏輯
   const tempWorkDate = ref(inputWorkDate)
   const tempStartTime = ref(inputStartTime)
   const tempEndTime = ref(inputEndTime)
@@ -348,6 +352,7 @@ const buildWorkRecordFromInputs = ({
   
   record.shiftType = inputShiftType
   record.isCleaningDay = inputIsCleaningDay
+  record.remark = inputRemark
   return record
 }
 
@@ -375,10 +380,63 @@ const sortedRecords = computed(() => {
   })
 })
 
-const exportTodayJson = () => { /* 略 */ }
-const exportWeeklyJson = () => { /* 略 */ }
-const importJsonFiles = async (payload) => { /* 略 */ }
-const exportWeeklyXlsx = () => { /* 略 */ }
+// ======= 備份控制中心與 Excel 生成引擎 =======
+const exportTodayJson = () => {
+  if (!workSummary.value || !payBreakdown.value) return
+  const todayRecord = buildWorkRecordFromInputs({ workDate: workDate.value, startTime: startTime.value, endTime: endTime.value, smokoCountOverride: smokoCountOverride.value, shiftType: shiftType.value, isCleaningDay: isCleaningDay.value, remark: remark.value })
+  if (!todayRecord) return
+  const blob = new Blob([JSON.stringify(todayRecord, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a'); link.href = url; link.download = `${workDate.value}.json`; link.click(); URL.revokeObjectURL(url)
+}
+
+const exportWeeklyJson = () => {
+  if (records.value.length === 0) return
+  const blob = new Blob([JSON.stringify(records.value, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = 'weekly-records.json'; link.click(); URL.revokeObjectURL(url)
+}
+
+const importJsonFiles = async (payload) => {
+  const uploaderFiles = Array.isArray(payload) ? payload : [payload]
+  const eventFiles = Array.from(payload?.target?.files || [])
+  const files = eventFiles.length > 0 ? eventFiles : uploaderFiles.map((item) => item?.file || item).filter(Boolean)
+  const importedRecords = []
+  for (const file of files) {
+    const text = await file.text(); const jsonData = JSON.parse(text)
+    if (Array.isArray(jsonData)) {
+      importedRecords.push(...jsonData.map((record) => normalizeWorkRecord(record)).map((record) => { return buildWorkRecordFromInputs({ id: record.id, workDate: record.workDate, startTime: record.startTime, endTime: record.endTime, shiftType: record.shiftType || 'normal', isCleaningDay: record.isCleaningDay || false, remark: record.remark || '' }) ?? record }))
+      continue
+    }
+    const normalizedRecord = normalizeWorkRecord(jsonData)
+    importedRecords.push(buildWorkRecordFromInputs({ id: normalizedRecord.id, workDate: normalizedRecord.workDate, startTime: normalizedRecord.startTime, endTime: normalizedRecord.endTime, shiftType: normalizedRecord.shiftType || 'normal', isCleaningDay: normalizedRecord.isCleaningDay || false, remark: normalizedRecord.remark || '' }) ?? normalizedRecord)
+  }
+  records.value = importedRecords.sort((a, b) => { if (a.workDate === b.workDate) return b.startTime.localeCompare(a.startTime); return b.workDate.localeCompare(a.workDate) })
+}
+
+const exportWeeklyXlsx = () => {
+  if (records.value.length === 0) return
+  const sortedExportRecords = [...records.value].sort((a, b) => { if (a.workDate !== b.workDate) return a.workDate.localeCompare(b.workDate); return a.startTime.localeCompare(b.startTime) })
+  let cumulativePaidHours = 0
+  const totalRawMinutes = sortedExportRecords.reduce((sum, record) => sum + record.totalMinutes, 0)
+  const totalSmokoCount = sortedExportRecords.reduce((sum, record) => sum + record.smokoCount, 0)
+  const totalSmokoDeductMinutes = sortedExportRecords.reduce((sum, record) => sum + record.smokoDeductMinutes, 0)
+  const totalPaidMinutes = sortedExportRecords.reduce((sum, record) => sum + record.paidMinutes, 0)
+  const totalBasePay = roundTo(sortedExportRecords.reduce((sum, record) => sum + record.basePay, 0), 2)
+  const totalCasualPay = roundTo(sortedExportRecords.reduce((sum, record) => sum + record.casualPay, 0), 2)
+  const totalShiftPay = roundTo(sortedExportRecords.reduce((sum, record) => sum + record.shiftPay, 0), 2)
+  const totalGrossPay = roundTo(sortedExportRecords.reduce((sum, record) => sum + record.grossPay, 0), 2)
+  const totalPaidHours = roundTo(totalPaidMinutes / 60, 4)
+  const totalBaseHours = roundTo((totalPaidMinutes - sortedExportRecords.reduce((sum, r) => sum + r.timeHalfMinutes + r.doubleMinutes, 0)) / 60, 4)
+
+  const exportRows = sortedExportRecords.map((record) => {
+    cumulativePaidHours = roundTo(cumulativePaidHours + record.paidMinutes / 60, 4)
+    return ({ 日期: record.workDate, 開始時間: record.startTime, 結束時間: record.endTime, 計薪工時分鐘: record.paidMinutes, 當日總薪資: record.grossPay, 加總工時: cumulativePaidHours, 備註事項: record.remark || '' })
+  })
+  exportRows.push({ 日期: '合計', 開始時間: '', 結束時間: '', 計薪工時分鐘: totalPaidMinutes, 當日總薪資: totalGrossPay, 加總工時: totalPaidHours, 備註事項: '' })
+  const ws = XLSX.utils.json_to_sheet(exportRows); const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Weekly Summary'); XLSX.writeFile(wb, 'weekly-summary.xlsx')
+}
+// =============================================================
 
 const getDayOfWeek = (dateStr) => {
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -392,7 +450,6 @@ const addTodayRecordToList = () => {
   if (!isEditingRecord.value) {
     const duplicated = records.value.some((r) => r.workDate === workDate.value)
     if (duplicated) {
-      showToast('本日紀錄已存在，將自動切換為修改此筆')
       editingRecordId.value = records.value.find((r) => r.workDate === workDate.value).id
     }
   }
@@ -403,7 +460,8 @@ const addTodayRecordToList = () => {
     endTime: endTime.value,
     smokoCountOverride: smokoCountOverride.value,
     shiftType: shiftType.value,
-    isCleaningDay: isCleaningDay.value
+    isCleaningDay: isCleaningDay.value,
+    remark: remark.value
   })
 
   if (!todayRecord) return
@@ -415,6 +473,7 @@ const addTodayRecordToList = () => {
   }
 
   records.value.unshift(todayRecord)
+  showToast('成功加入排班列表')
 }
 
 const editRecord = (record) => {
@@ -424,11 +483,13 @@ const editRecord = (record) => {
   endTime.value = record.endTime
   shiftType.value = record.shiftType || 'normal'
   isCleaningDay.value = record.isCleaningDay || false
+  remark.value = record.remark || ''
 }
 
 const cancelEditingRecord = () => {
   editingRecordId.value = null
   shiftType.value = 'normal'
+  remark.value = ''
 }
 
 const deleteRecord = (recordId) => {
@@ -447,7 +508,7 @@ const deleteRecord = (recordId) => {
           {{ currencyFlag }} {{ currentCurrency }}
         </van-button>
       </div>
-      <p>點擊日曆日期預填時間。可自由編輯請假、停工、微調時間，所有數據即時全域換算。</p>
+      <p>點擊日曆日期預填時間。可自由編輯請假、填寫自訂備註，所有數據全域即時換算。</p>
     </div>
 
     <div class="section calendar-section">
@@ -474,7 +535,6 @@ const deleteRecord = (recordId) => {
           <div style="font-size: 14px; color: #646566; margin-bottom: 12px; font-weight: bold;">當日出勤狀態：</div>
           <van-radio-group v-model="shiftType" direction="horizontal">
             <van-radio name="normal">正常出勤</van-radio>
-            <van-radio name="standdown">早退/停工</van-radio>
             <van-radio name="leave">請假休假</van-radio>
           </van-radio-group>
         </div>
@@ -513,6 +573,14 @@ const deleteRecord = (recordId) => {
             </div>
           </template>
         </van-cell>
+
+        <van-field
+          v-model="remark"
+          label="自訂備註說明"
+          placeholder="選填（如：今天提早下班、感冒等）"
+          input-align="right"
+          clearable
+        />
       </van-cell-group>
     </div>
 
@@ -524,13 +592,13 @@ const deleteRecord = (recordId) => {
     </van-popup>
 
     <div class="workflow">
-      <div class="section" v-if="payBreakdown || shiftType === 'leave' || records.length > 0">
-        <h2>3. 班表操作</h2>
+      <div class="section">
+        <h2>3. 班表存檔操作</h2>
         <div class="section-card">
-          <p class="section-note">確認完上述日期的時間與狀態後，點擊下方加入班表，即可計算本週總額。</p>
+          <p class="section-note">確認完上述日期的時間、狀態與備註後，點擊下方按鈕排入班表，即時連動加總週薪明細。</p>
           <div class="weekly-actions">
             <van-button block type="primary" @click="addTodayRecordToList">
-              {{ isEditingRecord ? '💾 更新此日期修改' : '➕ 確定排入本週班表' }}
+              {{ isEditingRecord ? '💾 儲存並更新修改內容' : '➕ 確定排入本週班表' }}
             </van-button>
             <van-button v-if="isEditingRecord" block plain type="default" @click="cancelEditingRecord">取消變更</van-button>
           </div>
@@ -558,9 +626,9 @@ const deleteRecord = (recordId) => {
       </div>
 
       <div class="section">
-        <h2>全域基本費率設定 (AUD)</h2>
+        <h2>基本費率設定 (AUD)</h2>
         <van-cell-group inset>
-          <van-cell title="手動微調今日 Smoko" center>
+          <van-cell title="Smoko 次數" center>
             <template #right-icon>
               <van-stepper :model-value="displayedSmokoCount" :min="0" :max="3" integer theme="round" button-size="28px" disable-input @change="(val) => { smokoCountOverride = Number(val) }" />
             </template>
@@ -581,7 +649,7 @@ const deleteRecord = (recordId) => {
         <div class="section-card section-card--tight">
           <div v-if="records.length === 0" class="empty-state">
             <div class="empty-state__title">目前無排程紀錄</div>
-            <div class="empty-state__text">請在上方日曆選取日期、設定完上下班工時後，點擊「確定排入本週班表」。</div>
+            <div class="empty-state__text">請在上方日曆選取日期、設定完工時後點擊「確定排入本週班表」。</div>
           </div>
 
           <div v-else>
@@ -591,20 +659,17 @@ const deleteRecord = (recordId) => {
                   <div class="weekly-record__date">
                     {{ record.workDate }} ({{ getDayOfWeek(record.workDate) }})
                     <van-tag v-if="record.shiftType === 'leave'" type="danger" style="margin-left: 6px;">請假</van-tag>
-                    <van-tag v-if="record.shiftType === 'standdown'" type="warning" style="margin-left: 6px;">停工/早退</van-tag>
                     <van-tag v-if="record.isCleaningDay" type="success" style="margin-left: 6px;">清潔日</van-tag>
                   </div>
                   <div class="weekly-record__time" v-if="record.shiftType !== 'leave'">
                     ⏱️ {{ record.startTime }} - {{ record.endTime }}
                   </div>
+                  <div v-if="record.remark" style="font-size: 12px; color: #b45309; margin-top: 4px; font-weight: 500;">
+                    📝 備註：{{ record.remark }}
+                  </div>
                 </div>
                 <div class="weekly-record__pay">
-                  <template v-if="record.shiftType !== 'leave'">
-                    {{ currencySymbol }}{{ formatMoney(record.grossPay * currentExchangeRate) }}
-                  </template>
-                  <template v-else>
-                    {{ currencySymbol }}0.00
-                  </template>
+                  {{ currencySymbol }}{{ formatMoney(record.grossPay * currentExchangeRate) }}
                 </div>
               </div>
               <div class="weekly-record__meta" v-if="record.shiftType !== 'leave'">
@@ -653,6 +718,25 @@ const deleteRecord = (recordId) => {
         </div>
       </div>
 
+      <div class="section">
+        <h2>資料備份與傳輸管理</h2>
+        <van-collapse v-model="dataManagementSections" class="data-management-collapse">
+          <van-collapse-item name="data-management" title="打開 匯入 / 匯出 備份操作區">
+            <div class="button-group">
+              <p class="section-note section-note--compact">您可以將資料安全地備份為標準 JSON 檔，或匯出為自動排版的 Excel 薪資對帳單。</p>
+              <van-button block plain type="default" @click="exportTodayJson">匯出今日單日 JSON</van-button>
+              <div class="import-export-row">
+                <van-button block plain type="primary" :disabled="records.length === 0" @click="exportWeeklyJson">匯出本週 JSON</van-button>
+                <van-uploader class="import-uploader" :after-read="importJsonFiles" accept=".json,application/json" multiple>
+                  <van-button block plain type="danger" class="import-button">匯入備份 JSON</van-button>
+                </van-uploader>
+              </div>
+              <van-button block plain type="success" style="margin-top: 12px" :disabled="records.length === 0" @click="exportWeeklyXlsx">📊 匯出每週 XLSX (Excel 對帳單)</van-button>
+            </div>
+          </van-collapse-item>
+        </van-collapse>
+      </div>
+
     </div>
   </div>
 
@@ -673,30 +757,37 @@ const deleteRecord = (recordId) => {
 .section h2 { font-size: 14px; font-weight: bold; color: #4b5563; margin: 0 0 8px; padding: 0 16px; text-transform: uppercase; letter-spacing: 0.5px; }
 .calendar-section { margin-top: 10px; }
 
-/* 🌟 日曆 UI 關鍵修復：解決重疊，完美堆疊 */
+/* 🌟 日曆 UI 終極鎖定：徹底阻斷選中時位移往左跑的 BUG */
 .calendar-wrapper { margin: 0 16px; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05); background: #fff; border: 1px solid #ebedf0; }
-
 :deep(.van-calendar) { height: auto !important; }
-:deep(.van-calendar__body) { padding-bottom: 10px; }
+:deep(.van-calendar__body) { padding-bottom: 12px; }
 
 :deep(.van-calendar__day) { 
-  height: 74px !important; /* 加高格子 */
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start; /* 讓日期數字靠頂部 */
-  align-items: center;
-  padding-top: 6px; 
+  height: 82px !important; /* 稍微再調高一點，留給備註與堆疊充足的空間 */
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: flex-start !important;
+  align-items: center !important;
+  padding-top: 8px !important; 
+  box-sizing: border-box !important; /* 強制盒子計算包含內邊距，防止點擊時抖動 */
 }
 
 :deep(.van-calendar__bottom-info) { 
-  position: relative !important; /* 取消絕對定位，避免卡死在最下面 */
+  position: relative !important; /* 捨棄絕對定位 */
   bottom: auto !important;
-  margin-top: 4px; /* 距離上面日期數字的空間 */
-  white-space: pre-wrap !important; /* 允許換行 */
-  line-height: 1.25 !important; 
+  margin-top: 4px;
+  white-space: pre-wrap !important; /* 完美解讀 \n 換行 */
+  line-height: 1.3 !important; 
   font-size: 9px !important; 
   font-weight: 700;
   text-align: center;
+}
+
+/* ✨ 新增：當含有自訂備註時，日曆格染上極具質感的奶油香檳金底色 */
+:deep(.has-remark-day) {
+  background-color: #fffbeb !important; 
+  border: 1px dashed #fef3c7 !important;
+  border-radius: 6px;
 }
 
 .workflow { margin-top: 4px; }
@@ -710,7 +801,7 @@ const deleteRecord = (recordId) => {
 :deep(.holiday-day .van-calendar__bottom-info) { color: #ee0a24; }
 :deep(.cleaning-day) { color: #b45309 !important; }
 :deep(.cleaning-day .van-calendar__bottom-info) { color: #b45309; }
-:deep(.record-work-day .van-calendar__bottom-info) { color: #16a34a !important; font-weight: bold; } /* 賺錢顯示深綠色 */
+:deep(.record-work-day .van-calendar__bottom-info) { color: #16a34a !important; } 
 :deep(.record-leave-day .van-calendar__bottom-info) { color: #9ca3af !important; }
 
 .holiday-text { color: #ee0a24 !important; font-weight: bold; }
@@ -739,4 +830,29 @@ const deleteRecord = (recordId) => {
 .weekly-summary__total--net { margin-top: 12px; padding: 16px; border-radius: 14px; background: linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%); border: 1px solid #bbf7d0; }
 .weekly-summary__total-label { font-size: 13px; color: #166534; font-weight: bold; }
 .weekly-summary__total-value--net { color: #15803d; font-size: 26px; font-weight: 800; margin-top: 4px; }
+.import-export-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+.import-uploader { display: block; }
+.import-uploader :deep(.van-uploader__wrapper) { display: block; }
+.import-button { border-style: dashed; background: #fef2f2; }
+.data-management-collapse { margin: 0 16px; overflow: hidden; border-radius: 16px; background: #fff; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04); border: 1px solid #ebedf0; }
+:deep(.data-management-collapse .van-cell) { padding: 14px 16px; font-weight: bold; }
+:deep(.data-management-collapse .van-collapse-item__content) { padding: 14px 16px; background: #fafafa; }
+/* ========== 修正藍色選取框爆版問題 ========== */
+
+/* 1. 強制讓選中時的藍色方塊撐滿我們自訂的格子高度，並將文字靠上對齊 */
+:deep(.van-calendar__selected-day) {
+  width: calc(100% - 6px) !important;
+  height: calc(100% - 6px) !important;
+  border-radius: 8px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: flex-start !important;
+  padding-top: 6px !important;
+  box-sizing: border-box !important;
+}
+
+/* 2. 當處於選中狀態（藍色底）時，確保底下所有的金額、備註字體都變成白色，避免對比度不佳看不清楚 */
+:deep(.van-calendar__selected-day .van-calendar__bottom-info) {
+  color: #ffffff !important;
+}
 </style>

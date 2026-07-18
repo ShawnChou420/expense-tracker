@@ -31,3 +31,5 @@ export function formatHours(minutes) {
 export function formatMoney(value) {
   return roundTo(value, 2).toFixed(2)
 }
+
+

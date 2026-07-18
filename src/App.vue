@@ -4,7 +4,6 @@ import * as XLSX from 'xlsx'
 import { useShiftCalculator } from './composables/useShiftCalculator.js'
 import {
   formatHours,
-  formatMoney,
   formatRate,
   roundTo,
 } from './utils/number.js'
@@ -23,6 +22,34 @@ import {
   normalizeWorkRecord,
 } from './utils/workRecord.js'
 import { showToast } from 'vant'
+
+// --- 💰 智慧幣別格式化工具 ---
+
+// 1. 給明細列表用的（自動拔掉台幣/越南盾的小數點，並加上千分位）
+const formatDisplayMoney = (amount) => {
+  const val = Number(amount);
+  if (isNaN(val)) return '0.00';
+  // 判斷當前幣別是否為「不需要小數點」的國家
+  const noDecimals = ['TWD', 'VND', 'KRW', 'JPY', 'THB'].includes(currentCurrency.value);
+  return val.toLocaleString('en-US', {
+    minimumFractionDigits: noDecimals ? 0 : 2,
+    maximumFractionDigits: noDecimals ? 0 : 2
+  });
+};
+
+// 2. 專屬給「日曆格子」用的（極致壓縮空間防爆版）
+const formatCalendarMoney = (amount) => {
+  // 狀況 A：如果金額大於十萬 (例如越南盾)，直接使用 M/K 縮寫 (ex: 5404754 -> 5.4M)
+  if (amount >= 100000) {
+    return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(amount);
+  }
+  // 狀況 B：如果是台幣等無小數點幣別，直接拔掉逗號跟小數點最省空間 (ex: 4734)
+  if (['TWD', 'VND', 'KRW', 'JPY', 'THB'].includes(currentCurrency.value)) {
+    return Math.round(amount).toString();
+  }
+  // 狀況 C：澳幣、美金照常顯示兩位小數 (ex: 230.45)
+  return Number(amount).toFixed(2);
+};
 
 // --- 狀態切換與清潔日 ---
 const shiftType = ref('normal') // normal: 正常, leave: 請假
@@ -144,30 +171,111 @@ const onDateSelect = (date) => {
     remark.value = existingRecord.remark || '' // 精準回填歷史備註
     return
   }
+}
 
-  const dayOfWeek = date.getDay()
-  shiftType.value = 'normal'
-  remark.value = '' // 全新的一天清空備註输入框
+// --- 批量填充輔助函數：取得特定星期的預設工時設定 ---
+const getDefaultShiftForDate = (dateObj) => {
+  const dayOfWeek = dateObj.getDay()
+  let defaultStartTime = '00:00'
+  let defaultEndTime = '00:00'
+  let defaultShiftType = 'normal'
+  const isCleaning = dayOfWeek === 2 // 星期二是清潔日
 
   if (dayOfWeek === 0) {
-    startTime.value = '20:45'
-    endTime.value = '05:45'
+    defaultStartTime = '20:45'
+    defaultEndTime = '05:45'
   } else if (dayOfWeek === 1) {
-    startTime.value = '23:40'
-    endTime.value = '06:00'
+    defaultStartTime = '23:40'
+    defaultEndTime = '06:00'
   } else if (dayOfWeek === 2) {
-    startTime.value = '17:45'
-    endTime.value = '00:00'
+    defaultStartTime = '17:45'
+    defaultEndTime = '00:00'
   } else if (dayOfWeek === 3 || dayOfWeek === 4) {
-    startTime.value = '23:50'
-    endTime.value = '06:00'
+    defaultStartTime = '23:50'
+    defaultEndTime = '06:00'
   } else if (dayOfWeek === 5) {
-    startTime.value = '23:50'
-    endTime.value = '07:00'
+    defaultStartTime = '23:50'
+    defaultEndTime = '07:00'
   } else if (dayOfWeek === 6) {
-    shiftType.value = 'leave'
-    startTime.value = '00:00'
-    endTime.value = '00:00'
+    defaultShiftType = 'leave' // 星期六預設請假
+  }
+
+  return {
+    startTime: defaultStartTime,
+    endTime: defaultEndTime,
+    shiftType: defaultShiftType,
+    isCleaningDay: isCleaning,
+    remark: ''
+  }
+}
+// --- 一鍵填滿本週 (以星期一到星期日為一個週期) ---
+const fillCurrentWeek = () => {
+  if (!workDate.value) return
+  const current = parseWorkDate(workDate.value)
+  const day = current.getDay()
+  // 換算回星期一的日期
+  const diffToMonday = current.getDate() - day + (day === 0 ? -6 : 1) 
+  
+  const monday = new Date(current.setDate(diffToMonday))
+  const sunday = new Date(monday)
+  sunday.setDate(monday.getDate() + 6)
+  
+  bulkAddRecords(monday, sunday)
+}
+
+// --- 一鍵填滿本月 ---
+const fillCurrentMonth = () => {
+  if (!workDate.value) return
+  const current = parseWorkDate(workDate.value)
+  const year = current.getFullYear()
+  const month = current.getMonth()
+  
+  // 抓取本月的第一天與最後一天
+  const firstDay = new Date(year, month, 1)
+  const lastDay = new Date(year, month + 1, 0)
+  
+  bulkAddRecords(firstDay, lastDay)
+}
+
+// --- 核心批量寫入引擎 ---
+const bulkAddRecords = (startDate, endDate) => {
+  const newRecords = []
+  let currentDate = new Date(startDate)
+
+  while (currentDate <= endDate) {
+    const year = currentDate.getFullYear()
+    const month = String(currentDate.getMonth() + 1).padStart(2, '0')
+    const day = String(currentDate.getDate()).padStart(2, '0')
+    const dateStr = `${year}-${month}-${day}`
+
+    // 檢查這一天是否已經在班表中，如果已經有了就跳過（保護已編輯的資料）
+    const exists = records.value.some(r => r.workDate === dateStr)
+    
+    if (!exists) {
+      const defaultShift = getDefaultShiftForDate(currentDate)
+      
+      // 直接呼叫你原本寫好的生成函數
+      const record = buildWorkRecordFromInputs({
+        workDate: dateStr,
+        startTime: defaultShift.startTime,
+        endTime: defaultShift.endTime,
+        smokoCountOverride: null, 
+        shiftType: defaultShift.shiftType,
+        isCleaningDay: defaultShift.isCleaningDay,
+        remark: defaultShift.remark
+      })
+      
+      if (record) newRecords.push(record)
+    }
+    // 推進到下一天
+    currentDate.setDate(currentDate.getDate() + 1)
+  }
+
+  if (newRecords.length > 0) {
+    records.value = [...records.value, ...newRecords]
+    showToast(`成功加入 ${newRecords.length} 筆班表`)
+  } else {
+    showToast('該區間內的班表已排滿，無新增項目')
   }
 }
 
@@ -176,7 +284,7 @@ const selectedHolidayLabel = computed(() => {
   return getNswPublicHolidayLabel(parseWorkDate(workDate.value))
 })
 
-// ✨ 日曆格式化：支援國定假日、清潔日、金額、備註特殊金底色堆疊
+// ✨ 日曆格式化：上方放假日/清潔日，下方放金額
 const holidayCalendarFormatter = (day) => {
   if (!day.date) return day
 
@@ -188,39 +296,34 @@ const holidayCalendarFormatter = (day) => {
   const holidayLabel = getNswPublicHolidayShortLabel(day.date)
   const isTue = day.date.getDay() === 2
 
-  let infoParts = []
-  let isHoliday = false
-
+  // 1. 處理上方標籤 (國定假日 / 清潔日)
   if (holidayLabel) {
-    infoParts.push(holidayLabel)
-    isHoliday = true
+    day.topInfo = holidayLabel
+    day.className = `${day.className || ''} holiday-day`.trim()
   } else if (isTue) {
-    infoParts.push('清潔日')
+    day.topInfo = '清潔日'
+    day.className = `${day.className || ''} cleaning-day`.trim()
   }
 
+  // 2. 處理下方標籤 (金額 / 請假狀態)
   const record = records.value.find((r) => r.workDate === dateStr)
   let classNames = []
-
+  
   if (record) {
     if (record.shiftType === 'leave') {
-      infoParts.push('休假')
+      day.bottomInfo = '休假'
     } else {
       const convertedPay = record.grossPay * currentExchangeRate.value
-      infoParts.push(`+${currencySymbol.value}${formatMoney(convertedPay)}`)
+      day.bottomInfo = `+${currencySymbol.value}${formatCalendarMoney(convertedPay)}`
     }
+    
     classNames.push(record.shiftType === 'leave' ? 'record-leave-day' : 'record-work-day')
     
-    // 💡 核心亮點：若該日期含有備註，塞入專屬的識別 class
     if (record.remark && record.remark.trim() !== '') {
       classNames.push('has-remark-day')
     }
   }
 
-  day.bottomInfo = infoParts.join('\n')
-  
-  if (isHoliday) classNames.push('holiday-day')
-  if (isTue) classNames.push('cleaning-day')
-  
   day.className = `${day.className || ''} ${classNames.join(' ')}`.trim()
   return day
 }
@@ -232,22 +335,25 @@ const updateRate = (targetRef, value, digits = 3) => {
 }
 
 // --- 費率設定 ---
-const baseRate = ref(25.06)
-const casualLoadingRate = ref(6.265)
-const shiftLoadingRate = ref(6.265)
-const saturdayOrdLoadingRate = ref(12.53)
-const timeHalfRate = ref(37.59)
-const doubleRate = ref(50.12)
-const sundayLoadingRate = ref(18.795)
+// 1. 將 baseRate 改為你目前最新的 Level 5 費率
+const baseRate = ref(26.74) 
+
+// 2. 將其他依賴 Base Rate 的費率改為 computed 動態計算
+const casualLoadingRate = computed(() => baseRate.value * 0.25)     // 臨時工加給 25%
+const shiftLoadingRate = computed(() => baseRate.value * 0.25)      // 輪班加給 25%
+const saturdayOrdLoadingRate = computed(() => baseRate.value * 0.5) // 週六加給 50%
+const timeHalfRate = computed(() => baseRate.value * 1.5)           // 加班 1.5 倍
+const doubleRate = computed(() => baseRate.value * 2.0)             // 加班 2 倍
+const sundayLoadingRate = computed(() => baseRate.value * 0.75)     // 週日加給 75%
+
+// 3. 獨立且固定的參數維持 ref 即可
 const ppeAllowance = ref(5.0)
 const smokoMinutesPerBreak = ref(30)
 const smokoCountOverride = ref(null)
-const withholdingTaxRate = ref(0.12)
 
-const handleStartTimeInput = (value) => { startTime.value = sanitizeTimeInput(value) }
-const handleEndTimeInput = (value) => { endTime.value = sanitizeTimeInput(value) }
-const handleStartTimeBlur = () => { startTime.value = normalizeTimeInput(startTime.value) }
-const handleEndTimeBlur = () => { endTime.value = normalizeTimeInput(endTime.value) }
+// 備註：你這邊寫 withholdingTaxRate，但薪資單上的 12% 其實是退休金 (Superannuation)。
+// 如果這是用來算退休金的，數值 0.12 沒問題；若是算所得稅，澳洲稅金通常是看級距查表的喔！
+const withholdingTaxRate = ref(0.12)
 
 watch([workDate, startTime, endTime, shiftType], () => {
   smokoCountOverride.value = null
@@ -258,8 +364,37 @@ const displayedSmokoCount = computed(() => {
   return workSummary.value?.smokoCount ?? 0
 })
 
-const effectiveStartTime = computed(() => shiftType.value === 'leave' ? '00:00' : startTime.value)
+// --- 5. 新增：提早換裝 5 分鐘打卡開關 ---
+const enablePrepTime = ref(true) // 預設開啟
+
+// 修改原本的 effectiveStartTime，加入自動減去 5 分鐘的邏輯
+const effectiveStartTime = computed(() => {
+  if (shiftType.value === 'leave') return '00:00'
+  
+  let timeToCalculate = startTime.value
+  
+  if (enablePrepTime.value) {
+    let [hours, minutes] = startTime.value.split(':').map(Number)
+    minutes -= 5
+    if (minutes < 0) {
+      minutes += 60
+      hours = (hours - 1 + 24) % 24 // 處理跨日退回前一天的小時
+    }
+    timeToCalculate = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+  }
+  
+  return timeToCalculate
+})
+
+// 原本的 effectiveEndTime 維持不變
 const effectiveEndTime = computed(() => shiftType.value === 'leave' ? '00:00' : endTime.value)
+
+const monthlyRecords = computed(() => {
+  return records.value.filter(r => r.workDate.startsWith(currentMonthPrefix.value) && r.shiftType !== 'leave')
+})
+
+const monthlyTotalPay = computed(() => roundTo(monthlyRecords.value.reduce((sum, r) => sum + r.grossPay, 0), 2))
+const monthlyTotalHours = computed(() => roundTo(monthlyRecords.value.reduce((sum, r) => sum + r.paidMinutes, 0) / 60, 2))
 
 const {
   workSummary,
@@ -545,6 +680,7 @@ const deleteRecord = (recordId) => {
         <van-cell v-if="selectedHolidayLabel" title="🔥 澳洲國定假日" :value="selectedHolidayLabel" value-class="holiday-text" />
         <van-cell v-if="isCleaningDay" title="✨ 每週例行狀態" value="固定清潔日費率" value-class="cleaning-text" />
         
+<!-- 找到這個區塊，在 endTime 下方加入開關 -->
         <template v-if="shiftType !== 'leave'">
           <van-field
             v-model="startTime"
@@ -564,6 +700,12 @@ const deleteRecord = (recordId) => {
             input-align="right"
             @click="showEndTimePicker = true"
           />
+          <!-- 這裡放入新的換裝時間開關 -->
+          <van-cell center title="提早 5 分鐘換裝打卡">
+            <template #right-icon>
+              <van-switch v-model="enablePrepTime" size="20px" />
+            </template>
+          </van-cell>
         </template>
 
         <van-cell v-else>
@@ -592,14 +734,23 @@ const deleteRecord = (recordId) => {
     </van-popup>
 
     <div class="workflow">
+      
       <div class="section">
         <h2>3. 班表存檔操作</h2>
         <div class="section-card">
           <p class="section-note">確認完上述日期的時間、狀態與備註後，點擊下方按鈕排入班表，即時連動加總週薪明細。</p>
           <div class="weekly-actions">
+            <!-- 單日儲存按鈕 -->
             <van-button block type="primary" @click="addTodayRecordToList">
-              {{ isEditingRecord ? '💾 儲存並更新修改內容' : '➕ 確定排入本週班表' }}
+              {{ isEditingRecord ? '💾 儲存並更新修改內容' : '➕ 確定排入本週班表 (單日)' }}
             </van-button>
+            
+            <!-- 新增：一鍵批次按鈕群 (只有在非編輯模式下才會顯示) -->
+            <div style="display: flex; gap: 12px;" v-if="!isEditingRecord">
+              <van-button block plain type="success" @click="fillCurrentWeek">一鍵填滿本週</van-button>
+              <van-button block plain type="warning" @click="fillCurrentMonth">一鍵填滿本月</van-button>
+            </div>
+            
             <van-button v-if="isEditingRecord" block plain type="default" @click="cancelEditingRecord">取消變更</van-button>
           </div>
         </div>
@@ -613,15 +764,15 @@ const deleteRecord = (recordId) => {
           <van-cell title="自動算 Smoko 次數" :value="`${workSummary.smokoCount} 次`" />
         </van-cell-group>
         <van-cell-group inset>
-          <van-cell title="Base Pay (基本)" :value="`${currencySymbol}${formatMoney(payBreakdown.basePay * currentExchangeRate)}`" />
-          <van-cell title="CASUAL LOADING 25%" :value="`${currencySymbol}${formatMoney(payBreakdown.casualPay * currentExchangeRate)}`" />
-          <van-cell v-if="payBreakdown.shiftPay > 0" title="SHIFT 夜班 25%" :value="`${currencySymbol}${formatMoney(payBreakdown.shiftPay * currentExchangeRate)}`" />
-          <van-cell v-if="payBreakdown.holidayPenaltyPay > 0" title="P/HOL 150%" :value="`${currencySymbol}${formatMoney(payBreakdown.holidayPenaltyPay * currentExchangeRate)}`" />
-          <van-cell title="SAT ORD 50%" :value="`${currencySymbol}${formatMoney(payBreakdown.satOrdPay * currentExchangeRate)}`" />
-          <van-cell title="T/Half (1.5倍)" :value="`${currencySymbol}${formatMoney(payBreakdown.timeHalfPay * currentExchangeRate)}`" />
-          <van-cell title="Double (2倍)" :value="`${currencySymbol}${formatMoney(payBreakdown.doublePay * currentExchangeRate)}`" />
-          <van-cell title="SUN ORD 75%" :value="`${currencySymbol}${formatMoney(payBreakdown.sunOrdPay * currentExchangeRate)}`" />
-          <van-cell title="當日總薪資 (稅前)" :value="`${currencySymbol}${formatMoney(payBreakdown.grossPay * currentExchangeRate)}`" class="gross-cell" />
+          <van-cell title="Base Pay (基本)" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.basePay * currentExchangeRate)}`" />
+          <van-cell title="CASUAL LOADING 25%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.casualPay * currentExchangeRate)}`" />
+          <van-cell v-if="payBreakdown.shiftPay > 0" title="SHIFT 夜班 25%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.shiftPay * currentExchangeRate)}`" />
+          <van-cell v-if="payBreakdown.holidayPenaltyPay > 0" title="P/HOL 150%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.holidayPenaltyPay * currentExchangeRate)}`" />
+          <van-cell title="SAT ORD 50%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.satOrdPay * currentExchangeRate)}`" />
+          <van-cell title="T/Half (1.5倍)" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.timeHalfPay * currentExchangeRate)}`" />
+          <van-cell title="Double (2倍)" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.doublePay * currentExchangeRate)}`" />
+          <van-cell title="SUN ORD 75%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.sunOrdPay * currentExchangeRate)}`" />
+          <van-cell title="當日總薪資 (稅前)" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.grossPay * currentExchangeRate)}`" class="gross-cell" />
         </van-cell-group>
       </div>
 
@@ -669,7 +820,7 @@ const deleteRecord = (recordId) => {
                   </div>
                 </div>
                 <div class="weekly-record__pay">
-                  {{ currencySymbol }}{{ formatMoney(record.grossPay * currentExchangeRate) }}
+                  {{ currencySymbol }}{{ formatDisplayMoney(record.grossPay * currentExchangeRate) }}
                 </div>
               </div>
               <div class="weekly-record__meta" v-if="record.shiftType !== 'leave'">
@@ -690,25 +841,25 @@ const deleteRecord = (recordId) => {
         <div class="section-card weekly-summary-card">
           <div class="weekly-summary__row">
             <span class="weekly-summary__label">本週班表薪資小計 ({{ currentCurrency }})</span>
-            <span class="weekly-summary__value">{{ currencySymbol }}{{ formatMoney(weeklySubtotal * currentExchangeRate) }}</span>
+            <span class="weekly-summary__value">{{ currencySymbol }}{{ formatDisplayMoney(weeklySubtotal * currentExchangeRate) }}</span>
           </div>
           <div class="weekly-summary__row">
             <span class="weekly-summary__label">PPE 工具補助津貼 ({{ currentCurrency }})</span>
-            <span class="weekly-summary__value">{{ currencySymbol }}{{ formatMoney(weeklyPPE * currentExchangeRate) }}</span>
+            <span class="weekly-summary__value">{{ currencySymbol }}{{ formatDisplayMoney(weeklyPPE * currentExchangeRate) }}</span>
           </div>
           <div class="weekly-summary__row" style="margin-top: 8px; border-top: 1px dashed #ebedf0; padding-top: 8px;">
             <span class="weekly-summary__label" style="font-size: 13px; color: #646566;">本週預估總薪資（稅前）({{ currentCurrency }})</span>
-            <span class="weekly-summary__value" style="font-size: 14px; color: #646566; font-weight: 500;">{{ currencySymbol }}{{ formatMoney(weeklyTotal * currentExchangeRate) }}</span>
+            <span class="weekly-summary__value" style="font-size: 14px; color: #646566; font-weight: 500;">{{ currencySymbol }}{{ formatDisplayMoney(weeklyTotal * currentExchangeRate) }}</span>
           </div>
           <div class="weekly-summary__row weekly-summary__row--tax" style="margin-bottom: 8px;">
             <span class="weekly-summary__label">預估扣稅扣繳 12% ({{ currentCurrency }})</span>
-            <span class="weekly-summary__value weekly-summary__value--tax">-${{ currencySymbol }}{{ formatMoney(weeklyTaxEstimate * currentExchangeRate) }}</span>
+            <span class="weekly-summary__value weekly-summary__value--tax">-{{ currencySymbol }}{{ formatDisplayMoney(weeklyTaxEstimate * currentExchangeRate) }}</span>
           </div>
           <div class="weekly-summary__total weekly-summary__total--net">
             <div class="weekly-summary__total-label">本週實領預估（稅後淨所得）</div>
             <div class="weekly-summary__total-value weekly-summary__total-value--net">
               <span style="margin-right: 4px;">{{ currencyFlag }}</span>
-              {{ currencySymbol }}{{ formatMoney(convertedNetTotal) }}
+              {{ currencySymbol }}{{ formatDisplayMoney(convertedNetTotal) }}
               <span style="font-size: 14px; font-weight: normal; color: #15803d; margin-left: 2px;">{{ currentCurrency }}</span>
             </div>
             <div v-if="currentCurrency !== 'AUD'" style="font-size: 12px; color: #15803d; margin-top: 6px; font-weight: normal; text-align: right; opacity: 0.8;">
@@ -717,6 +868,7 @@ const deleteRecord = (recordId) => {
           </div>
         </div>
       </div>
+
 
       <div class="section">
         <h2>資料備份與傳輸管理</h2>
@@ -762,14 +914,12 @@ const deleteRecord = (recordId) => {
 :deep(.van-calendar) { height: auto !important; }
 :deep(.van-calendar__body) { padding-bottom: 12px; }
 
-:deep(.van-calendar__day) { 
-  height: 82px !important; /* 稍微再調高一點，留給備註與堆疊充足的空間 */
-  display: flex !important;
-  flex-direction: column !important;
-  justify-content: flex-start !important;
-  align-items: center !important;
-  padding-top: 8px !important; 
-  box-sizing: border-box !important; /* 強制盒子計算包含內邊距，防止點擊時抖動 */
+/* 1. 統一格子的基礎高度，並讓「日期數字」乖乖待在最上方 */
+:deep(.van-calendar__day) {
+  height: 76px !important;
+  position: relative !important;
+  padding-top: 8px !important; /* 讓日期數字固定在上方留白 */
+  align-items: flex-start !important; /* 取消預設的置中 */
 }
 
 :deep(.van-calendar__bottom-info) { 
@@ -796,17 +946,62 @@ const deleteRecord = (recordId) => {
 .section-note { margin: 0 0 14px; font-size: 13px; line-height: 1.5; color: #646566; }
 :deep(.gross-cell .van-cell__value) { font-weight: 700; color: #1989fa; font-size: 16px; }
 
-/* 日曆狀態配色客製化 */
-:deep(.holiday-day) { color: #ee0a24 !important; font-weight: bold; }
-:deep(.holiday-day .van-calendar__bottom-info) { color: #ee0a24; }
-:deep(.cleaning-day) { color: #b45309 !important; }
-:deep(.cleaning-day .van-calendar__bottom-info) { color: #b45309; }
-:deep(.record-work-day .van-calendar__bottom-info) { color: #16a34a !important; } 
-:deep(.record-leave-day .van-calendar__bottom-info) { color: #9ca3af !important; }
+/* ==========================================
+   🌟 日曆終極美化版：完美三層堆疊與選取框
+   ========================================== */
 
-.holiday-text { color: #ee0a24 !important; font-weight: bold; }
-.cleaning-text { color: #b45309 !important; font-weight: bold; }
-:deep(.highlight-blue) { color: #1989fa !important; font-weight: bold; }
+/* 1. 統一格子的基礎高度，並讓「日期數字」乖乖待在最上方 */
+:deep(.van-calendar__day) {
+  height: 76px !important;
+  position: relative !important;
+  padding-top: 8px !important; /* 讓日期數字固定在上方留白 */
+  align-items: flex-start !important; /* 取消預設的置中 */
+}
+
+/* 🏷️ 2. 魔法定位：把原本在最上面的「清潔日/假日」，強制拉到日期數字的正下方 */
+:deep(.van-calendar__top-info) {
+  position: absolute !important;
+  top: 30px !important; /* 關鍵：距離頂部 30px，剛好卡在中間 */
+  left: 0; right: 0;
+  font-size: 10px !important;
+  line-height: 1.2;
+  text-align: center;
+}
+/* 中間標籤的顏色 */
+:deep(.holiday-day .van-calendar__top-info) { color: #ef4444 !important; font-weight: bold; } /* 柔和紅 */
+:deep(.cleaning-day .van-calendar__top-info) { color: #f97316 !important; font-weight: bold; } /* 橘色 */
+
+/* 💰 3. 確保「金額」永遠貼在格子的最底部 */
+:deep(.van-calendar__bottom-info) {
+  position: absolute !important;
+  bottom: 8px !important; /* 距離底部 8px */
+  left: 0; right: 0;
+  font-size: 10px !important;
+  line-height: 1.2;
+  text-align: center;
+}
+/* 底部金額的顏色 */
+:deep(.record-work-day .van-calendar__bottom-info) { color: #10b981 !important; font-weight: bold; } /* 翡翠綠 */
+:deep(.record-leave-day .van-calendar__bottom-info) { color: #9ca3af !important; } /* 灰色 */
+
+/* 🔵 4. 拯救被壓扁的藍色選取框，改成高質感的圓角矩形 */
+:deep(.van-calendar__selected-day) {
+  width: calc(100% - 8px) !important; /* 左右稍微留白，看起來像獨立按鈕 */
+  height: calc(100% - 6px) !important; /* 撐滿上下 */
+  border-radius: 12px !important; /* 更圓潤現代 */
+  position: absolute;
+  top: 3px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start !important;
+  padding-top: 5px !important; /* 配合日期數字的高度 */
+}
+
+/* 5. 確保格子被選中變成藍底時，裡面的字都自動變成白色才看得清楚 */
+:deep(.van-calendar__selected-day .van-calendar__top-info),
+:deep(.van-calendar__selected-day .van-calendar__bottom-info) {
+  color: #ffffff !important;
+}
 
 .weekly-actions { display: grid; gap: 12px; }
 .weekly-actions :deep(.van-button--primary) { min-height: 46px; font-size: 15px; font-weight: 700; box-shadow: 0 8px 20px rgba(25, 137, 250, 0.2); border-radius: 12px; }

@@ -1,7 +1,9 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import * as XLSX from 'xlsx'
 import TripTracker from './components/TripTracker.vue'
+import ExpenseTracker from './components/ExpenseTracker.vue'
+import { formatCalendarAmount } from './utils/calendarMoney.js'
 import { useShiftCalculator } from './composables/useShiftCalculator.js'
 import {
   formatHours,
@@ -36,20 +38,6 @@ const formatDisplayMoney = (amount) => {
     minimumFractionDigits: noDecimals ? 0 : 2,
     maximumFractionDigits: noDecimals ? 0 : 2
   });
-};
-
-// 2. 專屬給「日曆格子」用的（極致壓縮空間防爆版）
-const formatCalendarMoney = (amount) => {
-  // 狀況 A：如果金額大於十萬 (例如越南盾)，直接使用 M/K 縮寫 (ex: 5404754 -> 5.4M)
-  if (amount >= 100000) {
-    return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(amount);
-  }
-  // 狀況 B：如果是台幣等無小數點幣別，直接拔掉逗號跟小數點最省空間 (ex: 4734)
-  if (['TWD', 'VND', 'KRW', 'JPY', 'THB'].includes(currentCurrency.value)) {
-    return Math.round(amount).toString();
-  }
-  // 狀況 C：澳幣、美金照常顯示兩位小數 (ex: 230.45)
-  return Number(amount).toFixed(2);
 };
 
 // --- 狀態切換與清潔日 ---
@@ -136,6 +124,9 @@ const workDate = ref(getTodayDate())
 const startTime = ref('23:45')
 const endTime = ref('06:00')
 const dataManagementSections = ref([])
+const scheduleSections = ref([])
+const expandedRecordId = ref('')
+const workInputSection = ref(null)
 const editingRecordId = ref(null)
 const records = ref([])
 const activeTab = ref('payroll')
@@ -316,7 +307,7 @@ const holidayCalendarFormatter = (day) => {
       day.bottomInfo = '休假'
     } else {
       const convertedPay = record.grossPay * currentExchangeRate.value
-      day.bottomInfo = `+${currencySymbol.value}${formatCalendarMoney(convertedPay)}`
+      day.bottomInfo = `+${formatCalendarAmount(convertedPay)}`
     }
     
     classNames.push(record.shiftType === 'leave' ? 'record-leave-day' : 'record-work-day')
@@ -614,6 +605,9 @@ const editRecord = (record) => {
   shiftType.value = record.shiftType || 'normal'
   isCleaningDay.value = record.isCleaningDay || false
   remark.value = record.remark || ''
+  scheduleSections.value = []
+  expandedRecordId.value = ''
+  nextTick(() => workInputSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
 }
 
 const cancelEditingRecord = () => {
@@ -625,27 +619,27 @@ const cancelEditingRecord = () => {
 const deleteRecord = (recordId) => {
   records.value = records.value.filter((record) => record.id !== recordId)
   if (editingRecordId.value === recordId) editingRecordId.value = null
+  if (expandedRecordId.value === recordId) expandedRecordId.value = ''
 }
 </script>
 
 <template>
   <div class="page">
-    <section v-show="activeTab === 'payroll'">
+    <section v-show="activeTab === 'payroll'" class="payroll-page">
     <div class="header">
+      <p class="eyebrow">PAYROLL ESTIMATE</p>
       <div class="header-main">
-        <h1>薪資計算與排班預估</h1>
+        <h1>薪資預估</h1>
         <van-button size="small" plain type="primary" class="global-currency-btn" @click="showCurrencyPicker = true">
           {{ currencyFlag }} {{ currentCurrency }}
         </van-button>
       </div>
-      <p>點擊日曆日期預填時間。可自由編輯請假、填寫自訂備註，所有數據全域即時換算。</p>
-    </div>
-    <div class="memory-notice memory-notice--payroll" role="status">
-      <strong>暫存模式</strong>：目前班表與車資資料只存在 App 記憶體，關閉或重新啟動後會消失。
+      <p>選擇工作日期、記錄班表，掌握每週薪資。</p>
     </div>
 
     <div class="section calendar-section">
-      <h2>1. 選擇或點擊日期</h2>
+      <h2>選擇工作日期</h2>
+      <p class="calendar-help">已存班表約值（{{ currentCurrency }}）；精確金額見本週班表</p>
       <div class="calendar-wrapper">
         <van-calendar
           :poppable="false"
@@ -660,8 +654,8 @@ const deleteRecord = (recordId) => {
       </div>
     </div>
 
-    <div class="section">
-      <h2>2. 設定當日出勤狀態與時間</h2>
+    <div ref="workInputSection" class="section">
+      <h2>出勤與時間</h2>
       
       <van-cell-group inset style="margin-bottom: 12px;">
         <div style="padding: 14px 16px;">
@@ -734,19 +728,19 @@ const deleteRecord = (recordId) => {
     <div class="workflow">
       
       <div class="section">
-        <h2>3. 班表存檔操作</h2>
+        <h2>儲存班表</h2>
         <div class="section-card">
           <p class="section-note">確認完上述日期的時間、狀態與備註後，點擊下方按鈕排入班表，即時連動加總週薪明細。</p>
           <div class="weekly-actions">
             <!-- 單日儲存按鈕 -->
-            <van-button block type="primary" @click="addTodayRecordToList">
-              {{ isEditingRecord ? '💾 儲存並更新修改內容' : '➕ 確定排入本週班表 (單日)' }}
+            <van-button block type="primary" :icon="isEditingRecord ? 'edit' : 'plus'" @click="addTodayRecordToList">
+              {{ isEditingRecord ? '儲存修改' : '加入本週班表' }}
             </van-button>
             
             <!-- 新增：一鍵批次按鈕群 (只有在非編輯模式下才會顯示) -->
             <div style="display: flex; gap: 12px;" v-if="!isEditingRecord">
-              <van-button block plain type="success" @click="fillCurrentWeek">一鍵填滿本週</van-button>
-              <van-button block plain type="warning" @click="fillCurrentMonth">一鍵填滿本月</van-button>
+              <van-button block plain type="primary" @click="fillCurrentWeek">填滿本週</van-button>
+              <van-button block plain type="primary" @click="fillCurrentMonth">填滿本月</van-button>
             </div>
             
             <van-button v-if="isEditingRecord" block plain type="default" @click="cancelEditingRecord">取消變更</van-button>
@@ -755,7 +749,7 @@ const deleteRecord = (recordId) => {
       </div>
 
       <div class="section" v-if="workSummary && shiftType !== 'leave'">
-        <h2>4. 當日明細預估 ({{ currentCurrency }})</h2>
+        <h2>當日薪資預估 ({{ currentCurrency }})</h2>
         <van-cell-group inset style="margin-bottom: 12px;">
           <van-cell title="實際計薪總工時" :value="`${formatHours(workSummary.paidMinutes)} 小時`" value-class="highlight-blue" />
           <van-cell title="夜班津貼判定" :value="isNightShift ? '有符合' : '無符合'" />
@@ -794,48 +788,48 @@ const deleteRecord = (recordId) => {
       </div>
 
       <div class="section">
-        <h2>本週排定班表明細 ({{ currentCurrency }})</h2>
-        <div class="section-card section-card--tight">
-          <div v-if="records.length === 0" class="empty-state">
-            <div class="empty-state__title">目前無排程紀錄</div>
-            <div class="empty-state__text">請在上方日曆選取日期、設定完工時後點擊「確定排入本週班表」。</div>
-          </div>
-
-          <div v-else>
-            <div v-for="record in sortedRecords" :key="record.id" class="weekly-record">
-              <div class="weekly-record__top">
-                <div>
-                  <div class="weekly-record__date">
-                    {{ record.workDate }} ({{ getDayOfWeek(record.workDate) }})
-                    <van-tag v-if="record.shiftType === 'leave'" type="danger" style="margin-left: 6px;">請假</van-tag>
-                    <van-tag v-if="record.isCleaningDay" type="success" style="margin-left: 6px;">清潔日</van-tag>
-                  </div>
-                  <div class="weekly-record__time" v-if="record.shiftType !== 'leave'">
-                    ⏱️ {{ record.startTime }} - {{ record.endTime }}
-                  </div>
-                  <div v-if="record.remark" style="font-size: 12px; color: #b45309; margin-top: 4px; font-weight: 500;">
-                    📝 備註：{{ record.remark }}
-                  </div>
-                </div>
-                <div class="weekly-record__pay">
-                  {{ currencySymbol }}{{ formatDisplayMoney(record.grossPay * currentExchangeRate) }}
-                </div>
-              </div>
-              <div class="weekly-record__meta" v-if="record.shiftType !== 'leave'">
-                <span>計薪 {{ formatHours(record.paidMinutes) }} 小時</span>
-                <span v-if="record.shiftPay > 0">夜班</span>
-              </div>
-              <div class="weekly-record__actions">
-                <van-button size="small" plain type="primary" @click="editRecord(record)">修改工時</van-button>
-                <van-button size="small" plain type="danger" @click="deleteRecord(record.id)">移除</van-button>
-              </div>
-            </div>
-          </div>
+        <h2>班表明細</h2>
+        <div v-if="records.length === 0" class="section-card empty-state">
+          <div class="empty-state__title">目前無排程紀錄</div>
+          <div class="empty-state__text">請在上方日曆選取日期、設定完工時後點擊「加入本週班表」。</div>
         </div>
+        <van-collapse v-else v-model="scheduleSections" class="schedule-collapse">
+          <van-collapse-item name="records">
+            <template #title>
+              <div class="schedule-overview">
+                <strong>查看 {{ records.length }} 筆班表</strong>
+                <small>依日期排列，點選單筆查看明細</small>
+              </div>
+            </template>
+            <van-collapse v-model="expandedRecordId" accordion class="record-collapse">
+              <van-collapse-item v-for="record in sortedRecords" :key="record.id" :name="record.id">
+                <template #title>
+                  <span class="schedule-date">{{ record.workDate }} <small>{{ getDayOfWeek(record.workDate) }}</small></span>
+                </template>
+                <template #value>
+                  <strong class="schedule-pay">{{ currencySymbol }}{{ formatDisplayMoney(record.grossPay * currentExchangeRate) }}</strong>
+                </template>
+                <div class="schedule-detail">
+                  <div class="schedule-detail__tags">
+                    <van-tag v-if="record.shiftType === 'leave'" type="danger">請假</van-tag>
+                    <van-tag v-if="record.isCleaningDay" type="success">清潔日</van-tag>
+                    <van-tag v-if="record.shiftPay > 0" plain type="primary">夜班</van-tag>
+                  </div>
+                  <p v-if="record.shiftType !== 'leave'">{{ record.startTime }} – {{ record.endTime }} · 計薪 {{ formatHours(record.paidMinutes) }} 小時 · smoko {{ record.smokoCount }} 次</p>
+                  <p v-if="record.remark">備註：{{ record.remark }}</p>
+                  <div class="schedule-detail__actions">
+                    <van-button size="small" plain type="primary" @click="editRecord(record)">修改工時</van-button>
+                    <van-button size="small" plain type="danger" @click="deleteRecord(record.id)">移除</van-button>
+                  </div>
+                </div>
+              </van-collapse-item>
+            </van-collapse>
+          </van-collapse-item>
+        </van-collapse>
       </div>
 
       <div class="section">
-        <h2>本週整體財務預估總結</h2>
+        <h2>本週結算預估</h2>
         <div class="section-card weekly-summary-card">
           <div class="weekly-summary__row">
             <span class="weekly-summary__label">本週班表薪資小計 ({{ currentCurrency }})</span>
@@ -869,7 +863,7 @@ const deleteRecord = (recordId) => {
 
 
       <div class="section">
-        <h2>資料備份與傳輸管理</h2>
+        <h2>資料管理</h2>
         <van-collapse v-model="dataManagementSections" class="data-management-collapse">
           <van-collapse-item name="data-management" title="打開 匯入 / 匯出 備份操作區">
             <div class="button-group">
@@ -894,135 +888,120 @@ const deleteRecord = (recordId) => {
     </section>
 
     <TripTracker v-show="activeTab === 'trips'" />
+    <ExpenseTracker v-show="activeTab === 'expenses'" />
 
     <van-tabbar v-model="activeTab" fixed placeholder safe-area-inset-bottom>
       <van-tabbar-item name="payroll" icon="balance-o">薪資</van-tabbar-item>
       <van-tabbar-item name="trips" icon="friends-o">車資</van-tabbar-item>
+      <van-tabbar-item name="expenses" icon="records">支出</van-tabbar-item>
     </van-tabbar>
   </div>
 </template>
 
 <style scoped>
-.page { min-height: 100vh; background: #f7f8fa; padding: 20px 0 40px; }
-.memory-notice { margin: 0 16px; padding: 12px; border: 1px solid #fde68a; border-radius: var(--radius-medium); background: #fffbeb; color: #92400e; font-size: var(--font-caption); line-height: 1.5; }
-.memory-notice--payroll { margin-top: 4px; }
-.header { padding: 0 16px 12px; }
-.header-main { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.header h1 { margin: 0; font-size: 24px; font-weight: 800; color: #1f2937; }
-.header p { margin: 0; color: #6b7280; font-size: 13px; line-height: 1.4; }
-.global-currency-btn { font-weight: bold; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+.page { min-height: 100vh; background: #f5f7fa; }
+.payroll-page { max-width: 820px; min-height: 100vh; margin: 0 auto; padding: 20px 0 calc(92px + env(safe-area-inset-bottom)); background: radial-gradient(circle at 12% 0, #e8f4ff 0, transparent 260px), #f5f7fa; }
+.header { padding: 0 18px 12px; }
+.header .eyebrow { margin: 0 0 5px; color: #6883a1; font-size: 10px; font-weight: 800; letter-spacing: .14em; }
+.header-main { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
+.header h1 { margin: 0; font-size: 29px; line-height: 1.2; font-weight: 800; color: #1b2a3b; }
+.header p:not(.eyebrow) { margin: 0; color: #657588; font-size: 13px; line-height: 1.4; }
+.global-currency-btn { flex: none; min-height: 38px; font-weight: 700; border-radius: 12px; background: #fff; box-shadow: 0 2px 8px rgba(29, 66, 106, .06); }
 
-.section { margin-top: 20px; }
-.section h2 { font-size: 14px; font-weight: bold; color: #4b5563; margin: 0 0 8px; padding: 0 16px; text-transform: uppercase; letter-spacing: 0.5px; }
-.calendar-section { margin-top: 10px; }
+.section { margin-top: 28px; }
+.section h2 { font-size: 19px; font-weight: 800; color: #1b2a3b; margin: 0 0 12px; padding: 0 18px; letter-spacing: -.02em; }
+.calendar-section { margin-top: 16px; }
+.calendar-help { margin: -4px 18px 12px; color: #657588; font-size: 11px; line-height: 1.4; }
 
-/* 🌟 日曆 UI 終極鎖定：徹底阻斷選中時位移往左跑的 BUG */
-.calendar-wrapper { margin: 0 16px; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05); background: #fff; border: 1px solid #ebedf0; }
+.calendar-wrapper { margin: 0 16px; border-radius: 22px; overflow: hidden; box-shadow: 0 12px 28px rgba(29, 66, 106, .07); background: #fff; border: 1px solid #e6edf5; }
 :deep(.van-calendar) { height: auto !important; }
 :deep(.van-calendar__body) { padding-bottom: 12px; }
-
-/* 1. 統一格子的基礎高度，並讓「日期數字」乖乖待在最上方 */
 :deep(.van-calendar__day) {
-  height: 76px !important;
+  height: 78px !important;
   position: relative !important;
-  padding-top: 8px !important; /* 讓日期數字固定在上方留白 */
-  align-items: flex-start !important; /* 取消預設的置中 */
+  padding-top: 8px !important;
+  align-items: flex-start !important;
 }
-
-:deep(.van-calendar__bottom-info) { 
-  position: relative !important; /* 捨棄絕對定位 */
-  bottom: auto !important;
-  margin-top: 4px;
-  white-space: pre-wrap !important; /* 完美解讀 \n 換行 */
-  line-height: 1.3 !important; 
-  font-size: 9px !important; 
-  font-weight: 700;
+:deep(.van-calendar__top-info) {
+  position: absolute !important;
+  top: 29px !important;
+  left: 3px;
+  right: 3px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 9px !important;
+  line-height: 1.2;
   text-align: center;
 }
-
-/* ✨ 新增：當含有自訂備註時，日曆格染上極具質感的奶油香檳金底色 */
+:deep(.holiday-day .van-calendar__top-info) { color: #ef4444 !important; font-weight: 700; }
+:deep(.cleaning-day .van-calendar__top-info) { color: #f97316 !important; font-weight: 700; }
+:deep(.van-calendar__bottom-info) {
+  position: absolute !important;
+  bottom: 7px !important;
+  left: 3px;
+  right: 3px;
+  overflow: hidden;
+  padding: 3px 0;
+  border-radius: 6px;
+  white-space: nowrap;
+  font-size: 11px !important;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  text-align: center;
+}
+:deep(.record-work-day .van-calendar__bottom-info) { color: #167c58 !important; background: #eaf7f0; }
+:deep(.record-leave-day .van-calendar__bottom-info) { color: #8290a0 !important; background: #f1f4f8; }
 :deep(.has-remark-day) {
-  background-color: #fffbeb !important; 
+  background-color: #fffbeb !important;
   border: 1px dashed #fef3c7 !important;
   border-radius: 6px;
 }
+:deep(.van-calendar__selected-day) {
+  position: absolute;
+  top: 3px;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: flex-start !important;
+  width: calc(100% - 6px) !important;
+  height: calc(100% - 6px) !important;
+  padding-top: 6px !important;
+  border-radius: 10px !important;
+  box-sizing: border-box !important;
+}
+:deep(.van-calendar__selected-day .van-calendar__top-info) { color: #fff !important; }
+:deep(.van-calendar__selected-day .van-calendar__bottom-info) { color: #fff !important; background: rgba(255, 255, 255, .2) !important; }
 
 .workflow { margin-top: 4px; }
-.section-card { margin: 0 16px; padding: 16px; border-radius: 16px; background: #fff; box-shadow: 0 6px 20px rgba(15, 23, 42, 0.05); }
-.section-card--tight { padding: 0; overflow: hidden; background: #fff; }
+.section-card { margin: 0 16px; padding: 18px; border-radius: 22px; background: #fff; box-shadow: 0 12px 28px rgba(29, 66, 106, .07); }
 .section-note { margin: 0 0 14px; font-size: 13px; line-height: 1.5; color: #646566; }
 :deep(.gross-cell .van-cell__value) { font-weight: 700; color: #1989fa; font-size: 16px; }
 
-/* ==========================================
-   🌟 日曆終極美化版：完美三層堆疊與選取框
-   ========================================== */
-
-/* 1. 統一格子的基礎高度，並讓「日期數字」乖乖待在最上方 */
-:deep(.van-calendar__day) {
-  height: 76px !important;
-  position: relative !important;
-  padding-top: 8px !important; /* 讓日期數字固定在上方留白 */
-  align-items: flex-start !important; /* 取消預設的置中 */
-}
-
-/* 🏷️ 2. 魔法定位：把原本在最上面的「清潔日/假日」，強制拉到日期數字的正下方 */
-:deep(.van-calendar__top-info) {
-  position: absolute !important;
-  top: 30px !important; /* 關鍵：距離頂部 30px，剛好卡在中間 */
-  left: 0; right: 0;
-  font-size: 10px !important;
-  line-height: 1.2;
-  text-align: center;
-}
-/* 中間標籤的顏色 */
-:deep(.holiday-day .van-calendar__top-info) { color: #ef4444 !important; font-weight: bold; } /* 柔和紅 */
-:deep(.cleaning-day .van-calendar__top-info) { color: #f97316 !important; font-weight: bold; } /* 橘色 */
-
-/* 💰 3. 確保「金額」永遠貼在格子的最底部 */
-:deep(.van-calendar__bottom-info) {
-  position: absolute !important;
-  bottom: 8px !important; /* 距離底部 8px */
-  left: 0; right: 0;
-  font-size: 10px !important;
-  line-height: 1.2;
-  text-align: center;
-}
-/* 底部金額的顏色 */
-:deep(.record-work-day .van-calendar__bottom-info) { color: #10b981 !important; font-weight: bold; } /* 翡翠綠 */
-:deep(.record-leave-day .van-calendar__bottom-info) { color: #9ca3af !important; } /* 灰色 */
-
-/* 🔵 4. 拯救被壓扁的藍色選取框，改成高質感的圓角矩形 */
-:deep(.van-calendar__selected-day) {
-  width: calc(100% - 8px) !important; /* 左右稍微留白，看起來像獨立按鈕 */
-  height: calc(100% - 6px) !important; /* 撐滿上下 */
-  border-radius: 12px !important; /* 更圓潤現代 */
-  position: absolute;
-  top: 3px;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start !important;
-  padding-top: 5px !important; /* 配合日期數字的高度 */
-}
-
-/* 5. 確保格子被選中變成藍底時，裡面的字都自動變成白色才看得清楚 */
-:deep(.van-calendar__selected-day .van-calendar__top-info),
-:deep(.van-calendar__selected-day .van-calendar__bottom-info) {
-  color: #ffffff !important;
-}
-
 .weekly-actions { display: grid; gap: 12px; }
-.weekly-actions :deep(.van-button--primary) { min-height: 46px; font-size: 15px; font-weight: 700; box-shadow: 0 8px 20px rgba(25, 137, 250, 0.2); border-radius: 12px; }
+.weekly-actions :deep(.van-button--primary) { min-height: 50px; font-size: 15px; font-weight: 800; box-shadow: 0 8px 20px rgba(25, 137, 250, 0.2); border-radius: 15px; }
+.weekly-actions :deep(.van-button--plain) { min-height: 42px; border-radius: 12px; box-shadow: none; }
 .empty-state { padding: 30px 16px; text-align: center; }
 .empty-state__title { font-size: 14px; font-weight: 700; color: #4b5563; }
 .empty-state__text { margin-top: 6px; font-size: 12px; line-height: 1.5; color: #9ca3af; }
-.weekly-record { margin: 12px; padding: 14px; border-radius: 14px; background: #ffffff; border: 1px solid #eef2f7; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.03); }
-.weekly-record__top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.weekly-record__date { font-size: 14px; font-weight: 700; color: #1f2937; display: flex; align-items: center; }
-.weekly-record__pay { font-size: 20px; font-weight: 800; color: #1989fa; }
-.weekly-record__time { margin-top: 6px; font-size: 13px; color: #4b5563; }
-.weekly-record__meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.weekly-record__meta span { padding: 4px 8px; border-radius: 999px; background: #f3f4f6; font-size: 11px; font-weight: 600; color: #4b5563; }
-.weekly-record__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.schedule-collapse { margin: 0 16px; overflow: hidden; border: 1px solid #e6edf5; border-radius: 20px; background: #fff; box-shadow: 0 12px 28px rgba(29, 66, 106, .07); }
+:deep(.schedule-collapse > .van-collapse-item > .van-cell) { min-height: 62px; padding: 12px 18px; }
+.schedule-overview { display: grid; gap: 2px; }
+.schedule-overview strong { color: #1b2a3b; font-size: 14px; font-weight: 800; }
+.schedule-overview small { color: #8290a0; font-size: 11px; }
+:deep(.schedule-collapse > .van-collapse-item > .van-collapse-item__wrapper .van-collapse-item__content) { padding: 0 12px 12px; }
+.record-collapse { overflow: hidden; border: 1px solid #e6edf5; border-radius: 13px; }
+:deep(.record-collapse .van-cell) { min-height: 48px; padding: 10px 12px; }
+:deep(.record-collapse .van-cell__title) { min-width: 0; }
+:deep(.record-collapse .van-cell__value) { flex: 0 1 auto; max-width: 50%; margin-left: 8px; }
+.schedule-date { color: #1b2a3b; font-size: 13px; font-weight: 800; white-space: nowrap; }
+.schedule-date small { margin-left: 3px; color: #8290a0; font-size: 11px; }
+.schedule-pay { color: #166dd1; font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.schedule-detail { padding: 2px 0; }
+.schedule-detail__tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.schedule-detail p { margin: 8px 0 0; color: #657588; font-size: 12px; line-height: 1.5; }
+.schedule-detail__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.schedule-detail__actions :deep(.van-button) { min-height: 34px; border-radius: 9px; }
 .weekly-summary-card { padding: 14px 16px 16px; }
 .weekly-summary__row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; }
 .weekly-summary__label { font-size: 13px; color: #4b5563; }
@@ -1039,22 +1018,4 @@ const deleteRecord = (recordId) => {
 .data-management-collapse { margin: 0 16px; overflow: hidden; border-radius: 16px; background: #fff; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04); border: 1px solid #ebedf0; }
 :deep(.data-management-collapse .van-cell) { padding: 14px 16px; font-weight: bold; }
 :deep(.data-management-collapse .van-collapse-item__content) { padding: 14px 16px; background: #fafafa; }
-/* ========== 修正藍色選取框爆版問題 ========== */
-
-/* 1. 強制讓選中時的藍色方塊撐滿我們自訂的格子高度，並將文字靠上對齊 */
-:deep(.van-calendar__selected-day) {
-  width: calc(100% - 6px) !important;
-  height: calc(100% - 6px) !important;
-  border-radius: 8px !important;
-  display: flex !important;
-  flex-direction: column !important;
-  justify-content: flex-start !important;
-  padding-top: 6px !important;
-  box-sizing: border-box !important;
-}
-
-/* 2. 當處於選中狀態（藍色底）時，確保底下所有的金額、備註字體都變成白色，避免對比度不佳看不清楚 */
-:deep(.van-calendar__selected-day .van-calendar__bottom-info) {
-  color: #ffffff !important;
-}
 </style>

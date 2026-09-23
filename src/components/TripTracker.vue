@@ -252,10 +252,6 @@ onMounted(refreshData)
       <van-icon name="logistics" class="header-icon" aria-hidden="true" />
     </header>
 
-    <p class="memory-notice" role="status">
-      <van-icon name="info-o" /> 暫存模式：資料只存在記憶體，關閉或重新啟動 App 後會消失。
-    </p>
-
     <section class="overview" aria-labelledby="overview-title">
       <div class="overview__top">
         <div>
@@ -1034,15 +1030,6 @@ onMounted(refreshData)
 }
 .passenger-stats__row > span:last-child {
   font-weight: 700;
-}
-.memory-notice {
-  margin: 0 2px 16px;
-  color: #6d7d8e;
-  font-size: 11px;
-  line-height: 1.5;
-}
-.memory-notice .van-icon {
-  margin-right: 3px;
 }
 .sheet-form {
   display: flex;

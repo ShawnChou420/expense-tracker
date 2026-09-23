@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import * as XLSX from 'xlsx'
+import TripTracker from './components/TripTracker.vue'
 import { useShiftCalculator } from './composables/useShiftCalculator.js'
 import {
   formatHours,
@@ -137,6 +138,7 @@ const endTime = ref('06:00')
 const dataManagementSections = ref([])
 const editingRecordId = ref(null)
 const records = ref([])
+const activeTab = ref('payroll')
 
 const parseWorkDate = (dateText) => {
   const [year, month, day] = dateText.split('-').map(Number)
@@ -389,13 +391,6 @@ const effectiveStartTime = computed(() => {
 // 原本的 effectiveEndTime 維持不變
 const effectiveEndTime = computed(() => shiftType.value === 'leave' ? '00:00' : endTime.value)
 
-const monthlyRecords = computed(() => {
-  return records.value.filter(r => r.workDate.startsWith(currentMonthPrefix.value) && r.shiftType !== 'leave')
-})
-
-const monthlyTotalPay = computed(() => roundTo(monthlyRecords.value.reduce((sum, r) => sum + r.grossPay, 0), 2))
-const monthlyTotalHours = computed(() => roundTo(monthlyRecords.value.reduce((sum, r) => sum + r.paidMinutes, 0) / 60, 2))
-
 const {
   workSummary,
   isNightShift,
@@ -635,7 +630,7 @@ const deleteRecord = (recordId) => {
 
 <template>
   <div class="page">
-    
+    <section v-show="activeTab === 'payroll'">
     <div class="header">
       <div class="header-main">
         <h1>薪資計算與排班預估</h1>
@@ -644,6 +639,9 @@ const deleteRecord = (recordId) => {
         </van-button>
       </div>
       <p>點擊日曆日期預填時間。可自由編輯請假、填寫自訂備註，所有數據全域即時換算。</p>
+    </div>
+    <div class="memory-notice memory-notice--payroll" role="status">
+      <strong>暫存模式</strong>：目前班表與車資資料只存在 App 記憶體，關閉或重新啟動後會消失。
     </div>
 
     <div class="section calendar-section">
@@ -890,15 +888,24 @@ const deleteRecord = (recordId) => {
       </div>
 
     </div>
-  </div>
+    <van-popup v-model:show="showCurrencyPicker" position="bottom" round>
+      <van-picker title="選擇全域對照外幣" :columns="currencyColumns" @confirm="onCurrencyConfirm" @cancel="showCurrencyPicker = false" />
+    </van-popup>
+    </section>
 
-  <van-popup v-model:show="showCurrencyPicker" position="bottom" round>
-    <van-picker title="選擇全域對照外幣" :columns="currencyColumns" @confirm="onCurrencyConfirm" @cancel="showCurrencyPicker = false" />
-  </van-popup>
+    <TripTracker v-show="activeTab === 'trips'" />
+
+    <van-tabbar v-model="activeTab" fixed placeholder safe-area-inset-bottom>
+      <van-tabbar-item name="payroll" icon="balance-o">薪資</van-tabbar-item>
+      <van-tabbar-item name="trips" icon="friends-o">車資</van-tabbar-item>
+    </van-tabbar>
+  </div>
 </template>
 
 <style scoped>
 .page { min-height: 100vh; background: #f7f8fa; padding: 20px 0 40px; }
+.memory-notice { margin: 0 16px; padding: 12px; border: 1px solid #fde68a; border-radius: var(--radius-medium); background: #fffbeb; color: #92400e; font-size: var(--font-caption); line-height: 1.5; }
+.memory-notice--payroll { margin-top: 4px; }
 .header { padding: 0 16px 12px; }
 .header-main { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .header h1 { margin: 0; font-size: 24px; font-weight: 800; color: #1f2937; }

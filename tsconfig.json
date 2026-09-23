@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM"],
+    "skipLibCheck": true,
+    "noImplicitAny": false,
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["src/domain/**/*.js", "src/repositories/**/*.js"],
+  "exclude": ["node_modules", "dist", "android"]
+}

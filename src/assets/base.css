@@ -1,5 +1,21 @@
 /* color palette from <https://github.com/vuejs/theme> */
 :root {
+  --font-title: 28px;
+  --font-heading: 20px;
+  --font-body: 16px;
+  --font-caption: 13px;
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --radius-small: 8px;
+  --radius-medium: 12px;
+  --radius-large: 16px;
+  --color-primary: #1989fa;
+  --color-income: #15803d;
+  --color-expense: #dc2626;
+  --color-pending: #b45309;
+  --color-muted: #6b7280;
   --vt-c-white: #ffffff;
   --vt-c-white-soft: #f8f8f8;
   --vt-c-white-mute: #f2f2f2;

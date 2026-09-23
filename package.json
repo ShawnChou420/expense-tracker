@@ -7,19 +7,36 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "format": "oxfmt src/"
+    "format": "oxfmt src/",
+    "format:check": "oxfmt src/domain src/repositories src/components/TripTracker.vue tests --check",
+    "lint": "eslint src/domain src/repositories src/components/TripTracker.vue tests",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "android:sync": "npm run build && npx cap sync android",
+    "android:open": "npx cap open android",
+    "android:run": "npm run build && npx cap sync android && npx cap run android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
     "vant": "^4.9.22",
     "vue": "beta",
     "vue-imask": "^7.6.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@vitejs/plugin-vue": "^6.0.4",
+    "eslint": "^10.11.0",
+    "eslint-plugin-vue": "^10.11.0",
+    "globals": "^17.12.0",
     "oxfmt": "^0.35.0",
+    "typescript": "^7.0.2",
     "vite": "beta",
-    "vite-plugin-vue-devtools": "^8.0.6"
+    "vite-plugin-vue-devtools": "^8.0.6",
+    "vitest": "^4.1.11"
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"

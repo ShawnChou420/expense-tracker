@@ -5,14 +5,9 @@ import { formatLocalDate, getWeekRange, parseLocalDate } from '../domain/date.js
 import { dollarsToCents, formatAud, formatCentsInput } from '../domain/money.js'
 import { getTripStats } from '../domain/tripStats.js'
 import { createPassenger, createTrip, getPassengerDefaultFareCents } from '../domain/trips.js'
-import {
-  createInMemoryPassengerRepository,
-  createInMemoryTripRepository,
-} from '../repositories/inMemoryTripRepositories.js'
+import { passengerRepository, tripRepository } from '../repositories/appRepositories.js'
 import { getTodayDate } from '../utils/time.js'
 
-const passengerRepository = createInMemoryPassengerRepository()
-const tripRepository = createInMemoryTripRepository()
 const passengers = ref([])
 const trips = ref([])
 const selectedWeekDate = ref(getTodayDate())
@@ -176,6 +171,11 @@ function refreshChargeForms(useDefaults = true) {
   })
 }
 
+function setPaymentStatus(charge, status) {
+  charge.paymentStatus = status
+  if (status === 'PAID' && !charge.paidAt) charge.paidAt = getTodayDate()
+}
+
 watch(selectedPassengerIds, () => refreshChargeForms(), { deep: true })
 watch(
   () => tripForm.value.tripMode,
@@ -200,10 +200,14 @@ async function saveTrip() {
     passengerId: charge.passengerId,
     amountCents: dollarsToCents(charge.amount),
     paymentStatus: charge.paymentStatus,
-    paidAt: charge.paymentStatus === 'PAID' ? charge.paidAt || tripForm.value.date : undefined,
+    paidAt: charge.paymentStatus === 'PAID' ? charge.paidAt : undefined,
   }))
   if (charges.some((charge) => charge.amountCents === null)) {
     showToast('每位乘客都需要有效的非負金額')
+    return
+  }
+  if (charges.some((charge) => charge.paymentStatus === 'PAID' && !parseLocalDate(charge.paidAt))) {
+    showToast('請為已收車資選擇有效的收款日期')
     return
   }
   const existing = trips.value.find((trip) => trip.id === editingTripId.value)
@@ -242,20 +246,26 @@ onMounted(refreshData)
 </script>
 
 <template>
-  <section class="trip-page">
-    <header class="trip-page__header">
+  <section class="trip-page app-page">
+    <header class="trip-page__header app-page__header">
       <div>
-        <p class="eyebrow">TRIP LEDGER</p>
         <h1>車資紀錄</h1>
         <p>每趟記清楚，收款不漏掉。</p>
       </div>
-      <van-icon name="logistics" class="header-icon" aria-hidden="true" />
+      <van-button
+        class="app-page__action header-action"
+        type="primary"
+        size="small"
+        icon="plus"
+        @click="startNewTrip"
+      >
+        {{ activePassengers.length ? '新增行程' : '新增乘客' }}
+      </van-button>
     </header>
 
-    <section class="overview" aria-labelledby="overview-title">
+    <section class="overview app-page__card" aria-labelledby="overview-title">
       <div class="overview__top">
         <div>
-          <p class="eyebrow">THIS WEEK</p>
           <h2 id="overview-title">本週車資</h2>
         </div>
         <button class="today-link" type="button" @click="selectCurrentWeek">回本週</button>
@@ -272,12 +282,12 @@ onMounted(refreshData)
           <van-icon name="arrow" />
         </button>
       </div>
-      <div class="overview__hero">
+      <div v-if="weeklyTrips.length" class="overview__hero">
         <span>本週應收</span>
         <strong>{{ formatAud(stats.receivableCents) }}</strong>
         <small>全部行程的約定車資</small>
       </div>
-      <div class="summary-grid">
+      <div v-if="weeklyTrips.length" class="summary-grid">
         <div class="summary-stat summary-stat--paid">
           <span class="stat-dot" aria-hidden="true"></span>
           <div>
@@ -291,27 +301,22 @@ onMounted(refreshData)
           </div>
         </div>
       </div>
+      <p v-else class="overview__empty">本週尚無行程，新增後會顯示應收、已收與待收。</p>
     </section>
-
-    <van-button class="new-trip-button" type="primary" block icon="plus" @click="startNewTrip">
-      {{ activePassengers.length ? '新增車資行程' : '新增乘客，開始記錄' }}
-    </van-button>
 
     <section class="trip-section" aria-labelledby="trips-title">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">ACTIVITY</p>
           <h2 id="trips-title">
             本週行程 <span class="section-count">{{ weeklyTrips.length }}</span>
           </h2>
         </div>
       </div>
       <div v-if="weeklyTrips.length === 0" class="empty-card">
-        <van-icon name="records" class="empty-card__icon" />
         <strong>這週還沒有行程</strong>
         <span>{{
           activePassengers.length
-            ? '按上方「新增車資行程」開始記錄。'
+            ? '按上方「新增行程」開始記錄。'
             : '先新增常用乘客，就能開始記錄。'
         }}</span>
       </div>
@@ -357,7 +362,6 @@ onMounted(refreshData)
     >
       <div class="section-heading">
         <div>
-          <p class="eyebrow">TO COLLECT</p>
           <h2 id="pending-title">待收款項</h2>
         </div>
       </div>
@@ -428,7 +432,6 @@ onMounted(refreshData)
     >
       <div class="section-heading">
         <div>
-          <p class="eyebrow">OVERVIEW</p>
           <h2 id="passenger-stats-title">乘客統計</h2>
         </div>
       </div>
@@ -451,7 +454,6 @@ onMounted(refreshData)
       <form class="sheet-form" @submit.prevent="savePassenger">
         <div class="sheet-header">
           <div>
-            <p class="eyebrow">PASSENGER</p>
             <h2>{{ editingPassengerId ? '編輯乘客' : '新增乘客' }}</h2>
           </div>
           <button type="button" aria-label="關閉" @click="showPassengerForm = false">
@@ -498,7 +500,6 @@ onMounted(refreshData)
       <form class="sheet-form" @submit.prevent="saveTrip">
         <div class="sheet-header">
           <div>
-            <p class="eyebrow">TRIP</p>
             <h2>{{ editingTripId ? '編輯行程' : '新增車資行程' }}</h2>
           </div>
           <button type="button" aria-label="關閉" @click="showTripForm = false">
@@ -560,10 +561,19 @@ onMounted(refreshData)
                   label="AUD $"
                   placeholder="0.00"
                 />
-                <van-radio-group v-model="charge.paymentStatus" class="payment-choices"
+                <van-radio-group
+                  :model-value="charge.paymentStatus"
+                  class="payment-choices"
+                  @update:model-value="setPaymentStatus(charge, $event)"
                   ><van-radio name="PENDING">待收</van-radio
                   ><van-radio name="PAID">已收</van-radio></van-radio-group
                 >
+                <van-field
+                  v-if="charge.paymentStatus === 'PAID'"
+                  v-model="charge.paidAt"
+                  type="date"
+                  label="收款日期"
+                />
               </div>
             </div>
           </template>
@@ -589,10 +599,7 @@ onMounted(refreshData)
 
 <style scoped>
 .trip-page {
-  min-height: 100vh;
-  padding: 20px max(16px, env(safe-area-inset-left)) calc(92px + env(safe-area-inset-bottom))
-    max(16px, env(safe-area-inset-right));
-  background: radial-gradient(circle at 12% 0, #e8f4ff 0, transparent 260px), #f5f7fa;
+  width: 100%;
   color: #1b2a3b;
 }
 .trip-page__header,
@@ -610,42 +617,16 @@ onMounted(refreshData)
   justify-content: space-between;
 }
 .trip-page__header {
-  gap: 18px;
-  padding: 0 2px 12px;
+  gap: 10px;
 }
-.eyebrow {
-  margin: 0 0 5px;
-  color: #6883a1;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-}
-.trip-page__header h1 {
-  margin: 0;
-  font-size: 29px;
-  line-height: 1.2;
-  font-weight: 800;
-}
-.trip-page__header p:last-child {
-  margin: 8px 0 0;
-  color: #657588;
-  font-size: 13px;
-}
-.header-icon {
-  display: grid;
-  flex: 0 0 46px;
-  height: 46px;
-  place-items: center;
-  border-radius: 15px;
-  background: #deecfc;
-  color: #1475d7;
-  font-size: 24px;
+.header-action {
+  flex: none;
+  max-width: 48%;
+  padding-inline: 12px;
+  white-space: normal;
 }
 .overview {
-  padding: 20px;
-  border-radius: 22px;
-  background: #fff;
-  box-shadow: 0 12px 28px rgba(29, 66, 106, 0.07);
+  padding: 15px 16px;
 }
 .overview h2,
 .section-heading h2 {
@@ -667,8 +648,8 @@ onMounted(refreshData)
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-top: 17px;
-  padding: 5px;
+  margin-top: 10px;
+  padding: 3px;
   border: 1px solid #e6edf5;
   border-radius: 14px;
   background: #f8fafc;
@@ -699,7 +680,7 @@ onMounted(refreshData)
 .overview__hero {
   display: grid;
   gap: 3px;
-  padding: 23px 2px 20px;
+  padding: 12px 2px 11px;
   border-bottom: 1px solid #edf1f5;
 }
 .overview__hero span {
@@ -708,7 +689,7 @@ onMounted(refreshData)
 }
 .overview__hero strong {
   color: #166dd1;
-  font-size: clamp(32px, 9vw, 40px);
+  font-size: clamp(28px, 8vw, 36px);
   line-height: 1.15;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
@@ -719,9 +700,15 @@ onMounted(refreshData)
 }
 .summary-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
-  padding-top: 18px;
+  padding-top: 11px;
+}
+.overview__empty {
+  margin: 10px 2px 0;
+  color: #657588;
+  font-size: 13px;
+  line-height: 1.45;
 }
 .summary-stat {
   display: flex;
@@ -742,7 +729,7 @@ onMounted(refreshData)
   font-size: clamp(15px, 4.2vw, 20px);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .summary-stat--paid strong {
   color: #167c58;
@@ -764,16 +751,8 @@ onMounted(refreshData)
 .summary-stat--pending .stat-dot {
   color: #e39b3b;
 }
-.new-trip-button {
-  height: 52px;
-  margin-top: 16px;
-  border-radius: 15px;
-  font-size: 16px;
-  font-weight: 800;
-  box-shadow: 0 8px 18px rgba(25, 137, 250, 0.2);
-}
 .trip-section {
-  margin-top: 30px;
+  margin-top: var(--page-section-gap);
 }
 .section-heading {
   margin: 0 2px 13px;
@@ -787,16 +766,12 @@ onMounted(refreshData)
 .empty-card {
   display: grid;
   justify-items: center;
-  gap: 8px;
-  padding: 35px 18px;
+  gap: 5px;
+  padding: 17px 14px;
   border: 1px dashed #d6e1ed;
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.75);
   text-align: center;
-}
-.empty-card__icon {
-  color: #8aadd1;
-  font-size: 27px;
 }
 .empty-card strong {
   font-size: 15px;
@@ -817,6 +792,7 @@ onMounted(refreshData)
 .trip-card__top {
   gap: 8px;
   align-items: flex-start;
+  flex-wrap: wrap;
 }
 .trip-card__date {
   font-size: 15px;
@@ -831,7 +807,8 @@ onMounted(refreshData)
   color: #166dd1;
   font-size: 21px;
   font-weight: 800;
-  white-space: nowrap;
+  margin-left: auto;
+  overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
 .trip-card__charges {
@@ -843,13 +820,12 @@ onMounted(refreshData)
   gap: 8px;
   min-height: 34px;
   font-size: 13px;
+  flex-wrap: wrap;
 }
 .charge-row__name {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .charge-row__amount {
   font-weight: 700;
@@ -1210,7 +1186,7 @@ onMounted(refreshData)
 }
 .sheet-footer {
   flex: 0 0 auto;
-  padding: 12px 16px max(14px, env(safe-area-inset-bottom));
+  padding: 12px 16px 14px;
   border-top: 1px solid #e9edf2;
   background: #fff;
 }

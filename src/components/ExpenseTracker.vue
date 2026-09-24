@@ -12,9 +12,9 @@ import {
   getExpenseSummary,
 } from '../domain/expenses.js'
 import { dollarsToCents, formatAud, formatCentsInput } from '../domain/money.js'
-import { createInMemoryExpenseRepository } from '../repositories/inMemoryExpenseRepository.js'
+import { expenseRepository } from '../repositories/appRepositories.js'
 
-const repository = createInMemoryExpenseRepository()
+const repository = expenseRepository
 const expenses = ref([])
 const selectedDate = ref(formatLocalDate(new Date()))
 const filter = ref('ALL')
@@ -178,20 +178,25 @@ async function removeExpense(expense) {
 </script>
 
 <template>
-  <section class="expense-page">
-    <header class="page-header">
+  <section class="expense-page app-page">
+    <header class="page-header app-page__header">
       <div>
-        <p class="eyebrow">EXPENSE LEDGER</p>
         <h1>支出紀錄</h1>
         <p>生活花費與固定扣款，一起記清楚。</p>
       </div>
-      <span class="header-icon"><van-icon name="balance-o" /></span>
+      <van-button
+        class="app-page__action header-action"
+        type="primary"
+        size="small"
+        icon="plus"
+        @click="openForm()"
+        >記一筆支出</van-button
+      >
     </header>
 
-    <section class="overview" aria-labelledby="expense-overview-title">
+    <section class="overview app-page__card" aria-labelledby="expense-overview-title">
       <div class="overview-top">
         <div>
-          <p class="eyebrow eyebrow--light">YOUR WEEK</p>
           <h2 id="expense-overview-title">本週支出</h2>
         </div>
         <button type="button" class="today-link" @click="selectCurrentWeek">回本週</button>
@@ -205,51 +210,22 @@ async function removeExpense(expense) {
           <van-icon name="arrow" />
         </button>
       </div>
-      <div class="overview-amount">
+      <div v-if="summary.count" class="overview-amount">
         <span>已支付</span><strong>{{ formatAud(summary.paidCents) }}</strong
         ><small>本週現金流支出</small>
       </div>
-      <div class="overview-bottom">
+      <div v-if="summary.count" class="overview-bottom">
         <span
           >預計支付 <strong>{{ formatAud(summary.plannedCents) }}</strong></span
         ><span>{{ summary.count }} 筆紀錄</span>
       </div>
-      <p class="overview-note">固定支出未標記已付前，只列入預計支付。</p>
+      <p v-if="summary.count" class="overview-note">固定支出未標記已付前，只列入預計支付。</p>
+      <p v-else class="overview-empty">本週尚無支出，記錄後會區分已支付與預計支付。</p>
     </section>
-
-    <van-button class="add-button" type="primary" block icon="plus" @click="openForm()"
-      >記一筆支出</van-button
-    >
-
-    <section
-      v-if="summary.byGroup.length"
-      class="category-section"
-      aria-labelledby="category-title"
-    >
-      <div class="section-heading">
-        <div>
-          <p class="eyebrow">BREAKDOWN</p>
-          <h2 id="category-title">花在哪裡</h2>
-        </div>
-        <small>僅計已支付</small>
-      </div>
-      <div class="category-breakdown">
-        <div v-for="group in summary.byGroup" :key="group.id" class="category-row">
-          <span class="category-icon"><van-icon :name="group.icon" /></span>
-          <span class="category-name">{{ group.label }}</span>
-          <strong>{{ formatAud(group.amountCents) }}</strong>
-        </div>
-      </div>
-    </section>
-
-    <p v-if="summary.investmentLossCents" class="investment-note">
-      已記錄投資虧損 {{ formatAud(summary.investmentLossCents) }}；不列入生活支出現金流。
-    </p>
 
     <section class="records-section" aria-labelledby="records-title">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">ACTIVITY</p>
           <h2 id="records-title">支出紀錄</h2>
         </div>
         <small>{{ weeklyExpenses.length }} 筆</small>
@@ -269,9 +245,16 @@ async function removeExpense(expense) {
         </button>
       </div>
       <div v-if="weeklyExpenses.length === 0" class="empty-card">
-        <van-icon name="records" />
         <strong>{{ filter === 'ALL' ? '本週還沒有支出' : '這個分類還沒有紀錄' }}</strong>
-        <span>按「記一筆支出」，開始記錄生活花費或固定扣款。</span>
+        <span>開始記錄生活花費或固定扣款。</span>
+        <van-button
+          v-if="filter === 'ALL'"
+          class="app-page__action"
+          type="primary"
+          size="small"
+          @click="openForm()"
+          >新增支出</van-button
+        >
       </div>
       <article v-for="expense in weeklyExpenses" :key="expense.occurrenceId" class="expense-card">
         <div class="expense-card__main">
@@ -312,11 +295,32 @@ async function removeExpense(expense) {
       </article>
     </section>
 
+    <section
+      v-if="summary.byGroup.length"
+      class="category-section"
+      aria-labelledby="category-title"
+    >
+      <div class="section-heading">
+        <h2 id="category-title">花在哪裡</h2>
+        <small>僅計已支付</small>
+      </div>
+      <div class="category-breakdown">
+        <div v-for="group in summary.byGroup" :key="group.id" class="category-row">
+          <span class="category-icon"><van-icon :name="group.icon" /></span>
+          <span class="category-name">{{ group.label }}</span>
+          <strong>{{ formatAud(group.amountCents) }}</strong>
+        </div>
+      </div>
+    </section>
+
+    <p v-if="summary.investmentLossCents" class="investment-note">
+      已記錄投資虧損 {{ formatAud(summary.investmentLossCents) }}；不列入生活支出現金流。
+    </p>
+
     <van-popup v-model:show="showForm" position="bottom" round safe-area-inset-bottom>
       <form class="sheet-form" @submit.prevent="saveExpense">
         <div class="sheet-header">
           <div>
-            <p class="eyebrow">NEW ENTRY</p>
             <h2>{{ editingId ? '編輯支出' : '記一筆支出' }}</h2>
           </div>
           <button type="button" aria-label="關閉" @click="showForm = false">
@@ -446,10 +450,7 @@ async function removeExpense(expense) {
 
 <style scoped>
 .expense-page {
-  min-height: 100vh;
-  padding: 22px max(16px, env(safe-area-inset-right)) calc(92px + env(safe-area-inset-bottom))
-    max(16px, env(safe-area-inset-left));
-  background: radial-gradient(circle at 12% 0, #e8f4ff 0, transparent 260px), #f5f7fa;
+  width: 100%;
   color: #1b2a3b;
 }
 .page-header,
@@ -466,51 +467,23 @@ async function removeExpense(expense) {
   justify-content: space-between;
 }
 .page-header {
-  padding: 0 2px 18px;
-  gap: 12px;
+  gap: 10px;
 }
-.eyebrow {
-  margin: 0 0 6px;
-  color: #6883a1;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-}
-.page-header h1 {
-  margin: 0;
-  font-size: 29px;
-  line-height: 1.15;
-  letter-spacing: -0.03em;
-}
-.page-header p:last-child {
-  margin: 8px 0 0;
-  color: #657588;
-  font-size: 13px;
-}
-.header-icon {
-  display: grid;
-  flex: 0 0 46px;
-  height: 46px;
-  place-items: center;
-  border-radius: 16px;
-  background: #deecfc;
-  color: #1475d7;
-  font-size: 23px;
+.header-action {
+  flex: none;
+  max-width: 48%;
+  padding-inline: 12px;
+  white-space: normal;
 }
 .overview {
-  padding: 21px;
-  border-radius: 24px;
-  background: #fff;
-  box-shadow: 0 12px 28px rgba(29, 66, 106, 0.07);
-}
-.eyebrow--light {
-  color: #6883a1;
+  padding: 15px 16px;
 }
 .overview h2 {
   margin: 0;
   font-size: 17px;
 }
 .today-link {
+  min-height: 38px;
   border: 0;
   background: transparent;
   color: #1976d2;
@@ -520,16 +493,16 @@ async function removeExpense(expense) {
   font-weight: 700;
 }
 .week-switcher {
-  margin-top: 20px;
-  padding: 7px;
+  margin-top: 10px;
+  padding: 3px;
   border-radius: 13px;
   border: 1px solid #e6edf5;
   background: #f8fafc;
   text-align: center;
 }
 .week-switcher button {
-  width: 38px;
-  height: 36px;
+  width: 42px;
+  height: 42px;
   border: 0;
   background: transparent;
   color: #345474;
@@ -549,7 +522,7 @@ async function removeExpense(expense) {
 .overview-amount {
   display: flex;
   flex-direction: column;
-  padding: 25px 3px 22px;
+  padding: 12px 3px 10px;
 }
 .overview-amount span {
   color: #657588;
@@ -558,7 +531,7 @@ async function removeExpense(expense) {
 .overview-amount strong {
   margin: 4px 0;
   color: #166dd1;
-  font-size: 39px;
+  font-size: clamp(28px, 8vw, 36px);
   line-height: 1.15;
   letter-spacing: -0.04em;
   font-variant-numeric: tabular-nums;
@@ -568,7 +541,9 @@ async function removeExpense(expense) {
   font-size: 11px;
 }
 .overview-bottom {
-  padding-top: 16px;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding-top: 10px;
   border-top: 1px solid #edf1f5;
   color: #657588;
   font-size: 12px;
@@ -579,37 +554,30 @@ async function removeExpense(expense) {
   font-size: 14px;
 }
 .overview-note {
-  margin: 12px 0 0;
+  margin: 8px 0 0;
   color: #8290a0;
-  font-size: 11px;
+  font-size: 12px;
+}
+.overview-empty {
+  margin: 10px 2px 0;
+  color: #657588;
+  font-size: 13px;
+  line-height: 1.45;
 }
 .investment-note {
-  margin: -12px 2px 24px;
+  margin: 16px 2px 0;
   padding: 11px 13px;
   border-radius: 12px;
   background: #eef2f8;
   color: #566b82;
   font-size: 12px;
 }
-.add-button {
-  height: 52px;
-  margin: 18px 0 28px;
-  border: 0;
-  border-radius: 15px;
-  background: #1989fa;
-  font-weight: 800;
-  font-size: 15px;
-  box-shadow: 0 8px 18px rgba(25, 137, 250, 0.2);
-}
-.add-button:active {
-  background: #1475d7;
-}
 .section-heading {
-  margin: 0 2px 13px;
+  margin: 0 2px 12px;
 }
 .section-heading h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: var(--font-heading);
   letter-spacing: -0.02em;
 }
 .section-heading small {
@@ -617,7 +585,10 @@ async function removeExpense(expense) {
   font-size: 12px;
 }
 .category-section {
-  margin-bottom: 28px;
+  margin-top: var(--page-section-gap);
+}
+.records-section {
+  margin-top: var(--page-section-gap);
 }
 .category-breakdown {
   padding: 4px 16px;
@@ -680,15 +651,11 @@ async function removeExpense(expense) {
   align-items: center;
   flex-direction: column;
   gap: 9px;
-  padding: 34px 20px;
+  padding: 17px 14px;
   border: 1px dashed #d7e3f0;
   border-radius: 20px;
   background: #fff;
   text-align: center;
-}
-.empty-card .van-icon {
-  font-size: 26px;
-  color: #1976d2;
 }
 .empty-card span {
   color: #8290a0;
@@ -705,6 +672,7 @@ async function removeExpense(expense) {
 }
 .expense-card__main {
   gap: 11px;
+  flex-wrap: wrap;
 }
 .expense-card__icon {
   width: 43px;
@@ -719,9 +687,7 @@ async function removeExpense(expense) {
   gap: 5px;
 }
 .expense-card__info strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   font-size: 14px;
 }
 .expense-card__info span {
@@ -730,6 +696,8 @@ async function removeExpense(expense) {
 }
 .expense-card__amount {
   flex: none;
+  margin-left: auto;
+  overflow-wrap: anywhere;
   color: #166dd1;
   font-size: 18px;
   font-variant-numeric: tabular-nums;
@@ -776,6 +744,7 @@ async function removeExpense(expense) {
 }
 .expense-card__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin-left: auto;
 }
@@ -914,7 +883,7 @@ async function removeExpense(expense) {
 }
 .sheet-footer {
   flex: none;
-  padding: 12px 16px calc(14px + env(safe-area-inset-bottom));
+  padding: 12px 16px 14px;
   border-top: 1px solid #e6edf5;
   background: #fff;
 }
@@ -937,12 +906,6 @@ async function removeExpense(expense) {
 @media (max-width: 370px) {
   .group-picker {
     grid-template-columns: repeat(4, 1fr);
-  }
-  .expense-card__amount {
-    font-size: 16px;
-  }
-  .overview-amount strong {
-    font-size: 35px;
   }
 }
 </style>

@@ -31,6 +31,7 @@ import { roundTo } from './number.js'
  * @property {number} doublePay
  * @property {number} sunOrdPay
  * @property {number} grossPay
+ * @property {boolean} designatedWork
  */
 
 const defaultWorkRecord = {
@@ -59,6 +60,7 @@ const defaultWorkRecord = {
   doublePay: 0,
   sunOrdPay: 0,
   grossPay: 0,
+  designatedWork: false,
 }
 
 /**
@@ -100,6 +102,7 @@ export function normalizeWorkRecord(record = {}) {
     doublePay: roundTo(Number(record.doublePay ?? 0), 2),
     sunOrdPay: roundTo(Number(record.sunOrdPay ?? 0), 2),
     grossPay: roundTo(Number(record.grossPay ?? 0), 2),
+    designatedWork: record.designatedWork === true,
   }
 }
 

@@ -6,6 +6,14 @@ export function dollarsToCents(value) {
   return Math.round((numericValue + Number.EPSILON) * 100)
 }
 
+export function signedDollarsToCents(value) {
+  if (value === '' || value === null || value === undefined) return null
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue)) return null
+  const cents = Math.round((Math.abs(numericValue) + Number.EPSILON) * 100)
+  return Number.isSafeInteger(cents) ? Math.sign(numericValue) * cents : null
+}
+
 export function centsToDollars(cents) {
   return (Number(cents) || 0) / 100
 }

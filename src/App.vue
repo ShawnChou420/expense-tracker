@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import * as XLSX from 'xlsx'
 import TripTracker from './components/TripTracker.vue'
 import ExpenseTracker from './components/ExpenseTracker.vue'
+import DashboardPage from './components/DashboardPage.vue'
 import { formatCalendarAmount } from './utils/calendarMoney.js'
 import { useShiftCalculator } from './composables/useShiftCalculator.js'
 import {
@@ -24,6 +25,7 @@ import {
   createWorkRecord,
   normalizeWorkRecord,
 } from './utils/workRecord.js'
+import { ensureUniqueRecordIds, nextRecordId, upsertRecordForDate } from './utils/scheduleRecords.js'
 import { showToast } from 'vant'
 
 // --- 💰 智慧幣別格式化工具 ---
@@ -127,9 +129,8 @@ const dataManagementSections = ref([])
 const scheduleSections = ref([])
 const expandedRecordId = ref('')
 const workInputSection = ref(null)
-const editingRecordId = ref(null)
 const records = ref([])
-const activeTab = ref('payroll')
+const activeTab = ref('dashboard')
 
 const parseWorkDate = (dateText) => {
   const [year, month, day] = dateText.split('-').map(Number)
@@ -147,6 +148,31 @@ watch(workDate, (newDate) => {
 const calendarDefaultDate = computed(() => parseWorkDate(workDate.value))
 const calendarMinDate = new Date(2025, 0, 1)
 const calendarMaxDate = new Date(2027, 11, 31)
+const selectedRecord = computed(() => records.value.find((record) => record.workDate === workDate.value))
+const selectedDateHasDefaultShift = computed(() => {
+  const defaults = getDefaultShiftForDate(parseWorkDate(workDate.value))
+  return defaults.startTime !== defaults.endTime
+})
+
+const loadSelectedDate = () => {
+  const existingRecord = selectedRecord.value
+
+  if (existingRecord) {
+    startTime.value = existingRecord.startTime
+    endTime.value = existingRecord.endTime
+    shiftType.value = existingRecord.shiftType || 'normal'
+    isCleaningDay.value = existingRecord.isCleaningDay || false
+    remark.value = existingRecord.remark || ''
+    return
+  }
+
+  const defaults = getDefaultShiftForDate(parseWorkDate(workDate.value))
+  startTime.value = defaults.startTime
+  endTime.value = defaults.endTime
+  shiftType.value = defaults.shiftType
+  isCleaningDay.value = defaults.isCleaningDay
+  remark.value = ''
+}
 
 // 點擊日曆上的某一天
 const onDateSelect = (date) => {
@@ -154,16 +180,7 @@ const onDateSelect = (date) => {
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   workDate.value = `${year}-${month}-${day}`
-
-  const existingRecord = records.value.find(r => r.workDate === workDate.value)
-  if (existingRecord) {
-    startTime.value = existingRecord.startTime
-    endTime.value = existingRecord.endTime
-    shiftType.value = existingRecord.shiftType || 'normal'
-    isCleaningDay.value = existingRecord.isCleaningDay || false
-    remark.value = existingRecord.remark || '' // 精準回填歷史備註
-    return
-  }
+  loadSelectedDate()
 }
 
 // --- 批量填充輔助函數：取得特定星期的預設工時設定 ---
@@ -234,6 +251,7 @@ const fillCurrentMonth = () => {
 const bulkAddRecords = (startDate, endDate) => {
   const newRecords = []
   let currentDate = new Date(startDate)
+  let nextId = nextRecordId(records.value)
 
   while (currentDate <= endDate) {
     const year = currentDate.getFullYear()
@@ -249,6 +267,7 @@ const bulkAddRecords = (startDate, endDate) => {
       
       // 直接呼叫你原本寫好的生成函數
       const record = buildWorkRecordFromInputs({
+        id: nextId++,
         workDate: dateStr,
         startTime: defaultShift.startTime,
         endTime: defaultShift.endTime,
@@ -265,7 +284,7 @@ const bulkAddRecords = (startDate, endDate) => {
   }
 
   if (newRecords.length > 0) {
-    records.value = [...records.value, ...newRecords]
+    records.value = ensureUniqueRecordIds([...records.value, ...newRecords])
     showToast(`成功加入 ${newRecords.length} 筆班表`)
   } else {
     showToast('該區間內的班表已排滿，無新增項目')
@@ -413,7 +432,8 @@ const buildWorkRecordFromInputs = ({
   smokoCountOverride: inputSmokoCountOverride = null,
   shiftType: inputShiftType = 'normal',
   isCleaningDay: inputIsCleaningDay = false,
-  remark: inputRemark = ''
+  remark: inputRemark = '',
+  designatedWork: inputDesignatedWork = false,
 }) => {
   
   if (inputShiftType === 'leave') {
@@ -430,6 +450,7 @@ const buildWorkRecordFromInputs = ({
     record.shiftType = 'leave'
     record.isCleaningDay = false
     record.remark = inputRemark
+    record.designatedWork = false
     return record
   }
 
@@ -474,7 +495,50 @@ const buildWorkRecordFromInputs = ({
   record.shiftType = inputShiftType
   record.isCleaningDay = inputIsCleaningDay
   record.remark = inputRemark
+  record.designatedWork = inputDesignatedWork
   return record
+}
+
+const markSelectedDateAsLeave = () => {
+  const record = buildWorkRecordFromInputs({
+    id: selectedRecord.value?.id ?? nextRecordId(records.value),
+    workDate: workDate.value,
+    startTime: '00:00',
+    endTime: '00:00',
+    shiftType: 'leave',
+    remark: selectedRecord.value?.remark || '',
+  })
+  records.value = upsertRecordForDate(records.value, record)
+  loadSelectedDate()
+  showToast(`${workDate.value} 已設為休假`)
+}
+
+const restoreSelectedDateShift = () => {
+  const defaults = getDefaultShiftForDate(parseWorkDate(workDate.value))
+  if (!selectedDateHasDefaultShift.value) {
+    shiftType.value = 'normal'
+    openSelectedDateEditor()
+    showToast('這天沒有預設工時，請先選擇上下班時間')
+    return
+  }
+  // 恢復出勤使用本月填滿的預設班別；休假紀錄不保存先前的個人工時。
+  const record = buildWorkRecordFromInputs({
+    id: selectedRecord.value?.id ?? nextRecordId(records.value),
+    workDate: workDate.value,
+    startTime: defaults.startTime,
+    endTime: defaults.endTime,
+    shiftType: 'normal',
+    isCleaningDay: defaults.isCleaningDay,
+    remark: selectedRecord.value?.remark || '',
+  })
+  if (!record) return
+  records.value = upsertRecordForDate(records.value, record)
+  loadSelectedDate()
+  showToast(`${workDate.value} 已恢復預設出勤`)
+}
+
+const openSelectedDateEditor = () => {
+  nextTick(() => workInputSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
 }
 
 // --- 本週總結加總 ---
@@ -492,7 +556,7 @@ const weeklyTaxEstimate = computed(() => roundTo(weeklyTotal.value * withholding
 const weeklyNetTotal = computed(() => roundTo(weeklyTotal.value - weeklyTaxEstimate.value, 2))
 const convertedNetTotal = computed(() => roundTo(weeklyNetTotal.value * currentExchangeRate.value, 2))
 
-const isEditingRecord = computed(() => editingRecordId.value !== null)
+const isEditingRecord = computed(() => Boolean(selectedRecord.value))
 
 const sortedRecords = computed(() => {
   return [...records.value].sort((a, b) => {
@@ -504,7 +568,7 @@ const sortedRecords = computed(() => {
 // ======= 備份控制中心與 Excel 生成引擎 =======
 const exportTodayJson = () => {
   if (!workSummary.value || !payBreakdown.value) return
-  const todayRecord = buildWorkRecordFromInputs({ workDate: workDate.value, startTime: startTime.value, endTime: endTime.value, smokoCountOverride: smokoCountOverride.value, shiftType: shiftType.value, isCleaningDay: isCleaningDay.value, remark: remark.value })
+  const todayRecord = buildWorkRecordFromInputs({ workDate: workDate.value, startTime: startTime.value, endTime: endTime.value, smokoCountOverride: smokoCountOverride.value, shiftType: shiftType.value, isCleaningDay: isCleaningDay.value, remark: remark.value, designatedWork: selectedRecord.value?.designatedWork === true })
   if (!todayRecord) return
   const blob = new Blob([JSON.stringify(todayRecord, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
@@ -525,13 +589,13 @@ const importJsonFiles = async (payload) => {
   for (const file of files) {
     const text = await file.text(); const jsonData = JSON.parse(text)
     if (Array.isArray(jsonData)) {
-      importedRecords.push(...jsonData.map((record) => normalizeWorkRecord(record)).map((record) => { return buildWorkRecordFromInputs({ id: record.id, workDate: record.workDate, startTime: record.startTime, endTime: record.endTime, shiftType: record.shiftType || 'normal', isCleaningDay: record.isCleaningDay || false, remark: record.remark || '' }) ?? record }))
+      importedRecords.push(...jsonData.map((record) => normalizeWorkRecord(record)).map((record) => { return buildWorkRecordFromInputs({ id: record.id, workDate: record.workDate, startTime: record.startTime, endTime: record.endTime, shiftType: record.shiftType || 'normal', isCleaningDay: record.isCleaningDay || false, remark: record.remark || '', designatedWork: record.designatedWork }) ?? record }))
       continue
     }
     const normalizedRecord = normalizeWorkRecord(jsonData)
-    importedRecords.push(buildWorkRecordFromInputs({ id: normalizedRecord.id, workDate: normalizedRecord.workDate, startTime: normalizedRecord.startTime, endTime: normalizedRecord.endTime, shiftType: normalizedRecord.shiftType || 'normal', isCleaningDay: normalizedRecord.isCleaningDay || false, remark: normalizedRecord.remark || '' }) ?? normalizedRecord)
+    importedRecords.push(buildWorkRecordFromInputs({ id: normalizedRecord.id, workDate: normalizedRecord.workDate, startTime: normalizedRecord.startTime, endTime: normalizedRecord.endTime, shiftType: normalizedRecord.shiftType || 'normal', isCleaningDay: normalizedRecord.isCleaningDay || false, remark: normalizedRecord.remark || '', designatedWork: normalizedRecord.designatedWork }) ?? normalizedRecord)
   }
-  records.value = importedRecords.sort((a, b) => { if (a.workDate === b.workDate) return b.startTime.localeCompare(a.startTime); return b.workDate.localeCompare(a.workDate) })
+  records.value = ensureUniqueRecordIds(importedRecords.sort((a, b) => { if (a.workDate === b.workDate) return b.startTime.localeCompare(a.startTime); return b.workDate.localeCompare(a.workDate) }))
 }
 
 const exportWeeklyXlsx = () => {
@@ -568,78 +632,77 @@ const getDayOfWeek = (dateStr) => {
 const addTodayRecordToList = () => {
   if (shiftType.value !== 'leave' && (!isValidTime(startTime.value) || !isValidTime(endTime.value))) return
 
-  if (!isEditingRecord.value) {
-    const duplicated = records.value.some((r) => r.workDate === workDate.value)
-    if (duplicated) {
-      editingRecordId.value = records.value.find((r) => r.workDate === workDate.value).id
-    }
-  }
-
   const todayRecord = buildWorkRecordFromInputs({
+    id: selectedRecord.value?.id ?? nextRecordId(records.value),
     workDate: workDate.value,
     startTime: startTime.value,
     endTime: endTime.value,
     smokoCountOverride: smokoCountOverride.value,
     shiftType: shiftType.value,
     isCleaningDay: isCleaningDay.value,
-    remark: remark.value
+    remark: remark.value,
+    designatedWork: selectedRecord.value?.designatedWork === true,
   })
 
   if (!todayRecord) return
-
-  if (isEditingRecord.value) {
-    records.value = records.value.map((record) => record.id !== editingRecordId.value ? record : { ...todayRecord, id: record.id })
-    editingRecordId.value = null
-    return
-  }
-
-  records.value.unshift(todayRecord)
-  showToast('成功加入排班列表')
+  const wasExisting = Boolean(selectedRecord.value)
+  records.value = upsertRecordForDate(records.value, todayRecord)
+  showToast(wasExisting ? '已更新當天班表' : '成功加入排班列表')
 }
 
 const editRecord = (record) => {
-  editingRecordId.value = record.id
   workDate.value = record.workDate
-  startTime.value = record.startTime
-  endTime.value = record.endTime
-  shiftType.value = record.shiftType || 'normal'
-  isCleaningDay.value = record.isCleaningDay || false
-  remark.value = record.remark || ''
+  loadSelectedDate()
   scheduleSections.value = []
   expandedRecordId.value = ''
   nextTick(() => workInputSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
 }
 
 const cancelEditingRecord = () => {
-  editingRecordId.value = null
-  shiftType.value = 'normal'
-  remark.value = ''
+  loadSelectedDate()
+  showToast('已還原未儲存變更')
 }
 
 const deleteRecord = (recordId) => {
   records.value = records.value.filter((record) => record.id !== recordId)
-  if (editingRecordId.value === recordId) editingRecordId.value = null
   if (expandedRecordId.value === recordId) expandedRecordId.value = ''
+  loadSelectedDate()
+}
+
+const markDesignatedWorkDate = ({ date, marked }) => {
+  records.value = records.value.map((record) =>
+    record.workDate === date && record.shiftType !== 'leave' && record.paidMinutes > 0
+      ? { ...record, designatedWork: marked }
+      : record,
+  )
 }
 </script>
 
 <template>
   <div class="page">
-    <section v-show="activeTab === 'payroll'" class="payroll-page">
-    <div class="header">
-      <p class="eyebrow">PAYROLL ESTIMATE</p>
+    <DashboardPage
+      v-show="activeTab === 'dashboard'"
+      :work-records="records"
+      :active="activeTab === 'dashboard'"
+      @mark-work-date="markDesignatedWorkDate"
+      @navigate="activeTab = $event"
+    />
+    <section v-show="activeTab === 'payroll'" class="payroll-page app-page">
+    <div class="header app-page__header">
       <div class="header-main">
         <h1>薪資預估</h1>
         <van-button size="small" plain type="primary" class="global-currency-btn" @click="showCurrencyPicker = true">
           {{ currencyFlag }} {{ currentCurrency }}
         </van-button>
       </div>
-      <p>選擇工作日期、記錄班表，掌握每週薪資。</p>
+      <p>記錄班表，預估薪資。</p>
     </div>
 
     <div class="section calendar-section">
-      <h2>選擇工作日期</h2>
-      <p class="calendar-help">已存班表約值（{{ currentCurrency }}）；精確金額見本週班表</p>
+      <div class="calendar-intro">
+        <p class="calendar-help">點日期可設休假或編輯工時</p>
+        <van-button size="small" plain type="primary" @click="fillCurrentMonth">填滿本月</van-button>
+      </div>
       <div class="calendar-wrapper">
         <van-calendar
           :poppable="false"
@@ -651,6 +714,25 @@ const deleteRecord = (recordId) => {
           switch-mode="year-month"
           @select="onDateSelect"
         />
+      </div>
+      <div class="calendar-day-actions">
+        <div class="calendar-day-actions__heading">
+          <div>
+            <strong>{{ workDate }} <small>{{ getDayOfWeek(workDate) }}</small></strong>
+            <p v-if="selectedRecord?.shiftType === 'leave'">已標記休假，不計工時與薪資</p>
+            <p v-else-if="selectedRecord">已排班 · {{ selectedRecord.startTime }}–{{ selectedRecord.endTime }}</p>
+            <p v-else>尚未加入班表</p>
+          </div>
+          <strong v-if="selectedRecord && selectedRecord.shiftType !== 'leave'" class="calendar-day-actions__pay">
+            {{ currencySymbol }}{{ formatDisplayMoney(selectedRecord.grossPay * currentExchangeRate) }}
+          </strong>
+        </div>
+        <div class="calendar-day-actions__buttons">
+          <van-button v-if="selectedRecord?.shiftType === 'leave'" block plain type="primary" @click="restoreSelectedDateShift">{{ selectedDateHasDefaultShift ? '恢復預設出勤' : '設定出勤時間' }}</van-button>
+          <van-button v-else block plain type="danger" @click="markSelectedDateAsLeave">設為休假</van-button>
+          <van-button block plain type="default" @click="openSelectedDateEditor">{{ selectedRecord ? '編輯當天工時' : '新增當天班表' }}</van-button>
+        </div>
+        <p v-if="selectedRecord?.shiftType === 'leave'" class="calendar-day-actions__hint">{{ selectedDateHasDefaultShift ? '恢復時會套用填滿本月的預設時間；如需不同工時，請再編輯。' : '這天沒有預設工時，請設定上下班時間後儲存。' }}</p>
       </div>
     </div>
 
@@ -730,20 +812,16 @@ const deleteRecord = (recordId) => {
       <div class="section">
         <h2>儲存班表</h2>
         <div class="section-card">
-          <p class="section-note">確認完上述日期的時間、狀態與備註後，點擊下方按鈕排入班表，即時連動加總週薪明細。</p>
+          <p class="section-note">日曆可直接設休假；需要調整時間或備註時，在這裡儲存當天班表。</p>
           <div class="weekly-actions">
             <!-- 單日儲存按鈕 -->
             <van-button block type="primary" :icon="isEditingRecord ? 'edit' : 'plus'" @click="addTodayRecordToList">
               {{ isEditingRecord ? '儲存修改' : '加入本週班表' }}
             </van-button>
             
-            <!-- 新增：一鍵批次按鈕群 (只有在非編輯模式下才會顯示) -->
-            <div style="display: flex; gap: 12px;" v-if="!isEditingRecord">
-              <van-button block plain type="primary" @click="fillCurrentWeek">填滿本週</van-button>
-              <van-button block plain type="primary" @click="fillCurrentMonth">填滿本月</van-button>
-            </div>
+            <van-button block plain type="primary" @click="fillCurrentWeek">填滿本週</van-button>
             
-            <van-button v-if="isEditingRecord" block plain type="default" @click="cancelEditingRecord">取消變更</van-button>
+            <van-button v-if="isEditingRecord" block plain type="default" @click="cancelEditingRecord">還原未儲存變更</van-button>
           </div>
         </div>
       </div>
@@ -890,7 +968,8 @@ const deleteRecord = (recordId) => {
     <TripTracker v-show="activeTab === 'trips'" />
     <ExpenseTracker v-show="activeTab === 'expenses'" />
 
-    <van-tabbar v-model="activeTab" fixed placeholder safe-area-inset-bottom>
+    <van-tabbar v-model="activeTab" fixed safe-area-inset-bottom>
+      <van-tabbar-item name="dashboard" icon="home-o">首頁</van-tabbar-item>
       <van-tabbar-item name="payroll" icon="balance-o">薪資</van-tabbar-item>
       <van-tabbar-item name="trips" icon="friends-o">車資</van-tabbar-item>
       <van-tabbar-item name="expenses" icon="records">支出</van-tabbar-item>
@@ -900,24 +979,34 @@ const deleteRecord = (recordId) => {
 
 <style scoped>
 .page { min-height: 100vh; background: #f5f7fa; }
-.payroll-page { max-width: 820px; min-height: 100vh; margin: 0 auto; padding: 20px 0 calc(92px + env(safe-area-inset-bottom)); background: radial-gradient(circle at 12% 0, #e8f4ff 0, transparent 260px), #f5f7fa; }
-.header { padding: 0 18px 12px; }
-.header .eyebrow { margin: 0 0 5px; color: #6883a1; font-size: 10px; font-weight: 800; letter-spacing: .14em; }
-.header-main { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
-.header h1 { margin: 0; font-size: 29px; line-height: 1.2; font-weight: 800; color: #1b2a3b; }
-.header p:not(.eyebrow) { margin: 0; color: #657588; font-size: 13px; line-height: 1.4; }
+.payroll-page { max-width: 820px; margin: 0 auto; }
+.header { flex-wrap: wrap; }
+.header-main { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; }
+.header p { width: 100%; }
 .global-currency-btn { flex: none; min-height: 38px; font-weight: 700; border-radius: 12px; background: #fff; box-shadow: 0 2px 8px rgba(29, 66, 106, .06); }
 
-.section { margin-top: 28px; }
-.section h2 { font-size: 19px; font-weight: 800; color: #1b2a3b; margin: 0 0 12px; padding: 0 18px; letter-spacing: -.02em; }
-.calendar-section { margin-top: 16px; }
-.calendar-help { margin: -4px 18px 12px; color: #657588; font-size: 11px; line-height: 1.4; }
+.section { margin-top: var(--page-section-gap); }
+.section h2 { font-size: var(--font-heading); font-weight: 800; color: #1b2a3b; margin: 0 0 12px; letter-spacing: -.02em; }
+.calendar-section { margin-top: 8px; }
+.calendar-intro { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.calendar-intro :deep(.van-button) { flex: none; min-height: 40px; border-radius: 11px; }
+.calendar-help { margin: 0; color: #657588; font-size: 13px; line-height: 1.4; }
 
-.calendar-wrapper { margin: 0 16px; border-radius: 22px; overflow: hidden; box-shadow: 0 12px 28px rgba(29, 66, 106, .07); background: #fff; border: 1px solid #e6edf5; }
+.calendar-wrapper { border-radius: var(--page-card-radius); overflow: hidden; box-shadow: 0 12px 28px rgba(29, 66, 106, .07); background: #fff; border: 1px solid #e6edf5; }
+.calendar-day-actions { margin: 12px 0 0; padding: 15px 16px; border: 1px solid #e6edf5; border-radius: 18px; background: #fff; box-shadow: 0 6px 18px rgba(29, 66, 106, .05); }
+.calendar-day-actions__heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.calendar-day-actions__heading strong { color: #1b2a3b; font-size: 15px; }
+.calendar-day-actions__heading small { color: #8290a0; font-size: 11px; }
+.calendar-day-actions__heading p { margin: 4px 0 0; color: #657588; font-size: 12px; }
+.calendar-day-actions__pay { margin-left: auto; color: #166dd1 !important; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.calendar-day-actions__buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 13px; }
+.calendar-day-actions__buttons :deep(.van-button) { min-height: 42px; padding: 0 8px; border-radius: 11px; font-size: 13px; }
+.calendar-day-actions__hint { margin: 10px 0 0; color: #8290a0; font-size: 11px; line-height: 1.4; }
+.bulk-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 :deep(.van-calendar) { height: auto !important; }
 :deep(.van-calendar__body) { padding-bottom: 12px; }
 :deep(.van-calendar__day) {
-  height: 78px !important;
+  height: max(68px, 4.4rem) !important;
   position: relative !important;
   padding-top: 8px !important;
   align-items: flex-start !important;
@@ -974,7 +1063,7 @@ const deleteRecord = (recordId) => {
 :deep(.van-calendar__selected-day .van-calendar__bottom-info) { color: #fff !important; background: rgba(255, 255, 255, .2) !important; }
 
 .workflow { margin-top: 4px; }
-.section-card { margin: 0 16px; padding: 18px; border-radius: 22px; background: #fff; box-shadow: 0 12px 28px rgba(29, 66, 106, .07); }
+.section-card { padding: 18px; border-radius: var(--page-card-radius); background: #fff; box-shadow: 0 12px 28px rgba(29, 66, 106, .07); }
 .section-note { margin: 0 0 14px; font-size: 13px; line-height: 1.5; color: #646566; }
 :deep(.gross-cell .van-cell__value) { font-weight: 700; color: #1989fa; font-size: 16px; }
 
@@ -984,7 +1073,7 @@ const deleteRecord = (recordId) => {
 .empty-state { padding: 30px 16px; text-align: center; }
 .empty-state__title { font-size: 14px; font-weight: 700; color: #4b5563; }
 .empty-state__text { margin-top: 6px; font-size: 12px; line-height: 1.5; color: #9ca3af; }
-.schedule-collapse { margin: 0 16px; overflow: hidden; border: 1px solid #e6edf5; border-radius: 20px; background: #fff; box-shadow: 0 12px 28px rgba(29, 66, 106, .07); }
+.schedule-collapse { overflow: hidden; border: 1px solid #e6edf5; border-radius: 20px; background: #fff; box-shadow: 0 12px 28px rgba(29, 66, 106, .07); }
 :deep(.schedule-collapse > .van-collapse-item > .van-cell) { min-height: 62px; padding: 12px 18px; }
 .schedule-overview { display: grid; gap: 2px; }
 .schedule-overview strong { color: #1b2a3b; font-size: 14px; font-weight: 800; }
@@ -1003,19 +1092,19 @@ const deleteRecord = (recordId) => {
 .schedule-detail__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .schedule-detail__actions :deep(.van-button) { min-height: 34px; border-radius: 9px; }
 .weekly-summary-card { padding: 14px 16px 16px; }
-.weekly-summary__row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; }
+.weekly-summary__row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; padding: 6px 0; }
 .weekly-summary__label { font-size: 13px; color: #4b5563; }
-.weekly-summary__value { font-size: 14px; font-weight: 600; color: #1f2937; }
+.weekly-summary__value { margin-left: auto; font-size: 14px; font-weight: 600; color: #1f2937; overflow-wrap: anywhere; }
 .weekly-summary__row--tax { padding-top: 12px; margin-top: 8px; border-top: 1px dashed #e5e7eb; }
 .weekly-summary__value--tax { color: #b45309; font-weight: bold; }
 .weekly-summary__total--net { margin-top: 12px; padding: 16px; border-radius: 14px; background: linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%); border: 1px solid #bbf7d0; }
 .weekly-summary__total-label { font-size: 13px; color: #166534; font-weight: bold; }
-.weekly-summary__total-value--net { color: #15803d; font-size: 26px; font-weight: 800; margin-top: 4px; }
-.import-export-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+.weekly-summary__total-value--net { color: #15803d; font-size: 26px; font-weight: 800; margin-top: 4px; overflow-wrap: anywhere; }
+.import-export-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
 .import-uploader { display: block; }
 .import-uploader :deep(.van-uploader__wrapper) { display: block; }
 .import-button { border-style: dashed; background: #fef2f2; }
-.data-management-collapse { margin: 0 16px; overflow: hidden; border-radius: 16px; background: #fff; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04); border: 1px solid #ebedf0; }
+.data-management-collapse { overflow: hidden; border-radius: 16px; background: #fff; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04); border: 1px solid #ebedf0; }
 :deep(.data-management-collapse .van-cell) { padding: 14px 16px; font-weight: bold; }
 :deep(.data-management-collapse .van-collapse-item__content) { padding: 14px 16px; background: #fafafa; }
 </style>

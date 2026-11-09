@@ -1,6 +1,6 @@
 <script setup>
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
-import { showToast } from 'vant'
+import { showConfirmDialog, showToast } from 'vant'
 import { formatLocalDate, parseLocalDate } from '../domain/date.js'
 import {
   getActualTransactions,
@@ -18,8 +18,10 @@ import {
   signedDollarsToCents,
 } from '../domain/money.js'
 import { dashboardSettingsRepository } from '../repositories/inMemoryDashboardSettingsRepository.js'
+import { authToken } from '../services/authSession.js'
 import {
   expenseRepository,
+  salaryDepositRepository,
   subscribeToLedgerChanges,
   tripRepository,
 } from '../repositories/appRepositories.js'
@@ -34,6 +36,14 @@ const period = ref('week')
 const anchor = ref(today)
 const trips = ref([])
 const expenses = ref([])
+const salaryDeposits = ref(null)
+const sortedSalaryDeposits = computed(() =>
+  [...(salaryDeposits.value || [])].sort((a, b) => b.paidAt.localeCompare(a.paidAt)),
+)
+const hasSalaryDeposits = computed(() => sortedSalaryDeposits.value.length > 0)
+const showSalaryForm = ref(false)
+const editingSalaryId = ref(null)
+const salaryForm = ref({ paidAt: today, amount: '', gross: '', tax: '', periodStart: '', periodEnd: '' })
 const savingGoal = ref(null)
 const workDayTarget = ref(null)
 const incomeMode = ref('actual')
@@ -55,10 +65,11 @@ const summary = computed(() =>
     workRecords: props.workRecords,
     trips: trips.value,
     expenses: expenses.value,
+    salaryDeposits: salaryDeposits.value,
   }),
 )
 const transactions = computed(() =>
-  getActualTransactions({ trips: trips.value, expenses: expenses.value }),
+  getActualTransactions({ trips: trips.value, expenses: expenses.value, salaryDeposits: salaryDeposits.value }),
 )
 const saving = computed(() => getSavingProgress(savingGoal.value, transactions.value, today))
 const workProgress = computed(() =>
@@ -86,23 +97,100 @@ function setPeriod(value) {
   anchor.value = today
 }
 
+function openSalaryEditor(deposit = null) {
+  editingSalaryId.value = deposit?.id ?? null
+  salaryForm.value = deposit
+    ? {
+        paidAt: deposit.paidAt,
+        amount: formatCentsInput(deposit.amountCents),
+        gross: deposit.grossCents == null ? '' : formatCentsInput(deposit.grossCents),
+        tax: deposit.taxCents == null ? '' : formatCentsInput(deposit.taxCents),
+        periodStart: deposit.periodStart || '',
+        periodEnd: deposit.periodEnd || '',
+      }
+    : { paidAt: today, amount: '', gross: '', tax: '', periodStart: '', periodEnd: '' }
+  showSalaryForm.value = true
+}
+
+async function saveSalary() {
+  const net = dollarsToCents(salaryForm.value.amount)
+  const gross = salaryForm.value.gross === '' ? null : dollarsToCents(salaryForm.value.gross)
+  const tax = salaryForm.value.tax === '' ? null : dollarsToCents(salaryForm.value.tax)
+  if (!parseLocalDate(salaryForm.value.paidAt) || !Number.isSafeInteger(net) || net < 0 ||
+      (gross !== null && (!Number.isSafeInteger(gross) || gross < 0)) ||
+      (tax !== null && (!Number.isSafeInteger(tax) || tax < 0)) ||
+      (salaryForm.value.periodStart && !parseLocalDate(salaryForm.value.periodStart)) ||
+      (salaryForm.value.periodEnd && !parseLocalDate(salaryForm.value.periodEnd)) ||
+      (salaryForm.value.periodStart && salaryForm.value.periodEnd && salaryForm.value.periodEnd < salaryForm.value.periodStart)) {
+    showToast('請檢查入帳日期、金額及薪資期間')
+    return
+  }
+  try {
+    await salaryDepositRepository.save({
+      id: editingSalaryId.value || crypto.randomUUID(),
+      paidAt: salaryForm.value.paidAt,
+      amountCents: net,
+      grossCents: gross,
+      taxCents: tax,
+      periodStart: salaryForm.value.periodStart || null,
+      periodEnd: salaryForm.value.periodEnd || null,
+    })
+    showSalaryForm.value = false
+    await refreshLedger()
+    showToast('薪資入帳已記錄')
+  } catch (error) { showToast(error.message) }
+}
+
+async function removeSalary(deposit) {
+  try {
+    await showConfirmDialog({ title: '刪除薪資入帳？', message: `${deposit.paidAt} 的實際入帳紀錄將移除。` })
+    await salaryDepositRepository.remove(deposit.id)
+    await refreshLedger()
+  } catch (error) {
+    if (error !== 'cancel') showToast(error.message)
+  }
+}
+
 async function refreshLedger() {
-  const [nextTrips, nextExpenses] = await Promise.all([
+  const identity = authToken.value
+  const [nextTrips, nextExpenses, nextDeposits] = await Promise.all([
     tripRepository.list(),
     expenseRepository.list(),
+    salaryDepositRepository.list(),
   ])
+  if (identity !== authToken.value) return
   trips.value = nextTrips
   expenses.value = nextExpenses
+  salaryDeposits.value = nextDeposits
+}
+async function refreshDashboardData() {
+  const identity = authToken.value
+  await refreshLedger()
+  const [goal, target] = await Promise.all([
+    dashboardSettingsRepository.getSavingGoal(), dashboardSettingsRepository.getWorkDayTarget(),
+  ])
+  if (identity === authToken.value) {
+    savingGoal.value = goal
+    workDayTarget.value = target
+  }
 }
 
 let unsubscribe = null
-onMounted(async () => {
-  unsubscribe = subscribeToLedgerChanges(refreshLedger)
-  await refreshLedger()
-  savingGoal.value = await dashboardSettingsRepository.getSavingGoal()
-  workDayTarget.value = await dashboardSettingsRepository.getWorkDayTarget()
+onMounted(() => {
+  unsubscribe = subscribeToLedgerChanges(() => refreshDashboardData().catch((error) => showToast(error.message)))
+  refreshDashboardData().catch((error) => showToast(error.message))
 })
 onUnmounted(() => unsubscribe?.())
+watch(authToken, async () => {
+  trips.value = []
+  expenses.value = []
+  salaryDeposits.value = null
+  savingGoal.value = null
+  workDayTarget.value = null
+  try {
+    await refreshDashboardData()
+  } catch (error) { showToast(error.message) }
+})
 
 watch(
   () => [
@@ -146,7 +234,7 @@ async function saveGoal() {
     })
     savingGoal.value = await dashboardSettingsRepository.saveSavingGoal(goal)
     showGoalForm.value = false
-    showToast('目標已儲存（僅暫存）')
+    showToast(authToken.value ? '目標已儲存' : '目標已儲存（僅暫存）')
   } catch (error) {
     showToast(error.message)
   }
@@ -165,7 +253,7 @@ async function saveTarget() {
   }
   workDayTarget.value = await dashboardSettingsRepository.saveWorkDayTarget(value)
   showTargetForm.value = false
-  showToast('追蹤目標已儲存（僅暫存）')
+  showToast(authToken.value ? '追蹤目標已儲存' : '追蹤目標已儲存（僅暫存）')
 }
 </script>
 
@@ -173,15 +261,15 @@ async function saveTarget() {
   <main class="dashboard-page app-page">
     <header class="app-page__header">
       <div>
-        <h1>首頁</h1>
-        <p>收支、目標與工作紀錄</p>
+        <h1>財務總覽</h1>
+        <p>收支、儲蓄目標與工作紀錄</p>
       </div>
       <van-button plain type="primary" size="small" @click="emit('navigate', 'payroll')"
-        >查看班表</van-button
+        >看班表</van-button
       >
     </header>
-    <p class="preview-note">
-      開發預覽 · 資料只暫存在記憶體，關閉或重新啟動 App 後會消失；目前沒有會員登入。
+    <p v-if="!authToken" class="preview-note">
+      目前資料僅暫存在記憶體，關閉或重新啟動 App 後會消失。
     </p>
 
     <section class="period-card app-page__card" aria-label="日期篩選">
@@ -211,11 +299,9 @@ async function saveTarget() {
       <div class="summary-tile app-page__card">
         <span>已記錄收入</span
         ><strong>{{
-          summary.hasActualIncomeRecords ? formatAud(summary.actualIncomeCents) : '尚無入帳紀錄'
+          summary.hasActualIncomeInRange ? formatAud(summary.actualIncomeCents) : '本期尚無入帳'
         }}</strong
-        ><small>{{
-          summary.salaryDepositConfigured ? '已入帳薪資與已收車資' : '已收車資；實際薪資尚未設定'
-        }}</small>
+        ><small>依實際收款日期，不含預估薪資</small>
       </div>
       <div class="summary-tile app-page__card">
         <span>已支付支出</span><strong>{{ formatAud(summary.paidExpenseCents) }}</strong
@@ -226,20 +312,57 @@ async function saveTarget() {
         ><strong>{{
           summary.hasActualTransactions ? formatAud(summary.netCents) : '尚無實際收支'
         }}</strong
-        ><small>{{
-          summary.salaryDepositConfigured
-            ? '僅包含已提供的收支紀錄'
-            : '僅已記錄資料，不含未設定的薪資入帳'
-        }}</small>
+        ><small>僅計入已記錄的收支，不代表帳戶餘額</small>
       </div>
     </section>
     <p class="source-note">
       {{
-        summary.salaryDepositConfigured
-          ? '僅彙總已提供的入帳紀錄；'
-          : '實際薪資入帳尚未設定；上述收入與淨額並非完整帳戶餘額。'
-      }}所選行程仍有 {{ formatAud(summary.pendingFareCents) }} 待收，未計入已收收入。
+        hasSalaryDeposits
+          ? '薪資按實際入帳日計入，與班表預估分開。'
+          : authToken
+            ? '尚未記錄實際薪資；目前收入不含預估薪資。'
+            : '訪客模式尚無實際薪資入帳資料。'
+      }}{{ summary.pendingFareCents > 0 ? `另有 ${formatAud(summary.pendingFareCents)} 車資待收，未計入收入。` : '' }}
     </p>
+
+    <section v-if="authToken" class="dashboard-section salary-card app-page__card" aria-label="薪資入帳紀錄">
+      <div class="section-head salary-card__head">
+        <div>
+          <h2>薪資入帳</h2>
+          <p>實際收到的稅後薪資，依入帳日期統計</p>
+        </div>
+        <van-button size="small" plain type="primary" icon="plus" @click="openSalaryEditor()">新增入帳</van-button>
+      </div>
+      <p v-if="salaryDeposits === null" class="salary-card__state">正在讀取入帳紀錄…</p>
+      <div v-else-if="!hasSalaryDeposits" class="salary-card__empty">
+        <span class="salary-card__empty-icon" aria-hidden="true"><van-icon name="balance-pay" /></span>
+        <div>
+          <strong>還沒有實際薪資紀錄</strong>
+          <p>收到薪資單後，可在這裡記下稅後入帳金額。</p>
+        </div>
+      </div>
+      <div v-else class="salary-list">
+        <article v-for="deposit in sortedSalaryDeposits" :key="deposit.id" class="salary-entry">
+          <div class="salary-entry__main">
+            <div class="salary-entry__when">
+              <strong>{{ deposit.paidAt }}</strong>
+              <small v-if="deposit.periodStart || deposit.periodEnd">
+                薪資期間 {{ deposit.periodStart || '未填起日' }} ～ {{ deposit.periodEnd || '未填迄日' }}
+              </small>
+            </div>
+            <div class="salary-entry__amount"><small>稅後入帳</small><strong>{{ formatAud(deposit.amountCents) }}</strong></div>
+          </div>
+          <p v-if="deposit.grossCents != null || deposit.taxCents != null" class="salary-entry__extra">
+            <span v-if="deposit.grossCents != null">稅前 {{ formatAud(deposit.grossCents) }}</span>
+            <span v-if="deposit.taxCents != null">扣稅 {{ formatAud(deposit.taxCents) }}</span>
+          </p>
+          <div class="salary-entry__actions">
+            <van-button size="small" plain type="primary" @click="openSalaryEditor(deposit)">編輯</van-button>
+            <van-button size="small" plain type="danger" @click="removeSalary(deposit)">刪除</van-button>
+          </div>
+        </article>
+      </div>
+    </section>
 
     <section class="dashboard-section saving-card app-page__card" aria-labelledby="saving-title">
       <div class="section-head">
@@ -276,15 +399,17 @@ async function saveTarget() {
           · {{ saving.percent }}%
         </p>
         <p class="scope-note">
-          起始存款 {{ formatAud(savingGoal.initialCents) }} ＋ 已收車資
+          起始存款 {{ formatAud(savingGoal.initialCents) }} ＋ 已記錄實際收入（薪資及車資）
           {{ formatAud(saving.actualIncomeCents) }} − 已付支出
           {{ formatAud(saving.paidExpenseCents) }}
         </p>
         <p class="data-limit">
           {{
-            saving.hasActualTransactions
-              ? '薪資入帳未設定，目前累積仍可能不完整。'
-              : '尚無目標期間的實際收支；目前只反映起始存款，不使用預估薪資。'
+            !saving.hasActualTransactions
+              ? '尚無目標期間的實際收支；目前只反映起始存款，不使用預估薪資。'
+              : hasSalaryDeposits
+                ? '僅依已記錄的實際收支計算；未記錄的薪資不會自動補入。'
+                : '尚未記錄薪資入帳，目前累積可能不完整。'
           }}
         </p>
       </template>
@@ -319,9 +444,9 @@ async function saveTarget() {
         <p class="scope-note">
           {{
             incomeMode === 'actual'
-              ? summary.salaryDepositConfigured
-                ? '按收款日：已收車資與已入帳薪資。'
-                : '按收款日：已收車資；實際薪資尚未設定。'
+              ? hasSalaryDeposits
+                ? '按收款日：已收車資與已記錄薪資入帳。'
+                : '按收款日：已收車資；尚未記錄薪資入帳。'
               : '按工作紀錄日期：稅前預估薪資，不代表已入帳。'
           }}
         </p>
@@ -341,7 +466,7 @@ async function saveTarget() {
               : formatAud(selectedIncomePoint.estimatedCents)
           }}（{{
             incomeMode === 'actual'
-              ? `已收車資 ${formatAud(selectedIncomePoint.tripCents)}${summary.salaryDepositConfigured ? `、薪資入帳 ${formatAud(selectedIncomePoint.salaryCents)}` : ''}`
+              ? `已收車資 ${formatAud(selectedIncomePoint.tripCents)}${hasSalaryDeposits ? `、薪資入帳 ${formatAud(selectedIncomePoint.salaryCents)}` : ''}`
               : '工作預估'
           }}）
         </p>
@@ -461,10 +586,23 @@ async function saveTarget() {
         />
         <van-field v-model="goalForm.startDate" label="開始日期" type="date" />
         <van-field v-model="goalForm.endDate" label="截止日期" type="date" />
-        <p class="scope-note">起始存款是開始日前的餘額；目標暫存於此 App 執行期間。</p>
+        <p class="scope-note">起始存款是開始日前的餘額；{{ authToken ? '目標會儲存到會員帳號。' : '訪客目標只在本次 App 執行期間暫存。' }}</p>
         <van-button class="app-page__action" block type="primary" native-type="submit"
           >儲存目標</van-button
         >
+      </form>
+    </van-popup>
+    <van-popup v-model:show="showSalaryForm" position="bottom" round safe-area-inset-bottom>
+      <form class="edit-sheet salary-sheet" @submit.prevent="saveSalary">
+        <h2>{{ editingSalaryId ? '編輯薪資入帳' : '新增薪資入帳' }}</h2>
+        <p class="scope-note">填寫銀行實際收到的稅後金額；不會改動班表薪資預估。</p>
+        <van-field v-model="salaryForm.paidAt" label="入帳日期" type="date" required />
+        <van-field v-model="salaryForm.amount" label="稅後入帳 AUD" type="number" required />
+        <van-field v-model="salaryForm.gross" label="稅前 AUD（選填）" type="number" />
+        <van-field v-model="salaryForm.tax" label="扣稅 AUD（選填）" type="number" />
+        <van-field v-model="salaryForm.periodStart" label="薪資期起日" type="date" />
+        <van-field v-model="salaryForm.periodEnd" label="薪資期迄日" type="date" />
+        <van-button class="app-page__action" block type="primary" native-type="submit">儲存入帳</van-button>
       </form>
     </van-popup>
     <van-popup v-model:show="showTargetForm" position="bottom" round safe-area-inset-bottom>
@@ -618,6 +756,25 @@ async function saveTarget() {
   min-height: 38px;
   border-radius: 10px;
 }
+.salary-card__head { align-items: flex-start; flex-wrap: wrap; }
+.salary-card__head > div { flex: 1; min-width: 150px; }
+.salary-card__head p { margin: 4px 0 0; color: var(--color-muted); font-size: 12px; line-height: 1.4; }
+.salary-card__state { margin: 18px 0 0; color: var(--color-muted); font-size: 13px; }
+.salary-card__empty { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding: 15px; border: 1px dashed #cbdff4; border-radius: 14px; background: #f7fbff; }
+.salary-card__empty-icon { display: grid; flex: none; place-items: center; width: 42px; height: 42px; border-radius: 13px; background: #eaf3fe; color: #166dd1; font-size: 22px; }
+.salary-card__empty strong { color: var(--color-heading); font-size: 14px; }
+.salary-card__empty p { margin: 3px 0 0; color: var(--color-muted); font-size: 12px; line-height: 1.5; }
+.salary-list { display: grid; gap: 10px; margin-top: 16px; }
+.salary-entry { min-width: 0; padding: 14px; border: 1px solid var(--color-border); border-radius: 15px; background: #f8fbff; }
+.salary-entry__main { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start; }
+.salary-entry__when, .salary-entry__amount { display: grid; gap: 4px; min-width: 0; }
+.salary-entry__when strong { color: var(--color-heading); font-size: 14px; font-variant-numeric: tabular-nums; }
+.salary-entry__when small, .salary-entry__amount small { color: var(--color-muted); font-size: 11px; line-height: 1.4; }
+.salary-entry__amount { text-align: right; }
+.salary-entry__amount strong { color: var(--color-income); font-size: clamp(18px, 5vw, 23px); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.salary-entry__extra { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 10px 0 0; color: var(--color-muted); font-size: 12px; }
+.salary-entry__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--color-border); }
+.salary-entry__actions :deep(.van-button) { min-height: 38px; min-width: 62px; border-radius: 10px; }
 .scope-note {
   margin: 10px 0;
 }
@@ -781,6 +938,10 @@ async function saveTarget() {
   position: sticky;
   bottom: 0;
   margin-top: 12px;
+}
+@media (max-width: 340px) {
+  .salary-entry__main { grid-template-columns: minmax(0, 1fr); }
+  .salary-entry__amount { text-align: left; }
 }
 @media (min-width: 700px) {
   .analytics-grid {

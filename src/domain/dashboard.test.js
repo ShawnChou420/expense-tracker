@@ -44,6 +44,42 @@ describe('dashboard period and ledger', () => {
     expect(summary.days.find((day) => day.date === '2026-09-23')?.actualCents).toBe(0)
   })
 
+  it('counts partial receipts and actual expense payment dates once', () => {
+    const trips = [
+      {
+        date: '2026-09-20',
+        charges: [
+          {
+            amountCents: 1200,
+            payments: [
+              { paidAt: '2026-09-22', amountCents: 500 },
+              { paidAt: '2026-09-23', amountCents: 300 },
+            ],
+          },
+        ],
+      },
+    ]
+    const expenses = [
+      {
+        date: '2026-09-20',
+        group: 'HOUSING',
+        category: 'RENT',
+        frequency: 'NONE',
+        status: 'PAID',
+        amountCents: 36000,
+        payments: [{ paidAt: '2026-09-24', amountCents: 36000 }],
+      },
+    ]
+    const summary = getDashboardSummary({ range, trips, expenses })
+    expect(summary.actualIncomeCents).toBe(800)
+    expect(summary.pendingFareCents).toBe(0) // The ride happened outside the selected week.
+    expect(summary.paidExpenseCents).toBe(36000)
+    expect(summary.days.find((day) => day.date === '2026-09-24')?.actualCents).toBe(0)
+    expect(getActualTransactions({ trips, expenses }).outgoings).toEqual([
+      { date: '2026-09-24', amountCents: 36000, group: 'HOUSING' },
+    ])
+  })
+
   it('accepts an explicitly configured salary deposit source without using gross pay', () => {
     const salaryDeposits = [
       { paidAt: '2026-09-24', amountCents: 102500 },

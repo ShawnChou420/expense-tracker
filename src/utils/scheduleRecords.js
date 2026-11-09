@@ -1,3 +1,28 @@
+import { formatLocalDate, getMonthRange, isDateInRange, parseLocalDate } from '../domain/date.js'
+
+export function recordsInMonth(records, monthKey) {
+  const range = getMonthRange(monthKey)
+  return range ? records.filter((record) => isDateInRange(record.workDate, range)) : []
+}
+
+export function clearRecordsInMonth(records, monthKey) {
+  const range = getMonthRange(monthKey)
+  return range ? records.filter((record) => !isDateInRange(record.workDate, range)) : records
+}
+
+export function getMissingScheduleDates(records, range) {
+  const start = parseLocalDate(range?.start)
+  const end = parseLocalDate(range?.end)
+  if (!start || !end || start > end) return []
+  const occupied = new Set(records.map((record) => record.workDate))
+  const missing = []
+  for (const date = start; date <= end; date.setDate(date.getDate() + 1)) {
+    const key = formatLocalDate(date)
+    if (!occupied.has(key)) missing.push(key)
+  }
+  return missing
+}
+
 // A calendar edit targets the selected date, never a stale editing id from another day.
 export function upsertRecordForDate(records, replacement) {
   const index = records.findIndex((record) => record.workDate === replacement.workDate)

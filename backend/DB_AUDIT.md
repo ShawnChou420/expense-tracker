@@ -1,0 +1,26 @@
+# Pre-upgrade read-only database inventory
+
+Inspected `public` in the local PostgreSQL 17.10 database before implementation. This document contains schema metadata only, not row contents. All six listed tables were empty at inspection. There was no `flyway_schema_history` or Liquibase changelog at that time. This is a historical snapshot; the confirmed local development database was subsequently baselined and migrated through V4 on 2026-09-29.
+
+## Existing tables and columns
+
+`NOT NULL` columns are marked `!`; unmarked columns are nullable. Types are PostgreSQL types. Defaults are noted where relevant.
+
+| Table | Existing columns | Reuse decision |
+| --- | --- | --- |
+| `user_info` | `seq! bigint` sequence PK; `user_id! varchar(50)` unique; `password_hash! varchar(255)`; `email varchar(100)`; `nickname varchar(50)`; `phone varchar(20)`; `visa_type varchar(30)`; `visa_expiry_date date`; `target_savings numeric(12,2)` default 0; `create_time`, `update_time timestamptz` default current timestamp; `update_user varchar(50)` | Reuse for member identity; add normalized unique email, never infer legacy ownership. |
+| `salary_setting_info` | `seq! bigint` sequence PK; `user_seq! bigint`; `base_rate`, `casual_loading_rate`, `shift_loading_rate`, `saturday_ord_loading_rate`, `sunday_loading_rate`, `time_half_rate`, `double_rate`, `ppe_allowance`, `withholding_tax_rate` all nullable `numeric(10,4)` default 0; nullable `create_time`, `update_time timestamptz` default current timestamp; `update_user varchar(50)` | Reuse for AUD payroll rates; add currency and per-member unique index. |
+| `work_shift_info` | `seq! bigint` sequence PK; `user_seq! bigint`; `work_date! date`; `start_time!`, `end_time! time`; nullable `total_minutes`, `smoko_count integer` default 0; `gross_pay numeric(12,4)` default 0; nullable `create_time`, `update_time timestamptz` default current timestamp; `update_user varchar(50)` | Reuse for work records; add stable client ID, result JSON, gross cents, currency and designated-work flag. Stored work date remains the owning date for overnight shifts. |
+| `expense_record` | `seq! bigint` sequence PK; `user_seq! bigint`; `expense_date! date`; `category! varchar(50)`; `amount numeric(12,4)` default 0; `remark text`; nullable `create_time`, `update_time timestamptz` default current timestamp; `update_user varchar(50)` | Reuse for one-time/recurring expense definition; add stable client ID, category group, exact cents, status, frequency, currency and JSON; actual payments live separately. |
+| `sal_job_rate_info` | `job_rate_id! uuid` generated PK; `user_id! uuid`; `job_name! varchar` default; `base_rate`, `casual_loading`, `shift_loading`, `sat_ord_loading`, `time_half_rate`, `double_rate`, `sunday_loading`, `ppe_allowance`, `withholding_tax` all `numeric NOT NULL`; `smoko_duration! integer`; `status_cd! char` default; `cr_dt timestamptz` default now | Left untouched: UUID `user_id` has no FK to bigint `user_info.seq`. Do not assign old rows to new accounts. |
+| `sal_shift_txn` | `txn_id! uuid` generated PK; `job_rate_id! uuid`; `work_date! date`; `start_time!`, `end_time! varchar`; `total_minutes!`, `smoko_count!`, `smoko_deduct_minutes!`, `paid_minutes!`, `weekday_paid_minutes!`, `saturday_paid_minutes!`, `sunday_paid_minutes!`, `holiday_paid_minutes!`, `sat_ord_minutes!`, `time_half_minutes!`, `double_minutes! integer`; `base_pay!`, `casual_pay!`, `shift_pay!`, `holiday_penalty_rate!`, `holiday_penalty_pay!`, `sat_ord_pay!`, `time_half_pay!`, `double_pay!`, `sun_ord_pay!`, `gross_pay! numeric`; `cr_dt timestamptz` default now | Left untouched; linked only to `sal_job_rate_info` and not the new member model. |
+
+## Existing keys and indexes
+
+All six tables have their respective primary-key btree index. `user_info.user_id` has the only additional unique index. Existing foreign keys: `salary_setting_info.user_seq`, `work_shift_info.user_seq`, and `expense_record.user_seq` reference `user_info.seq` with cascade delete; `sal_shift_txn.job_rate_id` references `sal_job_rate_info.job_rate_id`. There are no other secondary indexes or unique constraints. In particular, existing `user_info.email` is nullable and not unique, and `salary_setting_info.user_seq` is not unique before V4.
+
+## Additive schema applied
+
+`V1` creates the four reusable legacy tables only on a new empty database. Existing six-table schema is explicitly baselined at V1 after review. `V2` adds member-owned `user_preferences`, `saving_goal`, `salary_deposit`, `passenger`, `trip`, `trip_charge`, `trip_payment`, `expense_payment`, and `auth_session`, plus indexes and columns on the four reused tables. `V3` adds trip charge payment state. `V4` adds a unique owner index to `salary_setting_info`. Private new tables use member foreign keys; dependent rows use owner-consistent composite foreign keys where needed. Amounts are AUD integer cents in the new schema; legacy numeric columns are retained for compatibility.
+
+The clean isolated database and a second isolated database cloned from schema only were each migrated through V4 successfully. The latter was explicitly baselined at V1 first. No user rows were copied to either upgrade test. The confirmed local development database was then backed up, explicitly baselined at V1 and migrated through V4; original tables were retained.

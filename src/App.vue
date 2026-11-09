@@ -3,8 +3,18 @@ import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import * as XLSX from 'xlsx'
 import TripTracker from './components/TripTracker.vue'
 import ExpenseTracker from './components/ExpenseTracker.vue'
+import ShoppingList from './components/ShoppingList.vue'
 import DashboardPage from './components/DashboardPage.vue'
+import AuthPanel from './components/AuthPanel.vue'
+import { authEmail, authToken, signOut, clearSession, apiRequest } from './services/authSession.js'
+import { useWorkRecordsPersistence } from './composables/useWorkRecordsPersistence.js'
+import { getGuestLedgerSnapshot, notifyLedgerChanged, passengerRepository, tripRepository, expenseRepository } from './repositories/appRepositories.js'
+import { dashboardSettingsRepository, getGuestDashboardSettings } from './repositories/inMemoryDashboardSettingsRepository.js'
+import { leaveBlackoutRepository, getGuestLeaveBlackouts } from './repositories/leaveBlackoutRepository.js'
+import { shoppingRepository, getGuestShoppingItems, notifyShoppingChanged } from './repositories/shoppingRepository.js'
+import { removeLeaveBlackout, upsertLeaveBlackout } from './domain/leaveBlackouts.js'
 import { formatCalendarAmount } from './utils/calendarMoney.js'
+import { formatLocalDate, getMonthRange } from './domain/date.js'
 import { useShiftCalculator } from './composables/useShiftCalculator.js'
 import {
   formatHours,
@@ -25,8 +35,8 @@ import {
   createWorkRecord,
   normalizeWorkRecord,
 } from './utils/workRecord.js'
-import { ensureUniqueRecordIds, nextRecordId, upsertRecordForDate } from './utils/scheduleRecords.js'
-import { showToast } from 'vant'
+import { clearRecordsInMonth, ensureUniqueRecordIds, getMissingScheduleDates, nextRecordId, recordsInMonth, upsertRecordForDate } from './utils/scheduleRecords.js'
+import { showConfirmDialog, showToast } from 'vant'
 
 // --- 💰 智慧幣別格式化工具 ---
 
@@ -130,7 +140,149 @@ const scheduleSections = ref([])
 const expandedRecordId = ref('')
 const workInputSection = ref(null)
 const records = ref([])
+const leaveBlackouts = ref([])
+const showBlackoutEditor = ref(false)
+const blackoutReason = ref('')
+const blackoutSaving = ref(false)
+const authPanelOpen = ref(false)
+const workPersistence = useWorkRecordsPersistence(records, (error) => showToast(error.message))
+let switchingAccount = false
+let rateWritePaused = false
+let guestRates = { baseRate: 26.74, ppeAllowance: 5, withholdingTaxRate: 0.12 }
+let guestCurrency = 'AUD'
+async function restoreGuestSettings() {
+  rateWritePaused = true
+  baseRate.value = guestRates.baseRate
+  ppeAllowance.value = guestRates.ppeAllowance
+  withholdingTaxRate.value = guestRates.withholdingTaxRate
+  currentCurrency.value = guestCurrency
+  await nextTick()
+  rateWritePaused = false
+}
+
+async function handleSignedIn() {
+  switchingAccount = true
+  rateWritePaused = true
+  try {
+    guestRates = {
+      baseRate: baseRate.value,
+      ppeAllowance: ppeAllowance.value,
+      withholdingTaxRate: withholdingTaxRate.value,
+    }
+    guestCurrency = currentCurrency.value
+    const guestWork = workPersistence.getGuestRecords()
+    const guestLedger = await getGuestLedgerSnapshot()
+    const guestSettings = getGuestDashboardSettings()
+    const guestBlackouts = getGuestLeaveBlackouts()
+    const guestShopping = getGuestShoppingItems()
+    const [memberWork, memberPassengers, memberTrips, memberExpenses, existingRates, memberSettings, memberBlackouts] = await Promise.all([
+      apiRequest('/work-records'), passengerRepository.list(), tripRepository.list(), expenseRepository.list(),
+      apiRequest('/salary-rates'), apiRequest('/dashboard-settings'), leaveBlackoutRepository.list(),
+    ])
+    let memberShopping = null
+    try { memberShopping = await shoppingRepository.list() } catch { showToast('採買清單暫時無法讀取，請更新 Java 後端') }
+    const hasGuestData = guestWork.length || guestLedger.passengers.length || guestLedger.trips.length ||
+      guestLedger.expenses.length || guestSettings.savingGoal || guestSettings.workDayTarget || guestBlackouts.length || (memberShopping && guestShopping.length)
+    const memberHasData = memberWork.length || memberPassengers.length || memberTrips.length || memberExpenses.length || memberBlackouts.length || memberShopping?.length
+    if (hasGuestData) {
+      try {
+        await showConfirmDialog({
+          title: '匯入本次訪客紀錄？',
+          message: memberHasData
+            ? '此會員已有紀錄。相同 ID 或同日期禁休會略過，但同一天不同 ID 的班表仍可能重複；請確認後再匯入。'
+            : '將本次訪客的班表、禁休公告、採買清單、乘客、行程、支出與目標匯入此會員。',
+          confirmButtonText: '匯入',
+        })
+        const missing = (guestItems, memberItems) => guestItems.filter(
+          (item) => !memberItems.some((member) => String(member.id) === String(item.id)),
+        )
+        for (const passenger of missing(guestLedger.passengers, memberPassengers)) await passengerRepository.save(passenger)
+        for (const trip of missing(guestLedger.trips, memberTrips)) await tripRepository.save(trip)
+        for (const expense of missing(guestLedger.expenses, memberExpenses)) await expenseRepository.save(expense)
+        for (const record of missing(guestWork, memberWork)) await apiRequest(`/work-records/${encodeURIComponent(record.id)}`, { method: 'PUT', body: record })
+        for (const blackout of guestBlackouts.filter((item) =>
+          !memberBlackouts.some((member) => member.date === item.date))) {
+          await leaveBlackoutRepository.save(blackout)
+        }
+        if (memberShopping) {
+          for (const item of guestShopping.filter((guest) =>
+            !memberShopping.some((member) => member.id === guest.id))) {
+            await shoppingRepository.save(item)
+          }
+        }
+        if (guestSettings.savingGoal && !memberSettings.savingGoal) await dashboardSettingsRepository.saveSavingGoal(guestSettings.savingGoal)
+        if (guestSettings.workDayTarget && !memberSettings.workDayTarget) await dashboardSettingsRepository.saveWorkDayTarget(guestSettings.workDayTarget)
+        if (!Object.keys(existingRates).length) await apiRequest('/salary-rates', { method: 'PUT', body: guestRates })
+      } catch (error) {
+        if (error !== 'cancel') showToast(error.message || '匯入未完成，請檢查資料後重試')
+      }
+    }
+    await workPersistence.loadMemberRecords()
+    leaveBlackouts.value = await leaveBlackoutRepository.list()
+    const memberRates = await apiRequest('/salary-rates')
+    baseRate.value = Number(memberRates.baseRate ?? 26.74)
+    ppeAllowance.value = Number(memberRates.ppeAllowance ?? 5)
+    withholdingTaxRate.value = Number(memberRates.withholdingTaxRate ?? 0.12)
+    currentCurrency.value = memberSettings.displayCurrency || 'AUD'
+    notifyLedgerChanged()
+    notifyShoppingChanged()
+  } catch (error) {
+    showToast(error.message)
+    clearSession()
+    await workPersistence.restoreGuestRecords()
+    leaveBlackouts.value = getGuestLeaveBlackouts()
+    await restoreGuestSettings()
+  } finally {
+    await nextTick()
+    rateWritePaused = false
+    switchingAccount = false
+  }
+}
+
+async function handleSignOut() {
+  switchingAccount = true
+  try {
+    try { await workPersistence.flush() } catch { /* Errors are shown by the persistence handler. */ }
+    try { await signOut() } catch { showToast('登出請求失敗；本機登入狀態已清除') }
+    await workPersistence.restoreGuestRecords()
+    leaveBlackouts.value = getGuestLeaveBlackouts()
+    await restoreGuestSettings()
+    notifyLedgerChanged()
+    notifyShoppingChanged()
+  } finally {
+    switchingAccount = false
+  }
+}
+
+watch(authToken, async (token) => {
+  if (!token && !switchingAccount) {
+    await workPersistence.restoreGuestRecords()
+    leaveBlackouts.value = getGuestLeaveBlackouts()
+    await restoreGuestSettings()
+    notifyLedgerChanged()
+    notifyShoppingChanged()
+  }
+})
 const activeTab = ref('dashboard')
+const visibleMonth = ref(workDate.value.slice(0, 7))
+const scheduleMonth = ref(visibleMonth.value)
+const displayedMonthRange = computed(() => getMonthRange(visibleMonth.value))
+const displayedMonthRecords = computed(() => recordsInMonth(records.value, visibleMonth.value))
+const monthlyScheduleRecords = computed(() =>
+  recordsInMonth(records.value, scheduleMonth.value).sort((a, b) =>
+    a.workDate === b.workDate ? a.startTime.localeCompare(b.startTime) : a.workDate.localeCompare(b.workDate),
+  ),
+)
+watch(visibleMonth, (month) => { scheduleMonth.value = month })
+
+const onCalendarPanelChange = ({ date }) => {
+  visibleMonth.value = formatLocalDate(date).slice(0, 7)
+}
+
+const moveScheduleMonth = (direction) => {
+  const [year, month] = scheduleMonth.value.split('-').map(Number)
+  scheduleMonth.value = formatLocalDate(new Date(year, month - 1 + direction, 1)).slice(0, 7)
+}
 
 const parseWorkDate = (dateText) => {
   const [year, month, day] = dateText.split('-').map(Number)
@@ -149,6 +301,42 @@ const calendarDefaultDate = computed(() => parseWorkDate(workDate.value))
 const calendarMinDate = new Date(2025, 0, 1)
 const calendarMaxDate = new Date(2027, 11, 31)
 const selectedRecord = computed(() => records.value.find((record) => record.workDate === workDate.value))
+const selectedLeaveBlackout = computed(() => leaveBlackouts.value.find((item) => item.date === workDate.value))
+
+const openBlackoutEditor = () => {
+  blackoutReason.value = selectedLeaveBlackout.value?.reason || ''
+  showBlackoutEditor.value = true
+}
+
+const saveSelectedBlackout = async () => {
+  if (blackoutSaving.value) return
+  blackoutSaving.value = true
+  try {
+    const saved = await leaveBlackoutRepository.save({ date: workDate.value, reason: blackoutReason.value })
+    leaveBlackouts.value = upsertLeaveBlackout(leaveBlackouts.value, saved)
+    showBlackoutEditor.value = false
+    showToast(`${workDate.value} 已標記禁休`)
+  } catch (error) {
+    showToast(error.message || '儲存禁休公告失敗')
+  } finally {
+    blackoutSaving.value = false
+  }
+}
+
+const deleteSelectedBlackout = async () => {
+  if (blackoutSaving.value) return
+  blackoutSaving.value = true
+  try {
+    await leaveBlackoutRepository.remove(workDate.value)
+    leaveBlackouts.value = removeLeaveBlackout(leaveBlackouts.value, workDate.value)
+    showBlackoutEditor.value = false
+    showToast(`${workDate.value} 已移除禁休標記`)
+  } catch (error) {
+    showToast(error.message || '移除禁休公告失敗')
+  } finally {
+    blackoutSaving.value = false
+  }
+}
 const selectedDateHasDefaultShift = computed(() => {
   const defaults = getDefaultShiftForDate(parseWorkDate(workDate.value))
   return defaults.startTime !== defaults.endTime
@@ -176,10 +364,12 @@ const loadSelectedDate = () => {
 
 // 點擊日曆上的某一天
 const onDateSelect = (date) => {
+  showBlackoutEditor.value = false
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   workDate.value = `${year}-${month}-${day}`
+  visibleMonth.value = `${year}-${month}`
   loadSelectedDate()
 }
 
@@ -235,52 +425,51 @@ const fillCurrentWeek = () => {
 
 // --- 一鍵填滿本月 ---
 const fillCurrentMonth = () => {
-  if (!workDate.value) return
-  const current = parseWorkDate(workDate.value)
-  const year = current.getFullYear()
-  const month = current.getMonth()
-  
-  // 抓取本月的第一天與最後一天
-  const firstDay = new Date(year, month, 1)
-  const lastDay = new Date(year, month + 1, 0)
-  
-  bulkAddRecords(firstDay, lastDay)
+  const range = displayedMonthRange.value
+  if (!range) return
+  bulkAddRecords(parseWorkDate(range.start), parseWorkDate(range.end))
+}
+
+const clearCurrentMonth = async () => {
+  const count = displayedMonthRecords.value.length
+  if (!count) return showToast(`${visibleMonth.value} 沒有班表可清除`)
+  const markedCount = displayedMonthRecords.value.filter((record) => record.designatedWork).length
+  try {
+    await showConfirmDialog({
+      title: `清除 ${visibleMonth.value} 班表？`,
+      message: `將刪除 ${displayedMonthRange.value.start} 至 ${displayedMonthRange.value.end} 的 ${count} 筆班表（含休假、備註及 ${markedCount} 筆指定工作標記）。該月薪資預估與工作進度會同步減少；禁休公告、其他月份、車資及支出不會刪除。`,
+      confirmButtonText: '清除班表',
+      confirmButtonColor: '#ee0a24',
+    })
+    records.value = clearRecordsInMonth(records.value, visibleMonth.value)
+    if (workDate.value.startsWith(visibleMonth.value)) loadSelectedDate()
+    showToast(`已清除 ${count} 筆班表`)
+  } catch {
+    // The user cancelled the destructive action.
+  }
 }
 
 // --- 核心批量寫入引擎 ---
 const bulkAddRecords = (startDate, endDate) => {
   const newRecords = []
-  let currentDate = new Date(startDate)
   let nextId = nextRecordId(records.value)
 
-  while (currentDate <= endDate) {
-    const year = currentDate.getFullYear()
-    const month = String(currentDate.getMonth() + 1).padStart(2, '0')
-    const day = String(currentDate.getDate()).padStart(2, '0')
-    const dateStr = `${year}-${month}-${day}`
-
-    // 檢查這一天是否已經在班表中，如果已經有了就跳過（保護已編輯的資料）
-    const exists = records.value.some(r => r.workDate === dateStr)
-    
-    if (!exists) {
-      const defaultShift = getDefaultShiftForDate(currentDate)
-      
-      // 直接呼叫你原本寫好的生成函數
-      const record = buildWorkRecordFromInputs({
-        id: nextId++,
-        workDate: dateStr,
-        startTime: defaultShift.startTime,
-        endTime: defaultShift.endTime,
-        smokoCountOverride: null, 
-        shiftType: defaultShift.shiftType,
-        isCleaningDay: defaultShift.isCleaningDay,
-        remark: defaultShift.remark
-      })
-      
-      if (record) newRecords.push(record)
-    }
-    // 推進到下一天
-    currentDate.setDate(currentDate.getDate() + 1)
+  for (const dateStr of getMissingScheduleDates(records.value, {
+    start: formatLocalDate(startDate),
+    end: formatLocalDate(endDate),
+  })) {
+    const defaultShift = getDefaultShiftForDate(parseWorkDate(dateStr))
+    const record = buildWorkRecordFromInputs({
+      id: nextId++,
+      workDate: dateStr,
+      startTime: defaultShift.startTime,
+      endTime: defaultShift.endTime,
+      smokoCountOverride: null,
+      shiftType: defaultShift.shiftType,
+      isCleaningDay: defaultShift.isCleaningDay,
+      remark: defaultShift.remark,
+    })
+    if (record) newRecords.push(record)
   }
 
   if (newRecords.length > 0) {
@@ -307,15 +496,19 @@ const holidayCalendarFormatter = (day) => {
 
   const holidayLabel = getNswPublicHolidayShortLabel(day.date)
   const isTue = day.date.getDay() === 2
+  const isBlackout = leaveBlackouts.value.some((item) => item.date === dateStr)
 
   // 1. 處理上方標籤 (國定假日 / 清潔日)
   if (holidayLabel) {
     day.topInfo = holidayLabel
     day.className = `${day.className || ''} holiday-day`.trim()
+  } else if (isBlackout) {
+    day.topInfo = '禁休'
   } else if (isTue) {
     day.topInfo = '清潔日'
     day.className = `${day.className || ''} cleaning-day`.trim()
   }
+  if (isBlackout) day.className = `${day.className || ''} leave-blackout-day`.trim()
 
   // 2. 處理下方標籤 (金額 / 請假狀態)
   const record = records.value.find((r) => r.workDate === dateStr)
@@ -358,6 +551,18 @@ const timeHalfRate = computed(() => baseRate.value * 1.5)           // 加班 1.
 const doubleRate = computed(() => baseRate.value * 2.0)             // 加班 2 倍
 const sundayLoadingRate = computed(() => baseRate.value * 0.75)     // 週日加給 75%
 
+const ratePreviewItems = computed(() => [
+  { label: '基本時薪', value: baseRate.value, unit: '／小時' },
+  { label: 'Casual 25%', value: casualLoadingRate.value, unit: '／小時' },
+  { label: '夜班 25%', value: shiftLoadingRate.value, unit: '／小時' },
+  { label: 'Sat ORD 50%', value: saturdayOrdLoadingRate.value, unit: '／小時' },
+  { label: 'T/Half', value: timeHalfRate.value, unit: '／小時' },
+  { label: 'Double', value: doubleRate.value, unit: '／小時' },
+  { label: '星期日 75%', value: sundayLoadingRate.value, unit: '／小時' },
+  { label: 'PPE 每週津貼', value: ppeAllowance.value, unit: '／週' },
+])
+const hasCurrentExchangeRate = computed(() => currentCurrency.value === 'AUD' || Number.isFinite(exchangeRates.value[currentCurrency.value]))
+
 // 3. 獨立且固定的參數維持 ref 即可
 const ppeAllowance = ref(5.0)
 const smokoMinutesPerBreak = ref(30)
@@ -366,6 +571,25 @@ const smokoCountOverride = ref(null)
 // 備註：你這邊寫 withholdingTaxRate，但薪資單上的 12% 其實是退休金 (Superannuation)。
 // 如果這是用來算退休金的，數值 0.12 沒問題；若是算所得稅，澳洲稅金通常是看級距查表的喔！
 const withholdingTaxRate = ref(0.12)
+watch(currentCurrency, async (currency) => {
+  if (!authToken.value || rateWritePaused) return
+  try {
+    await apiRequest('/dashboard-settings/display-currency', { method: 'PUT', body: { currency } })
+  } catch (error) { showToast(error.message) }
+})
+watch([baseRate, ppeAllowance, withholdingTaxRate], async () => {
+  if (!authToken.value || rateWritePaused) return
+  try {
+    await apiRequest('/salary-rates', {
+      method: 'PUT',
+      body: {
+        baseRate: baseRate.value,
+        ppeAllowance: ppeAllowance.value,
+        withholdingTaxRate: withholdingTaxRate.value,
+      },
+    })
+  } catch (error) { showToast(error.message) }
+})
 
 watch([workDate, startTime, endTime, shiftType], () => {
   smokoCountOverride.value = null
@@ -558,13 +782,6 @@ const convertedNetTotal = computed(() => roundTo(weeklyNetTotal.value * currentE
 
 const isEditingRecord = computed(() => Boolean(selectedRecord.value))
 
-const sortedRecords = computed(() => {
-  return [...records.value].sort((a, b) => {
-    if (a.workDate !== b.workDate) return a.workDate.localeCompare(b.workDate)
-    return a.startTime.localeCompare(b.startTime)
-  })
-})
-
 // ======= 備份控制中心與 Excel 生成引擎 =======
 const exportTodayJson = () => {
   if (!workSummary.value || !payBreakdown.value) return
@@ -680,6 +897,24 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 
 <template>
   <div class="page">
+    <div class="account-shell">
+      <div class="account-card" :class="{ 'account-card--shopping-guest': !authToken && activeTab === 'shopping' }">
+        <span class="account-card__avatar" aria-hidden="true">
+          <van-icon :name="authToken ? 'user-circle-o' : 'user-o'" />
+        </span>
+        <div class="account-card__identity">
+          <strong>{{ authToken ? '已登入' : activeTab === 'shopping' ? '訪客模式' : '訪客試算' }}</strong>
+          <span :title="authToken ? authEmail : undefined">
+            {{ authToken ? authEmail : activeTab === 'shopping' ? '清單不會永久保存，重整後消失' : '登入後可保存私人紀錄' }}
+          </span>
+        </div>
+        <van-button size="small" plain type="primary" class="account-card__action"
+          @click="authToken ? handleSignOut() : authPanelOpen = true">
+          {{ authToken ? '登出' : '登入／註冊' }}
+        </van-button>
+      </div>
+    </div>
+    <AuthPanel v-model:show="authPanelOpen" @signed-in="handleSignedIn" />
     <DashboardPage
       v-show="activeTab === 'dashboard'"
       :work-records="records"
@@ -700,8 +935,12 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 
     <div class="section calendar-section">
       <div class="calendar-intro">
-        <p class="calendar-help">點日期可設休假或編輯工時</p>
-        <van-button size="small" plain type="primary" @click="fillCurrentMonth">填滿本月</van-button>
+        <p class="calendar-help">點日期可設休假、記禁休或編輯工時</p>
+      </div>
+      <div class="calendar-month-actions">
+        <span>目前顯示 {{ visibleMonth }}</span>
+        <van-button size="small" plain type="primary" @click="fillCurrentMonth">填滿此月</van-button>
+        <van-button size="small" plain type="danger" :disabled="displayedMonthRecords.length === 0" @click="clearCurrentMonth">清除此月班表</van-button>
       </div>
       <div class="calendar-wrapper">
         <van-calendar
@@ -713,6 +952,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
           :formatter="holidayCalendarFormatter"
           switch-mode="year-month"
           @select="onDateSelect"
+          @panel-change="onCalendarPanelChange"
         />
       </div>
       <div class="calendar-day-actions">
@@ -722,6 +962,9 @@ const markDesignatedWorkDate = ({ date, marked }) => {
             <p v-if="selectedRecord?.shiftType === 'leave'">已標記休假，不計工時與薪資</p>
             <p v-else-if="selectedRecord">已排班 · {{ selectedRecord.startTime }}–{{ selectedRecord.endTime }}</p>
             <p v-else>尚未加入班表</p>
+            <p v-if="selectedLeaveBlackout" class="calendar-day-actions__blackout">
+              禁休公告{{ selectedLeaveBlackout.reason ? `：${selectedLeaveBlackout.reason}` : '' }}
+            </p>
           </div>
           <strong v-if="selectedRecord && selectedRecord.shiftType !== 'leave'" class="calendar-day-actions__pay">
             {{ currencySymbol }}{{ formatDisplayMoney(selectedRecord.grossPay * currentExchangeRate) }}
@@ -731,10 +974,30 @@ const markDesignatedWorkDate = ({ date, marked }) => {
           <van-button v-if="selectedRecord?.shiftType === 'leave'" block plain type="primary" @click="restoreSelectedDateShift">{{ selectedDateHasDefaultShift ? '恢復預設出勤' : '設定出勤時間' }}</van-button>
           <van-button v-else block plain type="danger" @click="markSelectedDateAsLeave">設為休假</van-button>
           <van-button block plain type="default" @click="openSelectedDateEditor">{{ selectedRecord ? '編輯當天工時' : '新增當天班表' }}</van-button>
+          <van-button block plain type="warning" class="calendar-day-actions__blackout-button" @click="openBlackoutEditor">
+            {{ selectedLeaveBlackout ? '編輯禁休公告' : '新增禁休' }}
+          </van-button>
         </div>
         <p v-if="selectedRecord?.shiftType === 'leave'" class="calendar-day-actions__hint">{{ selectedDateHasDefaultShift ? '恢復時會套用填滿本月的預設時間；如需不同工時，請再編輯。' : '這天沒有預設工時，請設定上下班時間後儲存。' }}</p>
+        <p class="calendar-day-actions__hint">禁休只用來提醒主管公告，不會變更班表、休假或薪資。</p>
       </div>
     </div>
+
+    <van-popup v-model:show="showBlackoutEditor" position="bottom" round>
+      <div class="blackout-editor">
+        <div class="blackout-editor__heading">
+          <strong>{{ selectedLeaveBlackout ? '編輯禁休公告' : '新增禁休' }}</strong>
+          <span>{{ workDate }}</span>
+        </div>
+        <p>記下主管公告的原因，之後排休時不用再找訊息。這只是個人提醒，不代表系統會阻止請假。</p>
+        <van-field v-model="blackoutReason" type="textarea" rows="2" autosize maxlength="240" show-word-limit
+          label="公告說明" placeholder="選填，例如：人手不足、旺季不得請假" />
+        <div class="blackout-editor__actions">
+          <van-button v-if="selectedLeaveBlackout" block plain type="danger" :loading="blackoutSaving" @click="deleteSelectedBlackout">移除標記</van-button>
+          <van-button block type="primary" :loading="blackoutSaving" @click="saveSelectedBlackout">儲存禁休</van-button>
+        </div>
+      </div>
+    </van-popup>
 
     <div ref="workInputSection" class="section">
       <h2>出勤與時間</h2>
@@ -847,40 +1110,53 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       </div>
 
       <div class="section">
-        <h2>基本費率設定 (AUD)</h2>
+        <h2>基本費率 · {{ currentCurrency }}{{ currentCurrency === 'AUD' ? '' : ' 參考換算' }}</h2>
+        <p v-if="!hasCurrentExchangeRate" class="section-note">尚未取得 {{ currentCurrency }} 匯率，暫不顯示參考換算。</p>
+        <div v-else class="rate-preview section-card">
+          <div v-for="rate in ratePreviewItems" :key="rate.label" class="rate-preview__row">
+            <span>{{ rate.label }}</span>
+            <strong>{{ currencySymbol }}{{ formatDisplayMoney(rate.value * currentExchangeRate) }} {{ currentCurrency }}{{ rate.unit }}</strong>
+          </div>
+        </div>
+        <p class="section-note rate-input-note">下方以 AUD 輸入原始費率；切換顯示幣別不會改動計薪參數或已存班表。</p>
         <van-cell-group inset>
           <van-cell title="Smoko 次數" center>
             <template #right-icon>
               <van-stepper :model-value="displayedSmokoCount" :min="0" :max="3" integer theme="round" button-size="28px" disable-input @change="(val) => { smokoCountOverride = Number(val) }" />
             </template>
           </van-cell>
-          <van-field :model-value="formatRate(baseRate)" label="基本時薪" type="number" input-align="right" @update:model-value="(val) => updateRate(baseRate, val, 3)" />
-          <van-field :model-value="formatRate(casualLoadingRate)" label="Casual 25%" type="number" input-align="right" @update:model-value="(val) => updateRate(casualLoadingRate, val, 3)" />
-          <van-field :model-value="formatRate(shiftLoadingRate)" label="夜班 25%" type="number" input-align="right" @update:model-value="(val) => updateRate(shiftLoadingRate, val, 3)" />
-          <van-field :model-value="formatRate(saturdayOrdLoadingRate)" label="Sat ORD 50%" type="number" input-align="right" @update:model-value="(val) => updateRate(saturdayOrdLoadingRate, val, 3)" />
-          <van-field :model-value="formatRate(timeHalfRate)" label="T/Half" type="number" input-align="right" @update:model-value="(val) => updateRate(timeHalfRate, val, 3)" />
-          <van-field :model-value="formatRate(doubleRate)" label="Double" type="number" input-align="right" @update:model-value="(val) => updateRate(doubleRate, val, 3)" />
-          <van-field :model-value="formatRate(sundayLoadingRate)" label="星期日 75%" type="number" input-align="right" @update:model-value="(val) => updateRate(sundayLoadingRate, val, 3)" />
-          <van-field :model-value="formatRate(ppeAllowance)" label="PPE 每週津貼" type="number" input-align="right" @update:model-value="(val) => updateRate(ppeAllowance, val, 2)" />
+          <van-field :model-value="formatRate(baseRate)" label="基本時薪 AUD" type="number" input-align="right" @update:model-value="(val) => updateRate(baseRate, val, 3)" />
+          <van-cell title="Casual 25% · AUD" :value="formatRate(casualLoadingRate)" />
+          <van-cell title="夜班 25% · AUD" :value="formatRate(shiftLoadingRate)" />
+          <van-cell title="Sat ORD 50% · AUD" :value="formatRate(saturdayOrdLoadingRate)" />
+          <van-cell title="T/Half · AUD" :value="formatRate(timeHalfRate)" />
+          <van-cell title="Double · AUD" :value="formatRate(doubleRate)" />
+          <van-cell title="星期日 75% · AUD" :value="formatRate(sundayLoadingRate)" />
+          <van-field :model-value="formatRate(ppeAllowance)" label="PPE 每週 AUD" type="number" input-align="right" @update:model-value="(val) => updateRate(ppeAllowance, val, 2)" />
         </van-cell-group>
       </div>
 
       <div class="section">
         <h2>班表明細</h2>
-        <div v-if="records.length === 0" class="section-card empty-state">
-          <div class="empty-state__title">目前無排程紀錄</div>
-          <div class="empty-state__text">請在上方日曆選取日期、設定完工時後點擊「加入本週班表」。</div>
+        <div class="schedule-month-nav" aria-label="班表月份">
+          <button type="button" aria-label="班表上月" @click="moveScheduleMonth(-1)"><van-icon name="arrow-left" /></button>
+          <strong>{{ scheduleMonth }} · {{ monthlyScheduleRecords.length }} 筆</strong>
+          <button type="button" aria-label="班表下月" @click="moveScheduleMonth(1)"><van-icon name="arrow" /></button>
+        </div>
+        <div v-if="monthlyScheduleRecords.length === 0" class="section-card empty-state">
+          <div class="empty-state__title">{{ scheduleMonth }} 沒有班表紀錄</div>
+          <div class="empty-state__text">可切換月份查看，或回到日曆填滿此月。</div>
         </div>
         <van-collapse v-else v-model="scheduleSections" class="schedule-collapse">
           <van-collapse-item name="records">
             <template #title>
               <div class="schedule-overview">
-                <strong>查看 {{ records.length }} 筆班表</strong>
+                <strong>查看 {{ scheduleMonth }} · {{ monthlyScheduleRecords.length }} 筆班表</strong>
                 <small>依日期排列，點選單筆查看明細</small>
               </div>
             </template>
             <van-collapse v-model="expandedRecordId" accordion class="record-collapse">
-              <van-collapse-item v-for="record in sortedRecords" :key="record.id" :name="record.id">
+              <van-collapse-item v-for="record in monthlyScheduleRecords" :key="record.id" :name="record.id">
                 <template #title>
                   <span class="schedule-date">{{ record.workDate }} <small>{{ getDayOfWeek(record.workDate) }}</small></span>
                 </template>
@@ -966,12 +1242,14 @@ const markDesignatedWorkDate = ({ date, marked }) => {
     </section>
 
     <TripTracker v-show="activeTab === 'trips'" />
+    <ShoppingList v-show="activeTab === 'shopping'" :active="activeTab === 'shopping'" @navigate="activeTab = $event" />
     <ExpenseTracker v-show="activeTab === 'expenses'" />
 
     <van-tabbar v-model="activeTab" fixed safe-area-inset-bottom>
       <van-tabbar-item name="dashboard" icon="home-o">首頁</van-tabbar-item>
       <van-tabbar-item name="payroll" icon="balance-o">薪資</van-tabbar-item>
       <van-tabbar-item name="trips" icon="friends-o">車資</van-tabbar-item>
+      <van-tabbar-item name="shopping" icon="cart-o">採買</van-tabbar-item>
       <van-tabbar-item name="expenses" icon="records">支出</van-tabbar-item>
     </van-tabbar>
   </div>
@@ -979,6 +1257,15 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 
 <style scoped>
 .page { min-height: 100vh; background: #f5f7fa; }
+.account-shell { max-width: 820px; margin-inline: auto; padding: calc(10px + env(safe-area-inset-top, 0px)) max(var(--page-inset), env(safe-area-inset-right, 0px)) 0 max(var(--page-inset), env(safe-area-inset-left, 0px)); }
+.account-card { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 58px; padding: 8px 10px; box-sizing: border-box; border: 1px solid var(--color-border); border-radius: 16px; background: var(--color-surface); box-shadow: 0 6px 18px rgba(29, 66, 106, .05); }
+.account-card__avatar { display: grid; flex: none; place-items: center; width: 38px; height: 38px; border-radius: 12px; background: #eaf3fe; color: #166dd1; font-size: 20px; }
+.account-card__identity { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.account-card__identity strong { color: var(--color-heading); font-size: 13px; font-weight: 800; line-height: 1.2; }
+.account-card__identity span { overflow: hidden; color: var(--color-muted); font-size: 12px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.account-card--shopping-guest .account-card__identity span { overflow: visible; white-space: normal; }
+.account-card__action { flex: none; min-height: 38px; padding-inline: 12px; border-radius: 11px; font-weight: 700; }
+.page :deep(.app-page) { padding-top: 12px; }
 .payroll-page { max-width: 820px; margin: 0 auto; }
 .header { flex-wrap: wrap; }
 .header-main { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; }
@@ -991,6 +1278,17 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 .calendar-intro { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
 .calendar-intro :deep(.van-button) { flex: none; min-height: 40px; border-radius: 11px; }
 .calendar-help { margin: 0; color: #657588; font-size: 13px; line-height: 1.4; }
+.calendar-month-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
+.calendar-month-actions span { flex: 1 1 100%; color: #657588; font-size: 13px; font-weight: 700; }
+.calendar-month-actions :deep(.van-button) { min-height: 40px; border-radius: 11px; }
+.rate-preview { display: grid; gap: 0; margin-bottom: 10px; }
+.rate-preview__row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px 12px; padding: 7px 0; font-size: 13px; border-bottom: 1px solid #edf1f5; }
+.rate-preview__row:last-child { border-bottom: 0; }
+.rate-preview__row strong { color: #166dd1; margin-left: auto; font-variant-numeric: tabular-nums; }
+.rate-input-note { margin-top: 10px; }
+.schedule-month-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; padding: 4px; border-radius: 14px; background: #eaf3fe; }
+.schedule-month-nav button { width: 40px; height: 40px; border: 0; border-radius: 10px; background: #fff; color: #166dd1; }
+.schedule-month-nav strong { font-size: 14px; text-align: center; }
 
 .calendar-wrapper { border-radius: var(--page-card-radius); overflow: hidden; box-shadow: 0 12px 28px rgba(29, 66, 106, .07); background: #fff; border: 1px solid #e6edf5; }
 .calendar-day-actions { margin: 12px 0 0; padding: 15px 16px; border: 1px solid #e6edf5; border-radius: 18px; background: #fff; box-shadow: 0 6px 18px rgba(29, 66, 106, .05); }
@@ -998,10 +1296,20 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 .calendar-day-actions__heading strong { color: #1b2a3b; font-size: 15px; }
 .calendar-day-actions__heading small { color: #8290a0; font-size: 11px; }
 .calendar-day-actions__heading p { margin: 4px 0 0; color: #657588; font-size: 12px; }
+.calendar-day-actions__heading .calendar-day-actions__blackout { color: #a95a0c; font-weight: 700; overflow-wrap: anywhere; }
 .calendar-day-actions__pay { margin-left: auto; color: #166dd1 !important; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .calendar-day-actions__buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 13px; }
 .calendar-day-actions__buttons :deep(.van-button) { min-height: 42px; padding: 0 8px; border-radius: 11px; font-size: 13px; }
+.calendar-day-actions__blackout-button { grid-column: 1 / -1; }
 .calendar-day-actions__hint { margin: 10px 0 0; color: #8290a0; font-size: 11px; line-height: 1.4; }
+.blackout-editor { max-height: 90dvh; overflow-y: auto; padding: 20px 16px calc(20px + env(safe-area-inset-bottom)); }
+.blackout-editor__heading { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; color: #1b2a3b; }
+.blackout-editor__heading strong { font-size: 18px; }
+.blackout-editor__heading span { color: #657588; font-size: 13px; }
+.blackout-editor p { color: #657588; font-size: 13px; line-height: 1.5; }
+.blackout-editor__actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
+.blackout-editor__actions :deep(.van-button) { min-height: 46px; border-radius: 12px; }
+.blackout-editor__actions :deep(.van-button:only-child) { grid-column: 1 / -1; }
 .bulk-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 :deep(.van-calendar) { height: auto !important; }
 :deep(.van-calendar__body) { padding-bottom: 12px; }
@@ -1025,6 +1333,8 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 }
 :deep(.holiday-day .van-calendar__top-info) { color: #ef4444 !important; font-weight: 700; }
 :deep(.cleaning-day .van-calendar__top-info) { color: #f97316 !important; font-weight: 700; }
+:deep(.leave-blackout-day) { box-shadow: inset 0 0 0 2px #f7b060; border-radius: 8px; }
+:deep(.leave-blackout-day .van-calendar__top-info) { color: #a95a0c !important; font-weight: 800; }
 :deep(.van-calendar__bottom-info) {
   position: absolute !important;
   bottom: 7px !important;
@@ -1060,6 +1370,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
   box-sizing: border-box !important;
 }
 :deep(.van-calendar__selected-day .van-calendar__top-info) { color: #fff !important; }
+:deep(.leave-blackout-day .van-calendar__selected-day .van-calendar__top-info) { color: #fff !important; }
 :deep(.van-calendar__selected-day .van-calendar__bottom-info) { color: #fff !important; background: rgba(255, 255, 255, .2) !important; }
 
 .workflow { margin-top: 4px; }

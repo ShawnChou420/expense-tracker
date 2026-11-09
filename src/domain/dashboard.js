@@ -1,6 +1,7 @@
 import { formatLocalDate, getWeekRange, isDateInRange, parseLocalDate } from './date.js'
 import { EXPENSE_GROUPS } from './expenses.js'
 import { dollarsToCents, sumCents } from './money.js'
+import { getChargeReceivedCents } from './trips.js'
 
 export const EXPENSE_COLORS = Object.freeze({
   HOUSING: '#1976d2',
@@ -37,9 +38,23 @@ export function getDatesInRange(range) {
 /** @param {{ trips?: Array<any>, expenses?: Array<any>, salaryDeposits?: Array<any> | null }} sources */
 export function getActualTransactions({ trips = [], expenses = [], salaryDeposits = null }) {
   const tripIncome = trips.flatMap((trip) =>
-    (trip.charges || [])
-      .filter((charge) => charge.paymentStatus === 'PAID' && parseLocalDate(charge.paidAt))
-      .map((charge) => ({ date: charge.paidAt, amountCents: charge.amountCents, kind: 'trip' })),
+    (trip.charges || []).flatMap((charge) => {
+      if (Array.isArray(charge.payments)) {
+        return charge.payments
+          .filter(
+            (payment) =>
+              parseLocalDate(payment.paidAt) && Number.isSafeInteger(payment.amountCents),
+          )
+          .map((payment) => ({
+            date: payment.paidAt,
+            amountCents: payment.amountCents,
+            kind: 'trip',
+          }))
+      }
+      return charge.paymentStatus === 'PAID' && parseLocalDate(charge.paidAt)
+        ? [{ date: charge.paidAt, amountCents: charge.amountCents, kind: 'trip' }]
+        : []
+    }),
   )
   const salaryIncome = (salaryDeposits || [])
     .filter(
@@ -51,9 +66,19 @@ export function getActualTransactions({ trips = [], expenses = [], salaryDeposit
     .map((deposit) => ({ date: deposit.paidAt, amountCents: deposit.amountCents, kind: 'salary' }))
   const income = [...tripIncome, ...salaryIncome]
   const outgoings = expenses.flatMap((expense) => {
-    // Current expense records use their date (or recurring paidDates) as the booked payment date.
-    // There is no separate bank-settlement date in the existing data model.
     if (expense.category === 'INVESTMENT_LOSS') return []
+    if (Array.isArray(expense.payments)) {
+      return expense.payments
+        .filter(
+          (payment) => parseLocalDate(payment.paidAt) && Number.isSafeInteger(payment.amountCents),
+        )
+        .map((payment) => ({
+          date: payment.paidAt,
+          amountCents: payment.amountCents,
+          group: expense.group,
+        }))
+    }
+    // Guest drafts have no separate settlement date, so use their existing marked dates.
     const dates =
       expense.frequency === 'NONE'
         ? expense.status === 'PAID'
@@ -122,10 +147,8 @@ export function getDashboardSummary({
   const pendingFareCents = sumCents(
     trips
       .filter((trip) => isDateInRange(trip.date, range))
-      .flatMap((trip) =>
-        (trip.charges || []).filter((charge) => charge.paymentStatus === 'PENDING'),
-      )
-      .map((charge) => charge.amountCents),
+      .flatMap((trip) => trip.charges || [])
+      .map((charge) => Math.max(0, charge.amountCents - getChargeReceivedCents(charge))),
   )
   const distribution = getExpenseDistribution(outgoings, range)
   const days = getDatesInRange(range).map((date) => {

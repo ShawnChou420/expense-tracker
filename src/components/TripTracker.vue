@@ -1,15 +1,32 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { showConfirmDialog, showToast } from 'vant'
 import { formatLocalDate, getWeekRange, parseLocalDate } from '../domain/date.js'
 import { dollarsToCents, formatAud, formatCentsInput } from '../domain/money.js'
 import { getTripStats } from '../domain/tripStats.js'
-import { createPassenger, createTrip, getPassengerDefaultFareCents } from '../domain/trips.js'
-import { passengerRepository, tripRepository } from '../repositories/appRepositories.js'
+import {
+  applyFareBackfill,
+  createPassenger,
+  createTrip,
+  getChargeReceivedCents,
+  getFareBackfillCandidates,
+  getPassengerDefaultFareCents,
+} from '../domain/trips.js'
+import {
+  passengerRepository,
+  tripRepository,
+  subscribeToLedgerChanges,
+} from '../repositories/appRepositories.js'
+import { authToken } from '../services/authSession.js'
 import { getTodayDate } from '../utils/time.js'
 
 const passengers = ref([])
 const trips = ref([])
+const showPaymentForm = ref(false)
+const paymentTripId = ref('')
+const paymentPassengerId = ref('')
+const paymentRemainingCents = ref(0)
+const paymentForm = ref({ paidAt: getTodayDate(), amount: '' })
 const selectedWeekDate = ref(getTodayDate())
 const showPassengerForm = ref(false)
 const showTripForm = ref(false)
@@ -21,6 +38,7 @@ const passengerForm = ref({ name: '', oneWay: '', roundTrip: '', active: true })
 const tripForm = ref({ date: getTodayDate(), type: 'WORK', tripMode: 'ONE_WAY', note: '' })
 const selectedPassengerIds = ref([])
 const chargeForms = ref([])
+const selectedPassengerFilter = ref('all')
 
 const activePassengers = computed(() => passengers.value.filter((passenger) => passenger.active))
 const weekRange = computed(() => getWeekRange(selectedWeekDate.value))
@@ -28,6 +46,13 @@ const weeklyTrips = computed(() =>
   trips.value
     .filter((trip) => trip.date >= weekRange.value.start && trip.date <= weekRange.value.end)
     .sort((a, b) => b.date.localeCompare(a.date)),
+)
+const filteredWeeklyTrips = computed(() =>
+  selectedPassengerFilter.value === 'all'
+    ? weeklyTrips.value
+    : weeklyTrips.value.filter((trip) =>
+        trip.charges.some((charge) => charge.passengerId === selectedPassengerFilter.value),
+      ),
 )
 const stats = computed(() =>
   getTripStats({
@@ -55,18 +80,24 @@ function selectCurrentWeek() {
   selectedWeekDate.value = getTodayDate()
 }
 
-function startNewTrip() {
+function startNewTrip(passengerId = null) {
   if (activePassengers.value.length === 0) {
     showPassengerManager.value = true
     openPassengerForm()
     return
   }
-  openTripForm()
+  openTripForm(null, passengerId)
 }
 
 async function refreshData() {
-  passengers.value = await passengerRepository.list()
-  trips.value = await tripRepository.list()
+  const identity = authToken.value
+  const [nextPassengers, nextTrips] = await Promise.all([
+    passengerRepository.list(),
+    tripRepository.list(),
+  ])
+  if (identity !== authToken.value) return
+  passengers.value = nextPassengers
+  trips.value = nextTrips
 }
 
 function resetPassengerForm() {
@@ -109,7 +140,7 @@ async function savePassenger() {
   }
 
   const existing = passengers.value.find((passenger) => passenger.id === editingPassengerId.value)
-  await passengerRepository.save(
+  const saved = await passengerRepository.save(
     createPassenger({
       ...existing,
       id: editingPassengerId.value || undefined,
@@ -123,6 +154,33 @@ async function savePassenger() {
   showPassengerForm.value = false
   resetPassengerForm()
   showToast('乘客已儲存')
+
+  const changedModes = [
+    ['ONE_WAY', 'defaultOneWayFareCents'],
+    ['ROUND_TRIP', 'defaultRoundTripFareCents'],
+  ]
+    .filter(([, field]) => existing?.[field] !== saved[field])
+    .map(([mode]) => mode)
+  const candidates = getFareBackfillCandidates(trips.value, saved, weekRange.value, changedModes)
+  if (!candidates.length) return
+  const fareDetails = [
+    ...new Set(candidates.map((item) => `${modeLabel[item.mode]} ${formatAud(item.fareCents)}`)),
+  ].join('、')
+  try {
+    await showConfirmDialog({
+      title: '補入當週未設定車資？',
+      message: `${weekRange.value.start} 至 ${weekRange.value.end} 有 ${candidates.length} 筆待收且明確未設定金額的行程。將套用 ${fareDetails}；已收、自訂、免費與舊版無法辨識的 0 元均不修改。`,
+      confirmButtonText: '確認補入',
+    })
+    const updated = applyFareBackfill(trips.value, saved.id, candidates)
+    for (let index = 0; index < updated.length; index++) {
+      if (updated[index] !== trips.value[index]) await tripRepository.save(updated[index])
+    }
+    await refreshData()
+    showToast(`已補入 ${candidates.length} 筆車資`)
+  } catch {
+    // Cancelling leaves existing trips unchanged; the new passenger default remains saved.
+  }
 }
 
 function resetTripForm() {
@@ -132,7 +190,7 @@ function resetTripForm() {
   chargeForms.value = []
 }
 
-function openTripForm(trip) {
+function openTripForm(trip, passengerId = null) {
   if (trip) {
     editingTripId.value = trip.id
     tripForm.value = {
@@ -145,12 +203,14 @@ function openTripForm(trip) {
     chargeForms.value = trip.charges.map((charge) => ({
       passengerId: charge.passengerId,
       amount: formatCentsInput(charge.amountCents),
+      amountStatus: charge.amountStatus,
       paymentStatus: charge.paymentStatus,
       paidAt: charge.paidAt || '',
     }))
   } else {
     resetTripForm()
     tripForm.value.date = selectedWeekDate.value
+    if (passengerId) selectedPassengerIds.value = [passengerId]
   }
   showTripForm.value = true
 }
@@ -160,15 +220,23 @@ function refreshChargeForms(useDefaults = true) {
     const existing = chargeForms.value.find((charge) => charge.passengerId === passengerId)
     if (existing) return existing
     const passenger = passengers.value.find((item) => item.id === passengerId)
+    const defaultFare = useDefaults
+      ? getPassengerDefaultFareCents(passenger, tripForm.value.tripMode)
+      : null
     return {
       passengerId,
-      amount: formatCentsInput(
-        useDefaults ? getPassengerDefaultFareCents(passenger, tripForm.value.tripMode) : 0,
-      ),
+      amount: defaultFare === null ? '' : formatCentsInput(defaultFare),
+      amountStatus: defaultFare === null ? 'UNSET' : 'DEFAULT',
       paymentStatus: 'PENDING',
       paidAt: '',
     }
   })
+}
+
+function setChargeAmount(charge, value) {
+  charge.amount = value
+  const cents = dollarsToCents(value)
+  charge.amountStatus = value === '' ? 'UNSET' : cents === 0 ? 'FREE' : 'CUSTOM'
 }
 
 function setPaymentStatus(charge, status) {
@@ -182,10 +250,13 @@ watch(
   () => {
     if (editingTripId.value) return
     chargeForms.value = chargeForms.value.map((charge) => {
+      if (charge.amountStatus === 'CUSTOM' || charge.amountStatus === 'FREE') return charge
       const passenger = passengers.value.find((item) => item.id === charge.passengerId)
+      const defaultFare = getPassengerDefaultFareCents(passenger, tripForm.value.tripMode)
       return {
         ...charge,
-        amount: formatCentsInput(getPassengerDefaultFareCents(passenger, tripForm.value.tripMode)),
+        amount: defaultFare === null ? '' : formatCentsInput(defaultFare),
+        amountStatus: defaultFare === null ? 'UNSET' : 'DEFAULT',
       }
     })
   },
@@ -198,12 +269,19 @@ async function saveTrip() {
   }
   const charges = chargeForms.value.map((charge) => ({
     passengerId: charge.passengerId,
-    amountCents: dollarsToCents(charge.amount),
+    amountCents: charge.amountStatus === 'UNSET' ? 0 : dollarsToCents(charge.amount),
+    amountStatus: charge.amountStatus,
     paymentStatus: charge.paymentStatus,
     paidAt: charge.paymentStatus === 'PAID' ? charge.paidAt : undefined,
   }))
   if (charges.some((charge) => charge.amountCents === null)) {
     showToast('每位乘客都需要有效的非負金額')
+    return
+  }
+  if (
+    charges.some((charge) => charge.paymentStatus === 'PAID' && charge.amountStatus === 'UNSET')
+  ) {
+    showToast('已收車資請先設定金額；免費請明確輸入 0')
     return
   }
   if (charges.some((charge) => charge.paymentStatus === 'PAID' && !parseLocalDate(charge.paidAt))) {
@@ -224,13 +302,13 @@ async function removeTrip(trip) {
   try {
     await showConfirmDialog({
       title: '刪除這筆車資行程？',
-      message: `${trip.date} 的紀錄將無法復原。`,
+      message: `${trip.date} 的紀錄將無法復原。${trip.charges.some((charge) => getChargeReceivedCents(charge) > 0) ? '此行程已有收款，刪除會一併移除收款紀錄並改變首頁統計。' : ''}`,
     })
     await tripRepository.remove(trip.id)
     await refreshData()
     showToast('已刪除車資行程')
-  } catch {
-    // The user cancelled the confirmation dialog.
+  } catch (error) {
+    if (error !== 'cancel') showToast(error.message)
   }
 }
 
@@ -242,7 +320,54 @@ function getTripTotalCents(trip) {
   return trip.charges.reduce((total, charge) => total + charge.amountCents, 0)
 }
 
-onMounted(refreshData)
+function openPaymentForm(trip, charge) {
+  paymentTripId.value = trip.id
+  paymentPassengerId.value = charge.passengerId
+  paymentRemainingCents.value = charge.amountCents - getChargeReceivedCents(charge)
+  paymentForm.value = {
+    paidAt: getTodayDate(),
+    amount: formatCentsInput(paymentRemainingCents.value),
+  }
+  showPaymentForm.value = true
+}
+
+async function savePayment() {
+  const amountCents = dollarsToCents(paymentForm.value.amount)
+  if (
+    !parseLocalDate(paymentForm.value.paidAt) ||
+    !Number.isSafeInteger(amountCents) ||
+    amountCents <= 0 ||
+    amountCents > paymentRemainingCents.value
+  ) {
+    showToast('請輸入有效收款日期與不超過待收的金額')
+    return
+  }
+  try {
+    await tripRepository.addPayment(paymentTripId.value, paymentPassengerId.value, {
+      paidAt: paymentForm.value.paidAt,
+      amountCents,
+    })
+    showPaymentForm.value = false
+    await refreshData()
+    showToast('收款已記錄')
+  } catch (error) {
+    showToast(error.message)
+  }
+}
+
+let unsubscribeLedger = null
+onMounted(() => {
+  unsubscribeLedger = subscribeToLedgerChanges(() =>
+    refreshData().catch((error) => showToast(error.message)),
+  )
+  refreshData().catch((error) => showToast(error.message))
+})
+onUnmounted(() => unsubscribeLedger?.())
+watch(authToken, () => {
+  passengers.value = []
+  trips.value = []
+  refreshData().catch((error) => showToast(error.message))
+})
 </script>
 
 <template>
@@ -252,15 +377,20 @@ onMounted(refreshData)
         <h1>車資紀錄</h1>
         <p>每趟記清楚，收款不漏掉。</p>
       </div>
-      <van-button
-        class="app-page__action header-action"
-        type="primary"
-        size="small"
-        icon="plus"
-        @click="startNewTrip"
-      >
-        {{ activePassengers.length ? '新增行程' : '新增乘客' }}
-      </van-button>
+      <div class="header-actions">
+        <van-button plain type="primary" size="small" @click="openPassengerForm()"
+          >新增乘客</van-button
+        >
+        <van-button
+          class="app-page__action"
+          type="primary"
+          size="small"
+          icon="plus"
+          :disabled="activePassengers.length === 0"
+          @click="startNewTrip()"
+          >新增本趟</van-button
+        >
+      </div>
     </header>
 
     <section class="overview app-page__card" aria-labelledby="overview-title">
@@ -304,23 +434,64 @@ onMounted(refreshData)
       <p v-else class="overview__empty">本週尚無行程，新增後會顯示應收、已收與待收。</p>
     </section>
 
+    <section class="trip-section quick-people" aria-labelledby="quick-people-title">
+      <div class="section-heading"><h2 id="quick-people-title">常用乘客</h2></div>
+      <p v-if="!activePassengers.length" class="overview__empty">
+        尚無常用乘客。先新增乘客，再記錄本趟行程。
+      </p>
+      <div v-else class="quick-people__list">
+        <div
+          v-for="passenger in activePassengers"
+          :key="passenger.id"
+          class="quick-person app-page__card"
+        >
+          <div>
+            <strong>{{ passenger.name }}</strong
+            ><small
+              >單程
+              {{
+                passenger.defaultOneWayFareCents === null
+                  ? '未設定'
+                  : formatAud(passenger.defaultOneWayFareCents)
+              }}
+              · 來回
+              {{
+                passenger.defaultRoundTripFareCents === null
+                  ? '未設定'
+                  : formatAud(passenger.defaultRoundTripFareCents)
+              }}</small
+            >
+          </div>
+          <button type="button" @click="startNewTrip(passenger.id)">新增本趟</button>
+        </div>
+      </div>
+    </section>
+
     <section class="trip-section" aria-labelledby="trips-title">
       <div class="section-heading">
         <div>
           <h2 id="trips-title">
-            本週行程 <span class="section-count">{{ weeklyTrips.length }}</span>
+            當週行程 <span class="section-count">{{ filteredWeeklyTrips.length }}</span>
           </h2>
         </div>
+        <select v-model="selectedPassengerFilter" aria-label="篩選乘客" class="passenger-filter">
+          <option value="all">全部乘客</option>
+          <option v-for="passenger in passengers" :key="passenger.id" :value="passenger.id">
+            {{ passenger.name }}
+          </option>
+        </select>
       </div>
-      <div v-if="weeklyTrips.length === 0" class="empty-card">
-        <strong>這週還沒有行程</strong>
+      <div v-if="filteredWeeklyTrips.length === 0" class="empty-card">
+        <strong>{{
+          selectedPassengerFilter === 'all' ? '這週還沒有行程' : '這週沒有符合的乘客行程'
+        }}</strong>
         <span>{{
           activePassengers.length
-            ? '按上方「新增行程」開始記錄。'
+            ? '可切換乘客或週期，或新增本趟資料。'
             : '先新增常用乘客，就能開始記錄。'
         }}</span>
       </div>
-      <article v-for="trip in weeklyTrips" :key="trip.id" class="trip-card">
+      <article v-for="trip in filteredWeeklyTrips" :key="trip.id" class="trip-card">
         <div class="trip-card__top">
           <div>
             <span class="trip-card__date">{{ trip.date }}</span>
@@ -334,15 +505,35 @@ onMounted(refreshData)
         <div class="trip-card__charges">
           <div v-for="charge in trip.charges" :key="charge.passengerId" class="charge-row">
             <span class="charge-row__name">{{ getPassengerName(charge.passengerId) }}</span>
-            <span class="charge-row__amount">{{ formatAud(charge.amountCents) }}</span>
+            <span class="charge-row__amount">{{
+              charge.amountStatus === 'UNSET' ? '金額未設定' : formatAud(charge.amountCents)
+            }}</span>
             <span
               :class="[
                 'status-pill',
                 charge.paymentStatus === 'PAID' ? 'status-pill--paid' : 'status-pill--pending',
               ]"
             >
-              {{ charge.paymentStatus === 'PAID' ? '已收' : '待收' }}
+              {{
+                charge.paymentStatus === 'PAID'
+                  ? '已收'
+                  : charge.paymentStatus === 'PARTIAL'
+                    ? '部分已收'
+                    : '待收'
+              }}
             </span>
+            <small v-if="charge.paymentStatus === 'PARTIAL'"
+              >已收 {{ formatAud(getChargeReceivedCents(charge)) }} · 待收
+              {{ formatAud(charge.amountCents - getChargeReceivedCents(charge)) }}</small
+            >
+            <van-button
+              v-if="authToken && charge.amountCents > getChargeReceivedCents(charge)"
+              size="small"
+              plain
+              type="primary"
+              @click="openPaymentForm(trip, charge)"
+              >記錄收款</van-button
+            >
           </div>
         </div>
         <p v-if="trip.note" class="trip-card__note">備註：{{ trip.note }}</p>
@@ -416,7 +607,7 @@ onMounted(refreshData)
             ><strong>{{ passenger.name }}</strong
             ><small>{{
               passenger.active
-                ? `單程 ${formatAud(passenger.defaultOneWayFareCents || 0)} · 來回 ${formatAud(passenger.defaultRoundTripFareCents || 0)}`
+                ? `單程 ${passenger.defaultOneWayFareCents === null ? '未設定' : formatAud(passenger.defaultOneWayFareCents)} · 來回 ${passenger.defaultRoundTripFareCents === null ? '未設定' : formatAud(passenger.defaultRoundTripFareCents)}`
                 : '已停用 · 歷史行程仍保留'
             }}</small></span
           >
@@ -553,15 +744,20 @@ onMounted(refreshData)
                 :key="charge.passengerId"
                 class="charge-editor__row"
               >
-                <strong>{{ getPassengerName(charge.passengerId) }}</strong>
+                <strong>乘客姓名：{{ getPassengerName(charge.passengerId) }}</strong>
                 <van-field
-                  v-model="charge.amount"
+                  :model-value="charge.amount"
                   type="number"
                   inputmode="decimal"
                   label="AUD $"
-                  placeholder="0.00"
+                  placeholder="未設定；免費請輸入 0"
+                  @update:model-value="setChargeAmount(charge, $event)"
                 />
+                <p v-if="charge.paymentStatus === 'PARTIAL'" class="partial-note">
+                  已部分收款；請從行程卡片記錄剩餘款項。
+                </p>
                 <van-radio-group
+                  v-else
                   :model-value="charge.paymentStatus"
                   class="payment-choices"
                   @update:model-value="setPaymentStatus(charge, $event)"
@@ -594,6 +790,17 @@ onMounted(refreshData)
         </div>
       </form>
     </van-popup>
+    <van-popup v-model:show="showPaymentForm" position="bottom" round safe-area-inset-bottom>
+      <form class="sheet-form" @submit.prevent="savePayment">
+        <h2>記錄車資收款</h2>
+        <p>尚待收 {{ formatAud(paymentRemainingCents) }}</p>
+        <van-field v-model="paymentForm.paidAt" label="收款日期" type="date" required />
+        <van-field v-model="paymentForm.amount" label="本次收款 AUD" type="number" required />
+        <div class="sheet-footer">
+          <van-button block type="primary" native-type="submit">儲存收款</van-button>
+        </div>
+      </form>
+    </van-popup>
   </section>
 </template>
 
@@ -619,11 +826,71 @@ onMounted(refreshData)
 .trip-page__header {
   gap: 10px;
 }
-.header-action {
-  flex: none;
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+.header-actions :deep(.van-button) {
+  min-height: 40px;
+  border-radius: 11px;
+  padding-inline: 10px;
+}
+.quick-people__list {
+  display: grid;
+  gap: 8px;
+}
+.quick-person {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+}
+.quick-person div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.quick-person strong {
+  font-size: 14px;
+}
+.quick-person small {
+  color: #657588;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.quick-person button {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid #bad9fa;
+  border-radius: 10px;
+  background: #f3f8ff;
+  color: #166dd1;
+  font-weight: 700;
+}
+.passenger-filter {
+  min-height: 40px;
   max-width: 48%;
-  padding-inline: 12px;
-  white-space: normal;
+  padding: 0 10px;
+  border: 1px solid #d6e1ed;
+  border-radius: 10px;
+  background: #fff;
+  color: #345474;
+  font: inherit;
+  font-size: 13px;
+}
+.section-heading {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+@media (max-width: 350px) {
+  .header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
 }
 .overview {
   padding: 15px 16px;

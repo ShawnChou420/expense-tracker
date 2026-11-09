@@ -24,6 +24,16 @@ export function getWeekRange(referenceDate) {
   return { start: formatLocalDate(start), end: formatLocalDate(end) }
 }
 
+export function getMonthRange(monthKey) {
+  if (!/^\d{4}-\d{2}$/.test(String(monthKey))) return null
+  const first = parseLocalDate(`${monthKey}-01`)
+  if (!first) return null
+  return {
+    start: formatLocalDate(first),
+    end: formatLocalDate(new Date(first.getFullYear(), first.getMonth() + 1, 0)),
+  }
+}
+
 export function isDateInRange(dateText, range) {
   return Boolean(range && dateText >= range.start && dateText <= range.end)
 }

@@ -1,5 +1,6 @@
 import { getWeekRange, isDateInRange } from './date.js'
 import { sumCents } from './money.js'
+import { getChargeReceivedCents } from './trips.js'
 
 export function getTripStats({ trips = [], passengers = [], referenceDate }) {
   const range = getWeekRange(referenceDate)
@@ -28,8 +29,9 @@ export function getTripStats({ trips = [], passengers = [], referenceDate }) {
       }
       summary.tripCount += 1
       summary.totalCents += charge.amountCents
-      if (charge.paymentStatus === 'PAID') summary.paidCents += charge.amountCents
-      else summary.pendingCents += charge.amountCents
+      const received = Math.min(charge.amountCents, getChargeReceivedCents(charge))
+      summary.paidCents += received
+      summary.pendingCents += charge.amountCents - received
       summaries.set(charge.passengerId, summary)
     }
   }

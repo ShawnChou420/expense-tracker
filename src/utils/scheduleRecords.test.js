@@ -1,7 +1,29 @@
 import { describe, expect, it } from 'vitest'
-import { ensureUniqueRecordIds, nextRecordId, upsertRecordForDate } from './scheduleRecords.js'
+import { clearRecordsInMonth, ensureUniqueRecordIds, getMissingScheduleDates, nextRecordId, recordsInMonth, upsertRecordForDate } from './scheduleRecords.js'
 
 describe('upsertRecordForDate', () => {
+  it('filters and clears only the displayed month, including year boundaries', () => {
+    const records = [
+      { id: 1, workDate: '2026-12-31', remark: '保留' },
+      { id: 2, workDate: '2027-01-01', shiftType: 'leave' },
+      { id: 3, workDate: '2027-01-31', remark: '自訂' },
+      { id: 4, workDate: '2027-02-01' },
+    ]
+    expect(recordsInMonth(records, '2027-01').map((record) => record.id)).toEqual([2, 3])
+    expect(clearRecordsInMonth(records, '2027-01')).toEqual([records[0], records[3]])
+    expect(clearRecordsInMonth(records, 'invalid')).toEqual(records)
+  })
+
+  it('fills only missing dates, preserving custom shifts, leave and remarks on repeat', () => {
+    const records = [
+      { workDate: '2026-09-29', remark: '自訂班' },
+      { workDate: '2026-09-30', shiftType: 'leave' },
+    ]
+    const range = { start: '2026-09-28', end: '2026-09-30' }
+    expect(getMissingScheduleDates(records, range)).toEqual(['2026-09-28'])
+    expect(getMissingScheduleDates([...records, { workDate: '2026-09-28' }], range)).toEqual([])
+    expect(records[0].remark).toBe('自訂班')
+  })
   it('changes only the selected date and preserves its id', () => {
     const records = [
       { id: 1, workDate: '2026-09-21', grossPay: 200 },

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { showConfirmDialog, showToast } from 'vant'
 import { formatLocalDate, getWeekRange, parseLocalDate } from '../domain/date.js'
 import {
@@ -12,13 +12,17 @@ import {
   getExpenseSummary,
 } from '../domain/expenses.js'
 import { dollarsToCents, formatAud, formatCentsInput } from '../domain/money.js'
-import { expenseRepository } from '../repositories/appRepositories.js'
+import { expenseRepository, subscribeToLedgerChanges } from '../repositories/appRepositories.js'
+import { authToken } from '../services/authSession.js'
 
 const repository = expenseRepository
 const expenses = ref([])
 const selectedDate = ref(formatLocalDate(new Date()))
 const filter = ref('ALL')
 const showForm = ref(false)
+const showPaymentForm = ref(false)
+const payingOccurrence = ref(null)
+const paymentDate = ref(formatLocalDate(new Date()))
 const editingId = ref(null)
 const form = ref(emptyForm())
 
@@ -54,6 +58,7 @@ function emptyForm() {
     intervalDays: '',
     endDate: '',
     paidDates: [],
+    paidAt: formatLocalDate(new Date()),
   }
 }
 
@@ -82,6 +87,9 @@ function openForm(expense) {
           source.frequency !== 'NONE' && source.paidDates.includes(source.date)
             ? 'PAID'
             : source.status,
+        paidAt:
+          source.payments?.find((payment) => payment.occurrenceDate === source.date)?.paidAt ||
+          source.date,
       }
     : { ...emptyForm(), date: selectedDate.value }
   showForm.value = true
@@ -130,7 +138,7 @@ async function saveExpense() {
               ...(form.value.status === 'PAID' ? [form.value.date] : []),
             ],
     })
-    await repository.save(record)
+    await repository.save(authToken.value ? { ...record, paidAt: form.value.paidAt } : record)
     expenses.value = await repository.list()
     selectedDate.value = record.date
     filter.value = 'ALL'
@@ -143,7 +151,23 @@ async function saveExpense() {
 }
 
 async function togglePaid(occurrence) {
+  if (authToken.value && occurrence.status !== 'PAID') {
+    payingOccurrence.value = occurrence
+    paymentDate.value = formatLocalDate(new Date())
+    showPaymentForm.value = true
+    return
+  }
   const source = expenses.value.find((record) => record.id === occurrence.sourceId)
+  if (authToken.value && occurrence.status === 'PAID') {
+    try {
+      await showConfirmDialog({
+        title: '移除已付款紀錄？',
+        message: '此筆實際付款將從首頁收入支出統計中移除。',
+      })
+    } catch {
+      return
+    }
+  }
   const updated =
     source.frequency === 'NONE'
       ? createExpense({ ...source, status: source.status === 'PAID' ? 'PLANNED' : 'PAID' })
@@ -156,6 +180,25 @@ async function togglePaid(occurrence) {
   await repository.save(updated)
   expenses.value = await repository.list()
   showToast(occurrence.status === 'PAID' ? '已改為預計支付' : '已標記支付')
+}
+
+async function savePayment() {
+  if (!payingOccurrence.value || !parseLocalDate(paymentDate.value)) {
+    showToast('請選擇有效的付款日期')
+    return
+  }
+  try {
+    await repository.recordPayment(payingOccurrence.value.sourceId, {
+      occurrenceDate: payingOccurrence.value.date,
+      paidAt: paymentDate.value,
+      amountCents: payingOccurrence.value.amountCents,
+    })
+    showPaymentForm.value = false
+    await refreshExpenses()
+    showToast('實際付款已記錄')
+  } catch (error) {
+    showToast(error.message)
+  }
 }
 
 async function removeExpense(expense) {
@@ -175,6 +218,23 @@ async function removeExpense(expense) {
   expenses.value = await repository.list()
   showToast('支出已刪除')
 }
+let unsubscribeLedger = null
+async function refreshExpenses() {
+  const identity = authToken.value
+  const next = await repository.list()
+  if (identity === authToken.value) expenses.value = next
+}
+onMounted(() => {
+  unsubscribeLedger = subscribeToLedgerChanges(() =>
+    refreshExpenses().catch((error) => showToast(error.message)),
+  )
+  refreshExpenses().catch((error) => showToast(error.message))
+})
+onUnmounted(() => unsubscribeLedger?.())
+watch(authToken, () => {
+  expenses.value = []
+  refreshExpenses().catch((error) => showToast(error.message))
+})
 </script>
 
 <template>
@@ -212,14 +272,16 @@ async function removeExpense(expense) {
       </div>
       <div v-if="summary.count" class="overview-amount">
         <span>已支付</span><strong>{{ formatAud(summary.paidCents) }}</strong
-        ><small>本週現金流支出</small>
+        ><small>本週到期項目，不是按付款日的現金流</small>
       </div>
       <div v-if="summary.count" class="overview-bottom">
         <span
           >預計支付 <strong>{{ formatAud(summary.plannedCents) }}</strong></span
         ><span>{{ summary.count }} 筆紀錄</span>
       </div>
-      <p v-if="summary.count" class="overview-note">固定支出未標記已付前，只列入預計支付。</p>
+      <p v-if="summary.count" class="overview-note">
+        固定支出未標記已付前，只列入預計支付；首頁按實際付款日統計。
+      </p>
       <p v-else class="overview-empty">本週尚無支出，記錄後會區分已支付與預計支付。</p>
     </section>
 
@@ -366,6 +428,13 @@ async function removeExpense(expense) {
             />
             <van-field v-model="form.date" label="日期" type="date" required />
             <van-field
+              v-if="authToken && form.status === 'PAID'"
+              v-model="form.paidAt"
+              label="實際付款日"
+              type="date"
+              required
+            />
+            <van-field
               v-model="form.title"
               label="商家 / 標題"
               placeholder="選填，例如 Woolworths"
@@ -442,6 +511,16 @@ async function removeExpense(expense) {
           <van-button type="primary" block native-type="submit">{{
             editingId ? '儲存變更' : '儲存支出'
           }}</van-button>
+        </div>
+      </form>
+    </van-popup>
+    <van-popup v-model:show="showPaymentForm" position="bottom" round safe-area-inset-bottom>
+      <form class="sheet-form" @submit.prevent="savePayment">
+        <div class="sheet-header"><h2>標記實際付款</h2></div>
+        <p class="form-hint">到期日 {{ payingOccurrence?.date }}；首頁會依下方付款日計入支出。</p>
+        <van-field v-model="paymentDate" label="實際付款日" type="date" required />
+        <div class="sheet-footer">
+          <van-button block type="primary" native-type="submit">確認已付款</van-button>
         </div>
       </form>
     </van-popup>

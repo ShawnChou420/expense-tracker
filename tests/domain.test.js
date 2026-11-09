@@ -25,6 +25,25 @@ describe('local date domain', () => {
 })
 
 describe('trip statistics', () => {
+  it('keeps partial payments separate from outstanding fare', () => {
+    const stats = getTripStats({
+      referenceDate: '2026-09-29',
+      trips: [
+        {
+          date: '2026-09-29',
+          charges: [
+            {
+              passengerId: 'kim',
+              amountCents: 1200,
+              payments: [{ paidAt: '2026-09-29', amountCents: 500 }],
+            },
+          ],
+        },
+      ],
+      passengers: [{ id: 'kim', name: 'Kim' }],
+    })
+    expect([stats.receivableCents, stats.paidCents, stats.pendingCents]).toEqual([1200, 500, 700])
+  })
   it('separates received and pending fares while retaining all receivables', () => {
     const stats = getTripStats({
       referenceDate: '2026-09-20',

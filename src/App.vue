@@ -6,6 +6,8 @@ import ExpenseTracker from './components/ExpenseTracker.vue'
 import ShoppingList from './components/ShoppingList.vue'
 import DashboardPage from './components/DashboardPage.vue'
 import AuthPanel from './components/AuthPanel.vue'
+import AccountPage from './components/AccountPage.vue'
+import { accountRepository } from './repositories/accountRepository.js'
 import { authEmail, authToken, signOut, clearSession, apiRequest } from './services/authSession.js'
 import { useWorkRecordsPersistence } from './composables/useWorkRecordsPersistence.js'
 import { getGuestLedgerSnapshot, notifyLedgerChanged, passengerRepository, tripRepository, expenseRepository } from './repositories/appRepositories.js'
@@ -145,6 +147,8 @@ const showBlackoutEditor = ref(false)
 const blackoutReason = ref('')
 const blackoutSaving = ref(false)
 const authPanelOpen = ref(false)
+const accountPageOpen = ref(false)
+const accountNickname = ref('')
 const workPersistence = useWorkRecordsPersistence(records, (error) => showToast(error.message))
 let switchingAccount = false
 let rateWritePaused = false
@@ -226,6 +230,12 @@ async function handleSignedIn() {
     currentCurrency.value = memberSettings.displayCurrency || 'AUD'
     notifyLedgerChanged()
     notifyShoppingChanged()
+    // 顯示名稱只用於帳號卡，讀取失敗不影響登入
+    const signedInToken = authToken.value
+    accountRepository.get().then((account) => {
+      // 回應前已登出或換帳號就丟棄，避免名稱殘留在訪客畫面
+      if (authToken.value === signedInToken) accountNickname.value = account.nickname || ''
+    }).catch(() => {})
   } catch (error) {
     showToast(error.message)
     clearSession()
@@ -241,6 +251,7 @@ async function handleSignedIn() {
 
 async function handleSignOut() {
   switchingAccount = true
+  accountPageOpen.value = false
   try {
     try { await workPersistence.flush() } catch { /* Errors are shown by the persistence handler. */ }
     try { await signOut() } catch { showToast('登出請求失敗；本機登入狀態已清除') }
@@ -255,6 +266,11 @@ async function handleSignOut() {
 }
 
 watch(authToken, async (token) => {
+  if (!token) {
+    // 登出或登入失效時關閉會員頁並清掉顯示名稱，避免殘留會員畫面
+    accountPageOpen.value = false
+    accountNickname.value = ''
+  }
   if (!token && !switchingAccount) {
     await workPersistence.restoreGuestRecords()
     leaveBlackouts.value = getGuestLeaveBlackouts()
@@ -910,18 +926,24 @@ const markDesignatedWorkDate = ({ date, marked }) => {
           <van-icon :name="authToken ? 'user-circle-o' : 'user-o'" />
         </span>
         <div class="account-card__identity">
-          <strong>{{ authToken ? '已登入' : activeTab === 'shopping' ? '訪客模式' : '訪客試算' }}</strong>
+          <strong>{{ authToken ? accountNickname || '已登入' : activeTab === 'shopping' ? '訪客模式' : '訪客試算' }}</strong>
           <span :title="authToken ? authEmail : undefined">
             {{ authToken ? authEmail : activeTab === 'shopping' ? '清單不會永久保存，重整後消失' : '登入後可保存私人紀錄' }}
           </span>
         </div>
         <van-button size="small" plain type="primary" class="account-card__action"
-          @click="authToken ? handleSignOut() : authPanelOpen = true">
-          {{ authToken ? '登出' : '登入／註冊' }}
+          @click="authToken ? accountPageOpen = true : authPanelOpen = true">
+          {{ authToken ? '帳號' : '登入／註冊' }}
         </van-button>
       </div>
     </div>
     <AuthPanel v-model:show="authPanelOpen" @signed-in="handleSignedIn" />
+    <AccountPage
+      v-if="authToken"
+      v-model:show="accountPageOpen"
+      @sign-out="handleSignOut"
+      @profile-updated="accountNickname = $event.nickname || ''"
+    />
     <DashboardPage
       v-show="activeTab === 'dashboard'"
       :work-records="records"

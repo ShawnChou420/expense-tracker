@@ -95,6 +95,52 @@ public class AuthService {
             userSeq, hash(token));
     }
 
+    record AccountInfo(String email, String nickname, Instant createdAt) {}
+
+    /** 會員資料只依驗證身分查詢；create_time 為註冊時間。 */
+    AccountInfo accountFor(Long userSeq) {
+        return db.queryForObject(
+            "SELECT email_normalized, nickname, create_time FROM user_info WHERE seq = ?",
+            (rs, row) -> {
+                var created = rs.getTimestamp("create_time");
+                return new AccountInfo(rs.getString("email_normalized"), rs.getString("nickname"),
+                    created == null ? null : created.toInstant());
+            }, userSeq);
+    }
+
+    /** nickname 為 null 代表清除顯示名稱。 */
+    void updateNickname(Long userSeq, String nickname) {
+        db.update("UPDATE user_info SET nickname = ?, update_time = now() WHERE seq = ?", nickname, userSeq);
+    }
+
+    /**
+     * 修改密碼：先驗證目前密碼，更新雜湊後撤銷此會員其他所有未撤銷的 session，保留目前這個 token。
+     * 目前密碼錯誤回 400（不是 401），避免前端把它當成登入失效而清除登入狀態。
+     */
+    @Transactional
+    void changePassword(Long userSeq, String currentToken, String currentPassword, String newPassword) {
+        String key = "password-change:" + userSeq;
+        Attempt state = attempts.get(key);
+        if (state != null && state.count >= 5 && state.until.isAfter(Instant.now())) {
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "請稍後再試");
+        }
+        String hash = db.queryForObject("SELECT password_hash FROM user_info WHERE seq = ?", String.class, userSeq);
+        if (hash == null || !passwords.matches(currentPassword, hash)) {
+            attempts.compute(key, (ignored, old) ->
+                new Attempt(old == null || old.until.isBefore(Instant.now()) ? 1 : old.count + 1,
+                    Instant.now().plus(15, ChronoUnit.MINUTES)));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "目前密碼不正確");
+        }
+        attempts.remove(key);
+        if (passwords.matches(newPassword, hash)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "新密碼不可與目前密碼相同");
+        }
+        db.update("UPDATE user_info SET password_hash = ?, update_time = now() WHERE seq = ?",
+            passwords.encode(newPassword), userSeq);
+        db.update("UPDATE auth_session SET revoked_at = now() WHERE user_seq = ? AND token_hash <> ? AND revoked_at IS NULL",
+            userSeq, hash(currentToken));
+    }
+
     String emailFor(Long userSeq) {
         return db.queryForObject("SELECT email_normalized FROM user_info WHERE seq = ?", String.class, userSeq);
     }

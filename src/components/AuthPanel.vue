@@ -1,7 +1,8 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { showToast } from 'vant'
 import { isApiAvailable, signIn } from '../services/authSession.js'
+import { passwordChecks, passwordPolicyError } from '../domain/password.js'
 
 defineProps({ show: Boolean })
 const emit = defineEmits(['update:show', 'signed-in'])
@@ -9,11 +10,14 @@ const mode = ref('login')
 const email = ref('')
 const password = ref('')
 const busy = ref(false)
+const checks = computed(() => passwordChecks(password.value))
 
 async function submit() {
   if (busy.value) return
-  if (mode.value === 'register' && password.value.length < 12) {
-    showToast('註冊密碼至少需要 12 個字元')
+  // 只有註冊套用密碼規則；登入不檢查，舊規則註冊的帳號才能繼續登入
+  const policyError = mode.value === 'register' ? passwordPolicyError(password.value) : ''
+  if (policyError) {
+    showToast(policyError)
     return
   }
   busy.value = true
@@ -57,9 +61,12 @@ async function submit() {
         :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"
         required
       />
-      <small v-if="mode === 'register'"
-        >請使用至少 12 個字元；本版尚無 Email 驗證與忘記密碼。</small
-      >
+      <ul v-if="mode === 'register'" class="auth-sheet__rules" aria-label="密碼規則">
+        <li v-for="check in checks" :key="check.key" :class="{ 'is-ok': check.ok }">
+          <van-icon :name="check.ok ? 'success' : 'circle'" />{{ check.label }}
+        </li>
+      </ul>
+      <small v-if="mode === 'register'">本版尚無 Email 驗證與忘記密碼。</small>
       <van-button
         block
         type="primary"
@@ -111,6 +118,24 @@ async function submit() {
   color: #657588;
   font-size: 13px;
   line-height: 1.5;
+}
+.auth-sheet__rules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: #8a97a6;
+  font-size: 13px;
+}
+.auth-sheet__rules li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.auth-sheet__rules li.is-ok {
+  color: #15803d;
 }
 .auth-sheet .auth-sheet__warning {
   color: #b45309;

@@ -14,7 +14,7 @@ import { leaveBlackoutRepository, getGuestLeaveBlackouts } from './repositories/
 import { shoppingRepository, getGuestShoppingItems, notifyShoppingChanged } from './repositories/shoppingRepository.js'
 import { removeLeaveBlackout, upsertLeaveBlackout } from './domain/leaveBlackouts.js'
 import { formatCalendarAmount } from './utils/calendarMoney.js'
-import { formatLocalDate, getMonthRange } from './domain/date.js'
+import { formatLocalDate, getCalendarDateRange, getMonthRange } from './domain/date.js'
 import { useShiftCalculator } from './composables/useShiftCalculator.js'
 import {
   formatHours,
@@ -298,8 +298,15 @@ watch(workDate, (newDate) => {
 }, { immediate: true })
 
 const calendarDefaultDate = computed(() => parseWorkDate(workDate.value))
-const calendarMinDate = new Date(2025, 0, 1)
-const calendarMaxDate = new Date(2027, 11, 31)
+// 日曆範圍隨今天往後滾動，並涵蓋目前選取日期與所有班表日期（不再固定停在 2027 年底）
+const calendarRange = computed(() =>
+  getCalendarDateRange({ dates: [workDate.value, ...records.value.map((record) => record.workDate)] }),
+)
+// 只在年份變動時產生新的 Date，避免每次編輯班表都觸發 van-calendar 重設
+const calendarMinYear = computed(() => calendarRange.value.minDate.getFullYear())
+const calendarMaxYear = computed(() => calendarRange.value.maxDate.getFullYear())
+const calendarMinDate = computed(() => new Date(calendarMinYear.value, 0, 1))
+const calendarMaxDate = computed(() => new Date(calendarMaxYear.value, 11, 31))
 const selectedRecord = computed(() => records.value.find((record) => record.workDate === workDate.value))
 const selectedLeaveBlackout = computed(() => leaveBlackouts.value.find((item) => item.date === workDate.value))
 

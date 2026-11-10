@@ -37,3 +37,25 @@ export function getMonthRange(monthKey) {
 export function isDateInRange(dateText, range) {
   return Boolean(range && dateText >= range.start && dateText <= range.end)
 }
+
+/**
+ * 班表日曆可選範圍：結束年份隨 `today` 往後滾動（今年 + yearsAhead 年的 12/31），
+ * 不再固定停在某一年；範圍也一定涵蓋目前選取日期與所有班表日期。
+ * @param {{ today?: Date, dates?: Array<string | null | undefined>, minYear?: number, yearsAhead?: number }} [options]
+ */
+export function getCalendarDateRange({
+  today = new Date(),
+  dates = [],
+  minYear = 2025,
+  yearsAhead = 2,
+} = {}) {
+  let startYear = minYear
+  let endYear = today.getFullYear() + yearsAhead
+  for (const text of dates) {
+    const date = parseLocalDate(text)
+    if (!date) continue
+    startYear = Math.min(startYear, date.getFullYear())
+    endYear = Math.max(endYear, date.getFullYear())
+  }
+  return { minDate: new Date(startYear, 0, 1), maxDate: new Date(endYear, 11, 31) }
+}

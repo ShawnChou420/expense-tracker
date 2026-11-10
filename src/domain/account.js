@@ -40,6 +40,11 @@ export function passwordChangeError({
   return ''
 }
 
+/** 刪除帳號前的檢查：必須再次輸入密碼。 */
+export function deleteAccountError(password = '') {
+  return password ? '' : '請輸入密碼以確認刪除'
+}
+
 /** 後端回傳的 ISO 時間轉為本地 YYYY-MM-DD；無效時回傳「—」。 */
 export function formatRegisteredDate(value) {
   if (!value) return '—'

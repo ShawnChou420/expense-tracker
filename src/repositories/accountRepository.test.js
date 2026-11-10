@@ -20,6 +20,7 @@ describe('會員資料 repository', () => {
   it('訪客模式不呼叫 API', async () => {
     await expect(accountRepository.get()).rejects.toThrow('請先登入')
     await expect(accountRepository.changePassword('a', 'b')).rejects.toThrow('請先登入')
+    await expect(accountRepository.deleteAccount('a')).rejects.toThrow('請先登入')
     expect(auth.request).not.toHaveBeenCalled()
   })
 
@@ -35,6 +36,11 @@ describe('會員資料 repository', () => {
     expect(auth.request).toHaveBeenLastCalledWith('/account/password', {
       method: 'POST',
       body: { currentPassword: 'Old#Pass1', newPassword: 'New#Pass1' },
+    })
+    await accountRepository.deleteAccount('Old#Pass1')
+    expect(auth.request).toHaveBeenLastCalledWith('/account/delete', {
+      method: 'POST',
+      body: { password: 'Old#Pass1' },
     })
   })
 })

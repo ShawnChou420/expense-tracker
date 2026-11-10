@@ -265,6 +265,13 @@ async function handleSignOut() {
   }
 }
 
+// 帳號已在後端刪除（含所有 session）：不呼叫登出 API，直接清除登入狀態，
+// 由下方 watch 還原訪客資料並關閉會員頁
+function handleAccountDeleted() {
+  clearSession()
+  showToast('帳號與所有私人資料已刪除')
+}
+
 watch(authToken, async (token) => {
   if (!token) {
     // 登出或登入失效時關閉會員頁並清掉顯示名稱，避免殘留會員畫面
@@ -942,6 +949,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       v-if="authToken"
       v-model:show="accountPageOpen"
       @sign-out="handleSignOut"
+      @account-deleted="handleAccountDeleted"
       @profile-updated="accountNickname = $event.nickname || ''"
     />
     <DashboardPage

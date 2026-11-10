@@ -1,10 +1,11 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
-import { showToast } from 'vant'
+import { showConfirmDialog, showToast } from 'vant'
 import { accountRepository } from '../repositories/accountRepository.js'
 import { passwordChecks } from '../domain/password.js'
 import {
   NICKNAME_MAX_LENGTH,
+  deleteAccountError,
   formatRegisteredDate,
   nicknameError,
   normalizeNickname,
@@ -12,7 +13,7 @@ import {
 } from '../domain/account.js'
 
 const props = defineProps({ show: Boolean })
-const emit = defineEmits(['update:show', 'sign-out', 'profile-updated'])
+const emit = defineEmits(['update:show', 'sign-out', 'profile-updated', 'account-deleted'])
 
 const account = ref(null)
 const loading = ref(false)
@@ -21,6 +22,8 @@ const nickname = ref('')
 const savingNickname = ref(false)
 const passwordForm = reactive({ currentPassword: '', newPassword: '', confirmPassword: '' })
 const changingPassword = ref(false)
+const deletePassword = ref('')
+const deleting = ref(false)
 const checks = computed(() => passwordChecks(passwordForm.newPassword))
 const nicknameChanged = computed(
   () => normalizeNickname(nickname.value) !== (account.value?.nickname || ''),
@@ -30,6 +33,7 @@ function resetPasswordForm() {
   passwordForm.currentPassword = ''
   passwordForm.newPassword = ''
   passwordForm.confirmPassword = ''
+  deletePassword.value = ''
 }
 
 async function load() {
@@ -83,6 +87,31 @@ async function changePassword() {
     showToast(error.message)
   } finally {
     changingPassword.value = false
+  }
+}
+
+async function deleteAccount() {
+  const error = deleteAccountError(deletePassword.value)
+  if (error) return showToast(error)
+  try {
+    await showConfirmDialog({
+      title: '確定刪除帳號？',
+      message: '將永久刪除此帳號與所有班表、薪資入帳、車資、支出、採買、禁休與設定，無法復原。',
+      confirmButtonText: '永久刪除',
+      confirmButtonColor: '#ee0a24',
+    })
+  } catch {
+    return // 使用者取消
+  }
+  deleting.value = true
+  try {
+    await accountRepository.deleteAccount(deletePassword.value)
+    deletePassword.value = ''
+    emit('account-deleted')
+  } catch (error) {
+    showToast(error.message)
+  } finally {
+    deleting.value = false
   }
 }
 </script>
@@ -200,7 +229,35 @@ async function changePassword() {
       <van-button block plain type="danger" class="account-page__signout" @click="emit('sign-out')"
         >登出</van-button
       >
-      <small class="account-page__note">本版尚無 Email 驗證、忘記密碼與刪除帳號。</small>
+
+      <section
+        v-if="account"
+        class="account-card-block account-card-block--danger"
+        aria-labelledby="account-delete-title"
+      >
+        <h3 id="account-delete-title">刪除帳號</h3>
+        <small
+          >永久刪除此帳號與所有已保存的私人資料（班表、薪資入帳、車資、支出、採買、禁休與設定），無法復原。這台裝置上的訪客資料不受影響。</small
+        >
+        <form class="account-page__form" @submit.prevent="deleteAccount">
+          <van-field
+            v-model="deletePassword"
+            label="密碼"
+            type="password"
+            autocomplete="current-password"
+            placeholder="輸入密碼以確認"
+          />
+          <van-button
+            block
+            type="danger"
+            native-type="submit"
+            :disabled="deleting"
+            :loading="deleting"
+            >永久刪除帳號</van-button
+          >
+        </form>
+      </section>
+      <small class="account-page__note">本版尚無 Email 驗證與忘記密碼。</small>
     </div>
   </van-popup>
 </template>
@@ -243,6 +300,12 @@ async function changePassword() {
   border-radius: 16px;
   background: #fff;
   box-shadow: 0 6px 18px rgba(29, 66, 106, 0.05);
+}
+.account-card-block--danger {
+  border-color: #fbd5d5;
+}
+.account-card-block--danger h3 {
+  color: #c81e1e;
 }
 .account-card-block h3 {
   margin: 0;

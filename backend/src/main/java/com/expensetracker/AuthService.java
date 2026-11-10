@@ -119,19 +119,7 @@ public class AuthService {
      */
     @Transactional
     void changePassword(Long userSeq, String currentToken, String currentPassword, String newPassword) {
-        String key = "password-change:" + userSeq;
-        Attempt state = attempts.get(key);
-        if (state != null && state.count >= 5 && state.until.isAfter(Instant.now())) {
-            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "請稍後再試");
-        }
-        String hash = db.queryForObject("SELECT password_hash FROM user_info WHERE seq = ?", String.class, userSeq);
-        if (hash == null || !passwords.matches(currentPassword, hash)) {
-            attempts.compute(key, (ignored, old) ->
-                new Attempt(old == null || old.until.isBefore(Instant.now()) ? 1 : old.count + 1,
-                    Instant.now().plus(15, ChronoUnit.MINUTES)));
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "目前密碼不正確");
-        }
-        attempts.remove(key);
+        String hash = verifyCurrentPassword("password-change:" + userSeq, userSeq, currentPassword);
         if (passwords.matches(newPassword, hash)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "新密碼不可與目前密碼相同");
         }
@@ -139,6 +127,51 @@ public class AuthService {
             passwords.encode(newPassword), userSeq);
         db.update("UPDATE auth_session SET revoked_at = now() WHERE user_seq = ? AND token_hash <> ? AND revoked_at IS NULL",
             userSeq, hash(currentToken));
+    }
+
+    /** 刪除帳號時依外鍵由子到父刪除；全部表都以 user_seq 限定為同一會員。 */
+    static final java.util.List<String> ACCOUNT_DELETE_STATEMENTS = java.util.List.of(
+        "DELETE FROM trip_payment WHERE user_seq = ?",
+        "DELETE FROM trip_charge WHERE user_seq = ?",
+        "DELETE FROM trip WHERE user_seq = ?",
+        "DELETE FROM passenger WHERE user_seq = ?",
+        "DELETE FROM expense_payment WHERE user_seq = ?",
+        "DELETE FROM expense_record WHERE user_seq = ?",
+        "DELETE FROM salary_deposit WHERE user_seq = ?",
+        "DELETE FROM saving_goal WHERE user_seq = ?",
+        "DELETE FROM user_preferences WHERE user_seq = ?",
+        "DELETE FROM salary_setting_info WHERE user_seq = ?",
+        "DELETE FROM work_shift_info WHERE user_seq = ?",
+        "DELETE FROM leave_blackout WHERE user_seq = ?",
+        "DELETE FROM shopping_item WHERE user_seq = ?",
+        "DELETE FROM auth_session WHERE user_seq = ?",
+        "DELETE FROM user_info WHERE seq = ?");
+
+    /**
+     * 刪除帳號：再次驗證密碼後，在同一交易內刪除此會員所有私人資料與所有 session。
+     * 任何一步失敗整筆回滾，不會留下部分刪除的帳號。
+     */
+    @Transactional
+    void deleteAccount(Long userSeq, String password) {
+        verifyCurrentPassword("account-delete:" + userSeq, userSeq, password);
+        for (String sql : ACCOUNT_DELETE_STATEMENTS) db.update(sql, userSeq);
+    }
+
+    /** 驗證目前密碼並套用 15 分鐘 5 次的嘗試限制；錯誤回 400（不是 401），回傳目前雜湊。 */
+    private String verifyCurrentPassword(String key, Long userSeq, String password) {
+        Attempt state = attempts.get(key);
+        if (state != null && state.count >= 5 && state.until.isAfter(Instant.now())) {
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "請稍後再試");
+        }
+        String hash = db.queryForObject("SELECT password_hash FROM user_info WHERE seq = ?", String.class, userSeq);
+        if (hash == null || !passwords.matches(password, hash)) {
+            attempts.compute(key, (ignored, old) ->
+                new Attempt(old == null || old.until.isBefore(Instant.now()) ? 1 : old.count + 1,
+                    Instant.now().plus(15, ChronoUnit.MINUTES)));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "目前密碼不正確");
+        }
+        attempts.remove(key);
+        return hash;
     }
 
     String emailFor(Long userSeq) {

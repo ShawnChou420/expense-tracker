@@ -31,6 +31,7 @@ public class AccountController {
     record AccountResponse(String email, String nickname, Instant createdAt) {}
     record ProfileRequest(String nickname) {}
     record PasswordChangeRequest(String currentPassword, String newPassword) {}
+    record DeleteAccountRequest(String password) {}
 
     @ExceptionHandler(ResponseStatusException.class)
     ResponseEntity<Map<String, String>> safeError(ResponseStatusException exception) {
@@ -63,6 +64,16 @@ public class AccountController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, AuthController.PASSWORD_RULE);
         auth.changePassword(owner(authentication), header.substring(7),
             request.currentPassword(), request.newPassword());
+    }
+
+    /** 刪除帳號（Google Play 要求）；需再次輸入密碼。用 POST 避免 DELETE 帶 body 被代理丟棄。 */
+    @PostMapping("/delete")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void deleteAccount(Authentication authentication, @RequestBody DeleteAccountRequest request) {
+        if (request == null || request.password() == null || request.password().isEmpty()
+            || request.password().length() > 128)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "請輸入密碼");
+        auth.deleteAccount(owner(authentication), request.password());
     }
 
     /** 去除前後空白；空字串視為清除（null）；超過長度或含控制字元則拒絕。 */

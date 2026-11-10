@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  deleteAccountError,
   formatRegisteredDate,
   nicknameError,
   normalizeNickname,
@@ -51,6 +52,13 @@ describe('修改密碼表單', () => {
         confirmPassword: 'New#Pass1',
       }),
     ).toBe('新密碼不可與目前密碼相同')
+  })
+})
+
+describe('刪除帳號', () => {
+  it('必須再次輸入密碼', () => {
+    expect(deleteAccountError('')).toBe('請輸入密碼以確認刪除')
+    expect(deleteAccountError('any-old-password')).toBe('')
   })
 })
 

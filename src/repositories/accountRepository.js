@@ -28,4 +28,9 @@ export const accountRepository = {
       body: { currentPassword, newPassword },
     })
   },
+  /** 刪除帳號與所有私人資料；成功後後端已刪除所有 session，前端需自行清除登入狀態。 */
+  async deleteAccount(password) {
+    requireMember()
+    return apiRequest('/account/delete', { method: 'POST', body: { password } })
+  },
 }

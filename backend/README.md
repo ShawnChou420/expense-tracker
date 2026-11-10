@@ -21,7 +21,7 @@ Use Java 21 and PostgreSQL. Set environment variables without committing their v
 | `DB_PASSWORD` | Optional database password; omit when local trust auth is used |
 | `API_PORT` | API port, default `8080` |
 | `CORS_ORIGINS` | Comma-separated exact frontend origins; production must use its own HTTPS origin |
-| `DATABASE_URL` | Cloud-style `postgresql://user:pass@host:port/db` URL (injected by Render). Used only when `DB_URL` is unset |
+| `DATABASE_URL` | Cloud-style `postgresql://user:pass@host:port/db` URL (e.g. Neon, entered in the Render dashboard). Used only when `DB_URL` is unset |
 | `PORT` | Port injected by Render (default `10000`); takes precedence over `API_PORT` |
 | `DB_POOL_SIZE` | Maximum JDBC pool size, default `5` |
 | `VITE_API_BASE_URL` | Frontend API base URL. Web dev uses `/api` proxy when unset; native app requires a reachable HTTPS URL ending in `/api` |

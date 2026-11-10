@@ -6,7 +6,8 @@
 ## 架構
 
 ```
-Android App（Capacitor，origin = https://localhost）
+網頁版（Render Static Site「expense-tracker-web」，免費）  Android App（Capacitor，origin = https://localhost）
+   └──────────────────────────────┬──────────────────────────┘
    │ HTTPS + Bearer token
    ▼
 Render Web Service「expense-tracker-api」（新加坡，Docker，Java 21，免費方案）
@@ -52,6 +53,15 @@ Neon Postgres（AWS ap-southeast-1 新加坡，PostgreSQL 17，免費方案）
 4. 部署完成後，在服務頁面上方找到網址，用瀏覽器打開：
    - `https://<你的網址>/api/health` → 應看到 `{"status":"ok"}`
    - 在 Logs 頁面確認有 Flyway 套用 V1–V6 的紀錄，且沒有錯誤。
+
+## 網頁版前端（Render Static Site）
+
+- `render.yaml` 的 `expense-tracker-web` 會在 Blueprint 同步時自動建立，執行 `npm ci && npm run build`，發布 `dist/`。免費、不會休眠。
+- 後端網址寫在 `render.yaml` 的 `VITE_API_BASE_URL`（公開資訊）。後端網址變更時要一起改，並重新建置前端。
+- **建立後要把網頁網址加進後端的 CORS**：Render → `expense-tracker-api` → Environment → `CORS_ORIGINS` 改成
+  `https://localhost,https://<網頁版網址>`（逗號分隔，不要有結尾斜線），儲存後後端會重新部署。少了這步，瀏覽器會擋下網頁呼叫 API。
+- 只改後端不會重新建置前端，只改前端也不會重新部署後端（`buildFilter`）。
+- 網頁版登入 token 只放記憶體，重新整理頁面需要重新登入；訪客資料重新整理後會消失。
 
 ## 讓 Android App 連到正式 API
 

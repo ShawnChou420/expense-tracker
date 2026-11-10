@@ -1,4 +1,5 @@
-# Render Blueprint：後端 API（免費方案）。資料庫使用外部的 Neon Postgres（免費方案）。
+# Render Blueprint：後端 API（免費方案）+ 網頁版前端（免費靜態網站）。
+# 資料庫使用外部的 Neon Postgres（免費方案）。
 # 使用方式與注意事項見 backend/DEPLOY_RENDER.md。
 # 不要在這個檔案寫入任何密碼、token 或連線字串。
 
@@ -34,6 +35,42 @@ services:
       # Android（Capacitor）App 為 https://localhost
       - key: CORS_ORIGINS
         sync: false
+
+  # 網頁版前端：Vite build 出來的靜態檔案，免費、不會休眠
+  - type: web
+    name: expense-tracker-web
+    runtime: static
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    branch: main
+    autoDeployTrigger: commit
+    # 只有前端相關檔案變動才重新建置，改後端不會觸發
+    buildFilter:
+      paths:
+        - src/**
+        - public/**
+        - index.html
+        - package.json
+        - package-lock.json
+        - vite.config.js
+        - render.yaml
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+    envVars:
+      # package.json engines 要求 ^20.19 或 >=22.12
+      - key: NODE_VERSION
+        value: "22"
+      # 建置時打包進前端的後端網址（公開資訊，不是密碼）。後端網址變更時要一起改。
+      - key: VITE_API_BASE_URL
+        value: https://expense-tracker-api-gmpi.onrender.com/api
 
 # 原本的 Render 付費 Postgres（0.1c-256mb，約 US$10.50/月，含時間點還原）。
 # 使用者變多、需要更完整的備份時，可以改回 Render Postgres，再把資料從 Neon 搬過來。

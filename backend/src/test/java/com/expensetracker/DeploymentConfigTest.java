@@ -27,6 +27,16 @@ class DeploymentConfigTest {
     }
 
     @Test
+    void convertsNeonConnectionStringWithSslParameters() {
+        Map<String, String> properties = DatabaseUrl.fromConnectionString(
+            "postgresql://neondb_owner:pw@ep-cool-name-123456.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require");
+        assertEquals(
+            "jdbc:postgresql://ep-cool-name-123456.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require",
+            properties.get("spring.datasource.url"));
+        assertEquals("neondb_owner", properties.get("spring.datasource.username"));
+    }
+
+    @Test
     void explicitDbUrlWinsSoLocalDevelopmentIsUnchanged() {
         assertTrue(DatabaseUrl.springProperties(Map.of(
             "DB_URL", "jdbc:postgresql://localhost:5432/expense_tracker",

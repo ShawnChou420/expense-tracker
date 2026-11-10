@@ -10,8 +10,9 @@ services:
     dockerfilePath: ./backend/Dockerfile
     dockerContext: .
     region: singapore
-    # 付費最小方案：不會閒置休眠（免費方案閒置 15 分鐘會休眠，喚醒約 1 分鐘）
-    plan: 0.5c-512mb
+    # 免費方案：閒置 15 分鐘會休眠，下一次請求要等它喚醒（約 1 分鐘）。
+    # 使用者變多、不想等待時改成付費的 0.5c-512mb（不休眠），資料庫不受影響。
+    plan: free
     branch: main
     healthCheckPath: /api/health
     autoDeployTrigger: commit

@@ -1,0 +1,47 @@
+# Render Blueprint：後端 API + PostgreSQL。
+# 使用方式與注意事項見 backend/DEPLOY_RENDER.md。
+# 不要在這個檔案寫入任何密碼、token 或連線字串。
+
+services:
+  - type: web
+    name: expense-tracker-api
+    runtime: docker
+    # backend/gradlew 會呼叫 android/gradlew，所以建置 context 是專案根目錄
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    region: singapore
+    # 付費最小方案：不會閒置休眠（免費方案閒置 15 分鐘會休眠，喚醒約 1 分鐘）
+    plan: 0.5c-512mb
+    branch: main
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    # 只有後端相關檔案變動才重新部署，前端修改不會觸發
+    buildFilter:
+      paths:
+        - backend/**
+        - android/gradlew
+        - android/gradle/wrapper/**
+        - render.yaml
+      ignoredPaths:
+        - backend/**/*.md
+    envVars:
+      # 內部網路連線字串，程式啟動時會轉成 JDBC 設定（見 DatabaseUrl.java）
+      - key: DATABASE_URL
+        fromDatabase:
+          name: expense-tracker-db
+          property: connectionString
+      # 允許呼叫 API 的前端來源，建立時由你在 Render 後台輸入
+      # Android（Capacitor）App 為 https://localhost
+      - key: CORS_ORIGINS
+        sync: false
+
+databases:
+  - name: expense-tracker-db
+    region: singapore
+    # 付費最小方案；免費資料庫 30 天後到期且沒有備份，不適合存正式資料
+    plan: 0.1c-256mb
+    databaseName: expense_tracker
+    user: expense_tracker
+    postgresMajorVersion: "17"
+    # 不開放外部 IP 直接連線，只允許 Render 內部服務；需要從本機備份時再暫時加入自己的 IP
+    ipAllowList: []

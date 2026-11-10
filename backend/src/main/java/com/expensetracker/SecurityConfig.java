@@ -47,6 +47,7 @@ public class SecurityConfig {
                 .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/health").permitAll() // Render 健康檢查
                 .anyRequest().authenticated())
             .addFilterBefore(tokenFilter, UsernamePasswordAuthenticationFilter.class)
             .build();

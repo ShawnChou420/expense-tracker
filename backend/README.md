@@ -21,6 +21,9 @@ Use Java 21 and PostgreSQL. Set environment variables without committing their v
 | `DB_PASSWORD` | Optional database password; omit when local trust auth is used |
 | `API_PORT` | API port, default `8080` |
 | `CORS_ORIGINS` | Comma-separated exact frontend origins; production must use its own HTTPS origin |
+| `DATABASE_URL` | Cloud-style `postgresql://user:pass@host:port/db` URL (injected by Render). Used only when `DB_URL` is unset |
+| `PORT` | Port injected by Render (default `10000`); takes precedence over `API_PORT` |
+| `DB_POOL_SIZE` | Maximum JDBC pool size, default `5` |
 | `VITE_API_BASE_URL` | Frontend API base URL. Web dev uses `/api` proxy when unset; native app requires a reachable HTTPS URL ending in `/api` |
 
 For a **new empty development database**, run `bash backend/gradlew bootRun` from the repository root after setting `DB_URL` and `DB_USER`; Flyway applies V1 onward. In another terminal run `npm run dev`. The Vite proxy forwards `/api` to `127.0.0.1:8080`.
@@ -44,6 +47,10 @@ Run checks with `bash backend/gradlew test`, `npm run test`, `npm run lint`, `np
 Member APIs: `/api/work-records`, `/api/leave-blackouts`, `/api/salary-rates`, `/api/salary-deposits`, `/api/passengers`, `/api/trips`, `/api/expenses`, `/api/dashboard-settings`; trip charges and expenses also have payment endpoints, and dashboard settings include display currency. Leave blackouts are separate from work shifts and never change salary calculations. Monetary data is integer AUD cents or precise legacy decimal. Work date, trip date, settlement date, and salary deposit date remain distinct. Partial trip payments are summed once and cannot exceed the agreed fare. Recurring expense templates and actual payments are separate. The expense page groups due items by due week; the Dashboard uses actual payment dates for cash flow.
 
 Guest payroll simulation continues without login, only in memory. Signing in offers to import the current guest data and skips matching client IDs; the import is not yet an atomic batch. Member records persist in PostgreSQL. Signing out restores the isolated guest view. Do not use guest data or an estimated `grossPay` as actual deposited salary.
+
+## Deployment
+
+Render deployment (Blueprint `render.yaml`, `backend/Dockerfile`, health check `GET /api/health`) is documented in `backend/DEPLOY_RENDER.md`.
 
 ## Before production
 

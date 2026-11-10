@@ -1,0 +1,9 @@
+# Docker 建置只需要後端與 Android 的 Gradle wrapper，其餘一律排除
+# （避免把 node_modules、.env.local 等檔案送進建置環境）
+*
+!backend/
+!android/gradlew
+!android/gradle/wrapper/
+backend/build/
+backend/.gradle/
+**/.DS_Store

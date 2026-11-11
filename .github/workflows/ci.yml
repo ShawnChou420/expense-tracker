@@ -1,0 +1,54 @@
+# 每次 push 到 main 或開 PR 時，自動檢查前端與後端是否能通過測試與建置。
+# 公開 repo 使用 GitHub 提供的 runner 免費。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 同一個分支有新的 push 時，取消還在跑的舊檢查，節省時間
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: 前端（Vue）
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: 單元測試
+        run: npm test
+      - name: Lint
+        run: npm run lint
+      - name: 型別檢查
+        run: npm run typecheck
+      - name: 格式檢查
+        run: npm run format:check
+      - name: Production build
+        run: npm run build
+
+  backend:
+    name: 後端（Java）
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      # backend/gradlew 會轉呼叫 android/gradlew
+      - name: 單元測試
+        run: bash backend/gradlew test --no-daemon

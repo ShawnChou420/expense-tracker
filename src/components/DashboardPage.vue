@@ -19,6 +19,13 @@ import {
 } from '../domain/money.js'
 import { dashboardSettingsRepository } from '../repositories/inMemoryDashboardSettingsRepository.js'
 import { getOnboardingSteps } from '../domain/onboarding.js'
+import { getTodayShift } from '../domain/home.js'
+import { getIncomeYearProgress } from '../domain/incomeYear.js'
+import { getWeeklyPaySummary } from '../domain/weeklyPay.js'
+import StatCard from './ui/StatCard.vue'
+import ProgressCard from './ui/ProgressCard.vue'
+import EmptyState from './ui/EmptyState.vue'
+import PeriodSwitcher from './ui/PeriodSwitcher.vue'
 import { authToken } from '../services/authSession.js'
 import {
   expenseRepository,
@@ -29,7 +36,12 @@ import {
 const IncomeTrendChart = defineAsyncComponent(() => import('./IncomeTrendChart.vue'))
 const ExpenseDonutChart = defineAsyncComponent(() => import('./ExpenseDonutChart.vue'))
 
-const props = defineProps({ workRecords: { type: Array, required: true }, active: Boolean })
+const props = defineProps({
+  workRecords: { type: Array, required: true },
+  active: Boolean,
+  // 薪資頁的 PPE 與扣稅比率，用來算首頁的「本週預估實領」
+  payrollRates: { type: Object, default: () => ({ ppeAllowance: 0, withholdingTaxRate: 0 }) },
+})
 const emit = defineEmits(['mark-work-date', 'navigate'])
 
 const today = formatLocalDate(new Date())
@@ -71,6 +83,37 @@ const targetForm = ref('')
 const range = computed(() => getDashboardRange(anchor.value, period.value))
 const currentRange = computed(() => getDashboardRange(today, period.value))
 const isCurrentPeriod = computed(() => range.value?.start === currentRange.value?.start)
+
+// --- 首頁重點：今天、本週、年度稅務、簽證工作日 ---
+const weekdayNames = ['日', '一', '二', '三', '四', '五', '六']
+const todayLabel = computed(() => {
+  const date = parseLocalDate(today)
+  return date ? `${today.slice(5).replace('-', '/')}（${weekdayNames[date.getDay()]}）` : today
+})
+const todayShift = computed(() => getTodayShift(props.workRecords, today))
+const weeklyPay = computed(() => getWeeklyPaySummary(props.workRecords, today, props.payrollRates))
+const thisWeekSummary = computed(() =>
+  getDashboardSummary({
+    range: getDashboardRange(today, 'week'),
+    workRecords: props.workRecords,
+    trips: trips.value,
+    expenses: expenses.value,
+    salaryDeposits: salaryDeposits.value,
+  }),
+)
+const incomeYearProgress = computed(() =>
+  getIncomeYearProgress({ records: props.workRecords, salaryDeposits: salaryDeposits.value, today }),
+)
+const taxProgressHint = computed(() => {
+  const progress = incomeYearProgress.value
+  if (!progress) return ''
+  if (progress.crossed) return '已超過第一級距上限，之後的收入適用較高稅率。'
+  if (progress.projectedWithinYear && progress.projectedCrossDate) {
+    return `照最近 4 週平均 ${formatAud(progress.recentWeeklyAverageCents)}／週，預計 ${progress.projectedCrossDate} 左右超過。`
+  }
+  if (progress.recentWeeklyAverageCents > 0) return '照最近 4 週的收入，本所得年度內不會超過。'
+  return '最近 4 週沒有班表，暫時無法預估何時超過。'
+})
 const summary = computed(() =>
   getDashboardSummary({
     range: range.value,
@@ -96,6 +139,10 @@ const eligibleDates = computed(() =>
     ),
   ].sort((a, b) => b.localeCompare(a)),
 )
+
+function formatTodayRange(shift) {
+  return `${shift.startTime}–${shift.endTime}${shift.crossesMidnight ? '（隔天）' : ''}`
+}
 
 function movePeriod(direction) {
   const date = parseLocalDate(anchor.value)
@@ -339,28 +386,116 @@ async function saveTarget() {
       </ol>
     </section>
 
-    <section class="period-card app-page__card" aria-label="日期篩選">
-      <div class="period-modes">
-        <button type="button" :class="{ selected: period === 'week' }" @click="setPeriod('week')">
-          本週
-        </button>
-        <button type="button" :class="{ selected: period === 'month' }" @click="setPeriod('month')">
-          本月
-        </button>
+    <section class="home-today app-page__card" aria-labelledby="home-today-title">
+      <div class="home-today__head">
+        <h2 id="home-today-title">今天 {{ todayLabel }}</h2>
       </div>
-      <div class="period-nav">
-        <button type="button" aria-label="上一期" @click="movePeriod(-1)">
-          <van-icon name="arrow-left" />
-        </button>
-        <strong>{{ range?.start }} – {{ range?.end }}</strong>
-        <button type="button" aria-label="下一期" @click="movePeriod(1)">
-          <van-icon name="arrow" />
-        </button>
+      <div v-if="todayShift.status === 'work'" class="home-today__shift">
+        <div>
+          <span>要上班</span>
+          <strong>{{ formatTodayRange(todayShift) }}</strong>
+        </div>
+        <div class="home-today__pay">
+          <span>今天預估稅前</span>
+          <strong>{{ formatAud(todayShift.grossCents) }}</strong>
+        </div>
       </div>
-      <button v-if="!isCurrentPeriod" class="return-current" type="button" @click="anchor = today">
-        返回本期
-      </button>
+      <EmptyState
+        v-else-if="todayShift.status === 'leave'"
+        icon="smile-o"
+        title="今天休假"
+        description="好好休息！需要改成上班可以到薪資頁調整。"
+        action-label="看班表"
+        @action="emit('navigate', 'payroll')"
+      />
+      <EmptyState
+        v-else
+        icon="calendar-o"
+        title="今天沒有排班"
+        description="如果今天要上班，先排好班表才能試算薪資。"
+        action-label="去排班"
+        @action="emit('navigate', 'payroll')"
+      />
     </section>
+
+    <section class="home-stats" aria-label="本週重點">
+      <StatCard
+        label="本週預估實領"
+        :value="formatAud(weeklyPay.netCents)"
+        :hint="`稅前 ${formatAud(weeklyPay.grossCents)} · 扣稅 ${formatAud(weeklyPay.taxCents)}`"
+        tone="primary"
+        clickable
+        @click="emit('navigate', 'payroll')"
+      />
+      <StatCard
+        label="本週實際存下"
+        :value="thisWeekSummary.hasActualTransactions ? formatAud(thisWeekSummary.netCents) : '—'"
+        :hint="
+          thisWeekSummary.hasActualTransactions
+            ? `收入 ${formatAud(thisWeekSummary.actualIncomeCents)} − 支出 ${formatAud(thisWeekSummary.paidExpenseCents)}`
+            : '記錄薪資入帳與支出後顯示'
+        "
+        :tone="thisWeekSummary.netCents < 0 ? 'expense' : 'income'"
+      />
+    </section>
+
+    <ProgressCard
+      v-if="incomeYearProgress"
+      class="home-progress"
+      :title="`${incomeYearProgress.incomeYear.label} 年度稅前收入`"
+      :subtitle="
+        incomeYearProgress.basis === 'actual'
+          ? '依已記錄的薪資入帳稅前金額'
+          : '依班表預估（不含 PPE），記錄薪資入帳後會改用實際金額'
+      "
+      :current="formatAud(incomeYearProgress.ytdGrossCents)"
+      :target="formatAud(incomeYearProgress.limitCents)"
+      :percent="incomeYearProgress.percent"
+      :tone="incomeYearProgress.percent >= 85 ? 'warning' : 'primary'"
+    >
+      <p class="home-progress__note">
+        <strong v-if="!incomeYearProgress.crossed"
+          >距離第一級距上限還差 {{ formatAud(incomeYearProgress.remainingCents) }}。</strong
+        >{{ taxProgressHint }}
+      </p>
+      <p class="home-progress__fine">級距金額需以 ATO 公告為準；此為個人估算，不是稅務建議。</p>
+    </ProgressCard>
+
+    <ProgressCard
+      class="home-progress"
+      title="二／三簽工作日進度"
+      subtitle="個人紀錄，不代表官方簽證資格判定"
+      :current="`${workProgress.count} 天`"
+      :target="workProgress.target === null ? '' : `${workProgress.target} 天`"
+      :percent="workProgress.progressPercent ?? 0"
+      tone="income"
+    >
+      <template #action>
+        <van-button size="small" plain type="primary" @click="openTargetEditor">
+          {{ workProgress.target === null ? '設定目標' : '調整' }}
+        </van-button>
+      </template>
+      <p class="home-progress__note">
+        {{
+          workProgress.target === null
+            ? '設定你要追蹤的天數，這裡會顯示倒數。'
+            : workProgress.remaining === 0
+              ? '已達到你設定的目標天數 🎉'
+              : `還差 ${workProgress.remaining} 天`
+        }}
+      </p>
+    </ProgressCard>
+
+    <h2 class="home-section-title">收支明細</h2>
+    <PeriodSwitcher
+      class="home-period"
+      :period="period"
+      :range-label="`${range?.start ?? ''} – ${range?.end ?? ''}`"
+      :is-current="isCurrentPeriod"
+      @update:period="setPeriod"
+      @move="movePeriod"
+      @reset="anchor = today"
+    />
 
     <section class="summary-grid" aria-label="所選期間收支摘要">
       <div class="summary-tile app-page__card">
@@ -703,6 +838,76 @@ async function saveTarget() {
   color: var(--color-muted);
   font-size: 12px;
   line-height: 1.5;
+}
+.home-today {
+  margin-top: 12px;
+  padding: 16px;
+}
+.home-today,
+.home-stats,
+.home-progress,
+.home-period {
+  margin-top: 12px;
+}
+.onboarding-card + .home-today {
+  margin-top: 12px;
+}
+.home-today__head h2 {
+  margin: 0 0 10px;
+  color: var(--color-heading);
+  font-size: 16px;
+  font-weight: 800;
+}
+.home-today__shift {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: end;
+}
+.home-today__shift span {
+  display: block;
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.home-today__shift strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--color-heading);
+  font-size: 20px;
+  font-weight: 800;
+}
+.home-today__pay {
+  text-align: right;
+}
+.home-today__pay strong {
+  color: #166dd1;
+}
+.home-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.home-stats :deep(.stat-card__value) {
+  font-size: 21px;
+}
+.home-progress__note {
+  margin: 8px 0 0;
+  color: var(--color-heading);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.home-progress__fine {
+  margin: 4px 0 0;
+  color: var(--color-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.home-section-title {
+  margin: var(--page-section-gap) 2px 0;
+  color: var(--color-heading);
+  font-size: var(--font-heading);
+  font-weight: 800;
 }
 .onboarding-card {
   padding: 16px;

@@ -5,6 +5,7 @@ import TripTracker from './components/TripTracker.vue'
 import ExpenseTracker from './components/ExpenseTracker.vue'
 import ShoppingList from './components/ShoppingList.vue'
 import DashboardPage from './components/DashboardPage.vue'
+import MorePage from './components/MorePage.vue'
 import AuthPanel from './components/AuthPanel.vue'
 import { authEmail, authToken, signOut, clearSession, apiRequest } from './services/authSession.js'
 import { useWorkRecordsPersistence } from './composables/useWorkRecordsPersistence.js'
@@ -267,6 +268,10 @@ watch(authToken, async (token) => {
   }
 })
 const activeTab = ref('dashboard')
+// 採買清單從「更多」進入，底部分頁仍亮在「更多」
+const tabbarActive = computed(() => (activeTab.value === 'shopping' ? 'more' : activeTab.value))
+const payBreakdownOpen = ref([])
+const advancedRatesOpen = ref([])
 const visibleMonth = ref(workDate.value.slice(0, 7))
 const scheduleMonth = ref(visibleMonth.value)
 const displayedMonthRange = computed(() => getMonthRange(visibleMonth.value))
@@ -941,6 +946,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       v-show="activeTab === 'dashboard'"
       :work-records="records"
       :active="activeTab === 'dashboard'"
+      :payroll-rates="{ ppeAllowance, withholdingTaxRate }"
       @mark-work-date="markDesignatedWorkDate"
       @navigate="activeTab = $event"
     />
@@ -1119,16 +1125,32 @@ const markDesignatedWorkDate = ({ date, marked }) => {
           <van-cell title="自動算 Smoko 次數" :value="`${workSummary.smokoCount} 次`" />
         </van-cell-group>
         <van-cell-group inset>
-          <van-cell title="Base Pay (基本)" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.basePay * currentExchangeRate)}`" />
-          <van-cell title="CASUAL LOADING 25%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.casualPay * currentExchangeRate)}`" />
-          <van-cell v-if="payBreakdown.shiftPay > 0" title="SHIFT 夜班 25%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.shiftPay * currentExchangeRate)}`" />
-          <van-cell v-if="payBreakdown.holidayPenaltyPay > 0" title="P/HOL 150%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.holidayPenaltyPay * currentExchangeRate)}`" />
-          <van-cell title="SAT ORD 50%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.satOrdPay * currentExchangeRate)}`" />
-          <van-cell title="T/Half (1.5倍)" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.timeHalfPay * currentExchangeRate)}`" />
-          <van-cell title="Double (2倍)" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.doublePay * currentExchangeRate)}`" />
-          <van-cell title="SUN ORD 75%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.sunOrdPay * currentExchangeRate)}`" />
           <van-cell title="當日總薪資 (稅前)" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.grossPay * currentExchangeRate)}`" class="gross-cell" />
         </van-cell-group>
+        <van-collapse v-model="payBreakdownOpen" class="advanced-collapse">
+          <van-collapse-item name="breakdown" title="看加給明細">
+            <van-cell-group :border="false">
+              <van-cell title="Base Pay (基本)" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.basePay * currentExchangeRate)}`" />
+              <van-cell title="CASUAL LOADING 25%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.casualPay * currentExchangeRate)}`" />
+              <van-cell v-if="payBreakdown.shiftPay > 0" title="SHIFT 夜班 25%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.shiftPay * currentExchangeRate)}`" />
+              <van-cell v-if="payBreakdown.holidayPenaltyPay > 0" title="P/HOL 150%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.holidayPenaltyPay * currentExchangeRate)}`" />
+              <van-cell title="SAT ORD 50%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.satOrdPay * currentExchangeRate)}`" />
+              <van-cell title="T/Half (1.5倍)" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.timeHalfPay * currentExchangeRate)}`" />
+              <van-cell title="Double (2倍)" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.doublePay * currentExchangeRate)}`" />
+              <van-cell title="SUN ORD 75%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.sunOrdPay * currentExchangeRate)}`" />
+            </van-cell-group>
+            <dl class="term-glossary">
+              <div><dt>Casual 25%</dt><dd>臨時工加給（沒有年假、病假的補償）</dd></div>
+              <div><dt>夜班 25%</dt><dd>符合夜班條件的工時加給</dd></div>
+              <div><dt>SAT ORD 50%</dt><dd>週六一般時段加給</dd></div>
+              <div><dt>T/Half · Double</dt><dd>1.5 倍、2 倍時薪，依你的週六規則套用</dd></div>
+              <div><dt>SUN ORD 75%</dt><dd>週日加給</dd></div>
+              <div><dt>P/HOL 150%</dt><dd>國定假日加給（NSW 假日）</dd></div>
+              <div><dt>Smoko</dt><dd>班中的帶薪休息時間</dd></div>
+            </dl>
+            <p class="section-note section-note--compact">加給規則依你的 Award／合約而定，如與薪資單不符請以雇主為準。</p>
+          </van-collapse-item>
+        </van-collapse>
       </div>
 
       <div class="section">
@@ -1148,14 +1170,20 @@ const markDesignatedWorkDate = ({ date, marked }) => {
             </template>
           </van-cell>
           <van-field :model-value="formatRate(baseRate)" label="基本時薪 AUD" type="number" input-align="right" @update:model-value="(val) => updateRate(baseRate, val, 3)" />
-          <van-cell title="Casual 25% · AUD" :value="formatRate(casualLoadingRate)" />
-          <van-cell title="夜班 25% · AUD" :value="formatRate(shiftLoadingRate)" />
-          <van-cell title="Sat ORD 50% · AUD" :value="formatRate(saturdayOrdLoadingRate)" />
-          <van-cell title="T/Half · AUD" :value="formatRate(timeHalfRate)" />
-          <van-cell title="Double · AUD" :value="formatRate(doubleRate)" />
-          <van-cell title="星期日 75% · AUD" :value="formatRate(sundayLoadingRate)" />
           <van-field :model-value="formatRate(ppeAllowance)" label="PPE 每週 AUD" type="number" input-align="right" @update:model-value="(val) => updateRate(ppeAllowance, val, 2)" />
         </van-cell-group>
+        <van-collapse v-model="advancedRatesOpen" class="advanced-collapse">
+          <van-collapse-item name="rates" title="進階：各項加給費率（依基本時薪自動計算）">
+            <van-cell-group :border="false">
+              <van-cell title="Casual 25% · AUD" :value="formatRate(casualLoadingRate)" />
+              <van-cell title="夜班 25% · AUD" :value="formatRate(shiftLoadingRate)" />
+              <van-cell title="Sat ORD 50% · AUD" :value="formatRate(saturdayOrdLoadingRate)" />
+              <van-cell title="T/Half · AUD" :value="formatRate(timeHalfRate)" />
+              <van-cell title="Double · AUD" :value="formatRate(doubleRate)" />
+              <van-cell title="星期日 75% · AUD" :value="formatRate(sundayLoadingRate)" />
+            </van-cell-group>
+          </van-collapse-item>
+        </van-collapse>
       </div>
 
       <div class="section">
@@ -1264,15 +1292,19 @@ const markDesignatedWorkDate = ({ date, marked }) => {
     </section>
 
     <TripTracker v-show="activeTab === 'trips'" />
-    <ShoppingList v-show="activeTab === 'shopping'" :active="activeTab === 'shopping'" @navigate="activeTab = $event" />
     <ExpenseTracker v-show="activeTab === 'expenses'" />
+    <MorePage v-show="activeTab === 'more'" @navigate="activeTab = $event" />
+    <div v-if="activeTab === 'shopping'" class="sub-page-back">
+      <button type="button" @click="activeTab = 'more'"><van-icon name="arrow-left" /> 更多</button>
+    </div>
+    <ShoppingList v-show="activeTab === 'shopping'" :active="activeTab === 'shopping'" @navigate="activeTab = $event" />
 
-    <van-tabbar v-model="activeTab" fixed safe-area-inset-bottom>
+    <van-tabbar :model-value="tabbarActive" fixed safe-area-inset-bottom @update:model-value="activeTab = $event">
       <van-tabbar-item name="dashboard" icon="home-o">首頁</van-tabbar-item>
       <van-tabbar-item name="payroll" icon="balance-o">薪資</van-tabbar-item>
-      <van-tabbar-item name="trips" icon="friends-o">車資</van-tabbar-item>
-      <van-tabbar-item name="shopping" icon="cart-o">採買</van-tabbar-item>
       <van-tabbar-item name="expenses" icon="records">支出</van-tabbar-item>
+      <van-tabbar-item name="trips" icon="friends-o">車資</van-tabbar-item>
+      <van-tabbar-item name="more" icon="apps-o">更多</van-tabbar-item>
     </van-tabbar>
   </div>
 </template>
@@ -1427,6 +1459,13 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 .weekly-summary-card { padding: 14px 16px 16px; }
 .weekly-summary__row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; padding: 6px 0; }
 .weekly-summary__label { font-size: 13px; color: #4b5563; }
+.advanced-collapse { margin: 12px var(--van-cell-group-inset-padding, 16px) 0; overflow: hidden; border-radius: 16px; }
+.term-glossary { display: grid; gap: 6px; margin: 12px 0 0; padding: 12px; border-radius: 12px; background: #f7fbff; }
+.term-glossary div { display: grid; grid-template-columns: 96px 1fr; gap: 8px; }
+.term-glossary dt { color: #166dd1; font-size: 12px; font-weight: 800; }
+.term-glossary dd { margin: 0; color: #4b5b6b; font-size: 12px; line-height: 1.45; }
+.sub-page-back { max-width: 820px; margin: 8px auto -4px; padding: 0 max(var(--page-inset), env(safe-area-inset-left, 0px)); }
+.sub-page-back button { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 6px 10px; border: 1px solid var(--color-border); border-radius: 11px; background: #fff; color: #166dd1; font: inherit; font-size: 13px; font-weight: 700; }
 .weekly-summary__range { margin-left: 4px; font-size: 14px; font-weight: 500; color: #646566; }
 .weekly-summary__value { margin-left: auto; font-size: 14px; font-weight: 600; color: #1f2937; overflow-wrap: anywhere; }
 .weekly-summary__row--tax { padding-top: 12px; margin-top: 8px; border-top: 1px dashed #e5e7eb; }

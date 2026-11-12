@@ -39,16 +39,33 @@ public class AuthService {
     }
 
     @Transactional
-    IssuedToken register(String email, String password) {
+    IssuedToken register(String email, String password, boolean emailVerified) {
         String normalized = normalizeEmail(email);
         try {
             Long userSeq = db.queryForObject(
-                "INSERT INTO user_info(user_id, email, email_normalized, password_hash) VALUES (?, ?, ?, ?) RETURNING seq",
-                Long.class, UUID.randomUUID().toString(), normalized, normalized, passwords.encode(password));
+                "INSERT INTO user_info(user_id, email, email_normalized, password_hash, email_verified_at) "
+                    + "VALUES (?, ?, ?, ?, CASE WHEN ? THEN now() END) RETURNING seq",
+                Long.class, UUID.randomUUID().toString(), normalized, normalized, passwords.encode(password),
+                emailVerified);
             return issue(userSeq, normalized);
         } catch (DuplicateKeyException exception) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "無法建立帳號，請檢查輸入資料");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "這個 Email 已經註冊過，請直接登入；忘記密碼可以重設");
         }
+    }
+
+    /** 用 Email 驗證碼重設密碼：更新密碼、登出所有裝置、標記 Email 已驗證，並直接登入。 */
+    @Transactional
+    IssuedToken resetPassword(String email, String password) {
+        String normalized = normalizeEmail(email);
+        var users = db.query("SELECT seq FROM user_info WHERE email_normalized = ?",
+            (rs, row) -> rs.getLong(1), normalized);
+        if (users.size() != 1) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "驗證碼已失效，請重新寄送");
+        Long userSeq = users.get(0);
+        db.update("UPDATE user_info SET password_hash = ?, email_verified_at = COALESCE(email_verified_at, now()), "
+            + "update_time = now() WHERE seq = ?", passwords.encode(password), userSeq);
+        db.update("UPDATE auth_session SET revoked_at = now() WHERE user_seq = ? AND revoked_at IS NULL", userSeq);
+        attempts.keySet().removeIf(key -> key.endsWith(":" + normalized));
+        return issue(userSeq, normalized);
     }
 
     @Transactional

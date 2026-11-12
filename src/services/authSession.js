@@ -41,14 +41,33 @@ export async function apiRequest(path, { method = 'GET', body } = {}) {
   return response.status === 204 ? null : response.json()
 }
 
-export async function signIn(mode, email, password) {
+/**
+ * 登入、註冊（可附 Email 驗證碼）或用驗證碼重設密碼；成功後直接登入。
+ * @param {'login' | 'register' | 'reset-password'} mode
+ * @param {string} email @param {string} password @param {string} [code]
+ */
+export async function signIn(mode, email, password, code) {
   const result = await apiRequest(`/auth/${mode}`, {
     method: 'POST',
-    body: { email, password },
+    body: code ? { email, password, code } : { email, password },
   })
   authToken.value = result.token
   authEmail.value = result.email
   return result
+}
+
+/** 後端是否啟用 Email 驗證（沒有設定寄信服務時，註冊不需要驗證碼、也不提供忘記密碼） */
+export async function getAuthConfig() {
+  try {
+    return await apiRequest('/auth/config')
+  } catch {
+    return { emailVerification: false }
+  }
+}
+
+/** @param {string} email @param {'REGISTER' | 'RESET_PASSWORD'} purpose */
+export function requestEmailCode(email, purpose) {
+  return apiRequest('/auth/email-code', { method: 'POST', body: { email, purpose } })
 }
 
 export async function signOut() {

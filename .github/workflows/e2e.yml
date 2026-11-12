@@ -36,11 +36,18 @@ jobs:
         ports: ['5432:5432']
         options: >-
           --health-cmd "pg_isready -U e2e" --health-interval 5s --health-timeout 5s --health-retries 10
+      # 測試用的寄信伺服器：接收驗證信，Playwright 從它的 API 讀出驗證碼
+      mailpit:
+        image: axllent/mailpit:latest
+        ports: ['1025:1025', '8025:8025']
     env:
       DB_URL: jdbc:postgresql://127.0.0.1:5432/expense_e2e
       DB_USER: e2e
       DB_PASSWORD: e2e-password
       CORS_ORIGINS: http://127.0.0.1:4174
+      SMTP_HOST: 127.0.0.1
+      SMTP_PORT: 1025
+      MAIL_FROM: noreply@example.com
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-java@v4
@@ -87,7 +94,9 @@ jobs:
             "SELECT version, success FROM flyway_schema_history ORDER BY installed_rank;" -c \
             "SELECT count(*) AS work_profiles FROM work_profile;" -c \
             "SELECT pay_date, net_cents, deposit_id IS NOT NULL AS has_deposit FROM payslip_import;" -c \
-            "SELECT count(*) AS shifts FROM work_shift_info;"
+            "SELECT count(*) AS shifts FROM work_shift_info;" -c \
+            "SELECT email_verified_at IS NOT NULL AS verified FROM user_info WHERE email_normalized LIKE 'e2e-%';" -c \
+            "SELECT purpose, attempts, consumed_at IS NOT NULL AS used FROM email_verification_code ORDER BY id;"
       - name: Logs
         if: failure()
         run: tail -100 backend.log; tail -30 frontend.log

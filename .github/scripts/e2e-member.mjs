@@ -12,7 +12,26 @@ const url = 'http://127.0.0.1:4174'
 mkdirSync(outDir, { recursive: true })
 
 const email = `e2e-${Date.now()}@example.com`
-const password = 'e2e-pass' // 8 個字元：最短允許長度
+let password = 'e2e-pass' // 8 個字元：最短允許長度
+const mailApi = process.env.MAILPIT_URL || 'http://127.0.0.1:8025'
+
+// 從測試用的 Mailpit 取得最新一封寄給 email 的驗證碼
+async function latestCode(subjectPrefix) {
+  for (let i = 0; i < 30; i++) {
+    const res = await fetch(`${mailApi}/api/v1/search?query=${encodeURIComponent(`to:${email}`)}`)
+    const data = await res.json()
+    const message = (data.messages || []).find((m) => m.Subject.startsWith(subjectPrefix))
+    if (message) {
+      const code = message.Subject.match(/(\d{6})$/)?.[1]
+      if (code) return code
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+  throw new Error(`沒有收到「${subjectPrefix}」的驗證信`)
+}
+async function clearMailbox() {
+  await fetch(`${mailApi}/api/v1/messages`, { method: 'DELETE' })
+}
 const result = {}
 
 const browser = await chromium.launch()
@@ -44,7 +63,21 @@ async function signIn(mode) {
   if (await switcher.isVisible()) await switcher.click()
   await page.locator('.auth-sheet input[type=email]').fill(email)
   await page.locator('.auth-sheet input[type=password]').fill(password)
-  await page.getByRole('button', { name: mode === 'register' ? '註冊' : '登入', exact: true }).click()
+  if (mode === 'register') {
+    await clearMailbox()
+    await page.getByRole('button', { name: '寄送驗證碼' }).click()
+    await page.getByText('驗證碼已寄到').waitFor({ timeout: 15000 })
+    await shot('register-code')
+    // 先輸入錯誤的驗證碼，應該被擋下
+    await page.getByLabel('6 位數驗證碼').fill('000000')
+    await page.getByRole('button', { name: '完成註冊' }).click()
+    await page.getByText(/驗證碼不正確/).waitFor({ timeout: 10000 })
+    result.wrongCodeRejected = true
+    await page.getByLabel('6 位數驗證碼').fill(await latestCode('你的註冊驗證碼'))
+    await page.getByRole('button', { name: '完成註冊' }).click()
+  } else {
+    await page.getByRole('button', { name: '登入', exact: true }).click()
+  }
   await page.locator('.auth-sheet').waitFor({ state: 'hidden', timeout: 15000 })
   await page.waitForTimeout(1500)
   await toastGone()
@@ -113,6 +146,29 @@ try {
   await page.getByRole('button', { name: '登出' }).click()
   await page.waitForTimeout(1500)
   check('guestAfterLogout', await page.getByText('先完成工作設定').first().isVisible())
+  // 忘記密碼：用驗證碼重設後直接登入
+  await page.locator('.home-header__account').click()
+  await page.locator('.auth-sheet').waitFor()
+  await page.locator('.auth-sheet input[type=email]').fill(email)
+  await page.locator('.auth-sheet input[type=password]').fill('wrong-password')
+  await page.getByRole('button', { name: '登入', exact: true }).click()
+  await page.getByRole('button', { name: '忘記密碼？用 Email 重設' }).click()
+  await page.locator('.auth-sheet input[type=email]').fill(email)
+  await clearMailbox()
+  await page.getByRole('button', { name: '寄送驗證碼' }).click()
+  await page.getByText('驗證碼已寄到').waitFor({ timeout: 15000 })
+  password = 'new-pass-9'
+  await page.getByLabel('6 位數驗證碼').fill(await latestCode('你的重設密碼驗證碼'))
+  await page.locator('.auth-sheet input[type=password]').fill(password)
+  await shot('reset-password')
+  await page.getByRole('button', { name: '重設密碼並登入' }).click()
+  await page.locator('.auth-sheet').waitFor({ state: 'hidden', timeout: 15000 })
+  await page.waitForTimeout(1500)
+  check('resetPasswordSignedIn', await page.getByText('最近一期薪資').isVisible())
+  // 再登出，用新密碼登入
+  await page.locator('.home-header__account').click()
+  await page.getByRole('button', { name: '登出' }).click()
+  await page.waitForTimeout(1500)
   await signIn('login')
   check('payslipRestored', await page.getByText('最近一期薪資').isVisible())
   await shot('member-home-after-relogin')

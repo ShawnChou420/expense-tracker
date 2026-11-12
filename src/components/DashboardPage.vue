@@ -18,6 +18,7 @@ import {
   signedDollarsToCents,
 } from '../domain/money.js'
 import { dashboardSettingsRepository } from '../repositories/inMemoryDashboardSettingsRepository.js'
+import { getOnboardingSteps } from '../domain/onboarding.js'
 import { authToken } from '../services/authSession.js'
 import {
   expenseRepository,
@@ -41,6 +42,17 @@ const sortedSalaryDeposits = computed(() =>
   [...(salaryDeposits.value || [])].sort((a, b) => b.paidAt.localeCompare(a.paidAt)),
 )
 const hasSalaryDeposits = computed(() => sortedSalaryDeposits.value.length > 0)
+// 「開始使用」引導：全部完成後自動隱藏；按 × 只在這次開啟期間隱藏
+const onboardingDismissed = ref(false)
+const onboarding = computed(() =>
+  getOnboardingSteps({
+    workRecords: props.workRecords,
+    expenses: expenses.value,
+    savingGoal: savingGoal.value,
+    salaryDeposits: salaryDeposits.value,
+    isMember: Boolean(authToken.value),
+  }),
+)
 const showSalaryForm = ref(false)
 const editingSalaryId = ref(null)
 const salaryForm = ref({ paidAt: today, amount: '', gross: '', tax: '', periodStart: '', periodEnd: '' })
@@ -210,6 +222,12 @@ watch([period, anchor, incomeMode, summary], () => {
   selectedExpenseGroup.value = null
 })
 
+function runOnboardingAction(action) {
+  if (action === 'goal') openGoalEditor()
+  else if (action === 'salary') openSalaryEditor()
+  else emit('navigate', action)
+}
+
 function openGoalEditor() {
   goalForm.value = savingGoal.value
     ? {
@@ -271,6 +289,55 @@ async function saveTarget() {
     <p v-if="!authToken" class="preview-note">
       目前資料僅暫存在記憶體，關閉或重新啟動 App 後會消失。
     </p>
+
+    <section
+      v-if="!onboarding.allDone && !onboardingDismissed"
+      class="onboarding-card app-page__card"
+      aria-labelledby="onboarding-title"
+    >
+      <div class="onboarding-card__head">
+        <div>
+          <h2 id="onboarding-title">開始使用</h2>
+          <p>
+            照著做完這 {{ onboarding.total }} 步，首頁就會顯示你的收支與存款進度（已完成
+            {{ onboarding.doneCount }}/{{ onboarding.total }}）
+          </p>
+        </div>
+        <button
+          class="onboarding-card__close"
+          type="button"
+          aria-label="暫時隱藏開始使用"
+          @click="onboardingDismissed = true"
+        >
+          <van-icon name="cross" />
+        </button>
+      </div>
+      <ol class="onboarding-steps">
+        <li
+          v-for="(step, index) in onboarding.steps"
+          :key="step.id"
+          :class="{ 'onboarding-steps__item--done': step.done }"
+          class="onboarding-steps__item"
+        >
+          <span class="onboarding-steps__mark" aria-hidden="true">
+            <van-icon v-if="step.done" name="success" />
+            <template v-else>{{ index + 1 }}</template>
+          </span>
+          <div class="onboarding-steps__text">
+            <strong>{{ step.title }}</strong>
+            <small>{{ step.done ? '✓ 已完成' : step.description }}</small>
+          </div>
+          <van-button
+            v-if="!step.done"
+            size="small"
+            type="primary"
+            plain
+            @click="runOnboardingAction(step.action)"
+            >{{ step.actionLabel }}</van-button
+          >
+        </li>
+      </ol>
+    </section>
 
     <section class="period-card app-page__card" aria-label="日期篩選">
       <div class="period-modes">
@@ -636,6 +703,97 @@ async function saveTarget() {
   color: var(--color-muted);
   font-size: 12px;
   line-height: 1.5;
+}
+.onboarding-card {
+  padding: 16px;
+  border: 1px solid #cbdff4;
+  background: linear-gradient(180deg, #f3f9ff 0, #fff 120px);
+}
+.onboarding-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.onboarding-card__head h2 {
+  margin: 0;
+  font-size: var(--font-heading);
+  font-weight: 800;
+}
+.onboarding-card__head p {
+  margin: 4px 0 0;
+  color: var(--color-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.onboarding-card__close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 16px;
+}
+.onboarding-steps {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.onboarding-steps__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+}
+.onboarding-steps__mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #eaf3fe;
+  color: #166dd1;
+  font-size: 13px;
+  font-weight: 800;
+}
+.onboarding-steps__text {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+.onboarding-steps__text strong {
+  color: var(--color-heading);
+  font-size: 14px;
+}
+.onboarding-steps__text small {
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.onboarding-steps__item :deep(.van-button) {
+  flex: none;
+  min-width: 76px;
+}
+.onboarding-steps__item--done {
+  background: #f6fbf7;
+}
+.onboarding-steps__item--done .onboarding-steps__mark {
+  background: #dcf3e3;
+  color: var(--color-income);
+}
+.onboarding-steps__item--done .onboarding-steps__text small {
+  color: var(--color-income);
 }
 .preview-note {
   margin: 0 0 12px;

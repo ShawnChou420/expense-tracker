@@ -28,9 +28,9 @@ const emit = defineEmits(['action'])
   align-items: center;
   gap: 12px;
   padding: 12px;
-  border: 1px dashed #cbdff4;
-  border-radius: 14px;
-  background: #f7fbff;
+  border: 1px dashed #c9dbf3;
+  border-radius: var(--radius-medium);
+  background: #f8fbff;
 }
 .empty-state-box__icon {
   display: grid;
@@ -39,8 +39,8 @@ const emit = defineEmits(['action'])
   width: 38px;
   height: 38px;
   border-radius: 12px;
-  background: #eaf3fe;
-  color: #166dd1;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
   font-size: 20px;
 }
 .empty-state-box__text {

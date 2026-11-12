@@ -50,7 +50,7 @@ const emit = defineEmits(['update:period', 'move', 'reset'])
   gap: 7px;
 }
 .period-switcher__modes button {
-  min-height: 38px;
+  min-height: var(--touch-target);
   padding: 7px 14px;
   border: 1px solid var(--color-border);
   border-radius: 11px;
@@ -61,9 +61,9 @@ const emit = defineEmits(['update:period', 'move', 'reset'])
   font-weight: 700;
 }
 .period-switcher__modes button.selected {
-  border-color: #1989fa;
-  background: #eaf3fe;
-  color: #166dd1;
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
 }
 .period-switcher__nav {
   display: flex;
@@ -74,8 +74,8 @@ const emit = defineEmits(['update:period', 'move', 'reset'])
 }
 .period-switcher__nav button {
   flex: none;
-  width: 42px;
-  height: 42px;
+  width: var(--touch-target);
+  height: var(--touch-target);
   border: 1px solid var(--color-border);
   border-radius: 11px;
   background: #f8fafc;
@@ -91,7 +91,7 @@ const emit = defineEmits(['update:period', 'move', 'reset'])
   padding: 7px 0;
   border: 0;
   background: none;
-  color: #166dd1;
+  color: var(--color-primary);
   font: inherit;
   font-size: 13px;
   font-weight: 700;

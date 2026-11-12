@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { getTodayShift } from './home.js'
+import {
+  formatHours,
+  formatRangeLabel,
+  getEstimatedWeekBalance,
+  getPendingFareSummary,
+  getTodayShift,
+} from './home.js'
 import { getIncomeYear, getIncomeYearProgress } from './incomeYear.js'
 import { getFirstBracketLimitCents } from './taxSettings.js'
 
@@ -108,5 +114,46 @@ describe('getIncomeYearProgress', () => {
     expect(progress?.crossed).toBe(true)
     expect(progress?.percent).toBe(100)
     expect(progress?.projectedCrossDate).toBeNull()
+  })
+})
+
+describe('getPendingFareSummary', () => {
+  it('counts only charges that still have money outstanding', () => {
+    const trips = [
+      {
+        charges: [
+          { amountCents: 1000, paymentStatus: 'PENDING' },
+          { amountCents: 1000, paymentStatus: 'PAID' },
+          { amountCents: 1500, payments: [{ amountCents: 500 }] },
+          { amountCents: 0, paymentStatus: 'PENDING' },
+        ],
+      },
+      { charges: [] },
+      {},
+    ]
+    expect(getPendingFareSummary(trips)).toEqual({ pendingCents: 2000, chargeCount: 2 })
+  })
+})
+
+describe('getEstimatedWeekBalance', () => {
+  it('subtracts paid and planned expenses from the estimated take-home pay', () => {
+    expect(getEstimatedWeekBalance(115280, { paidCents: 40000, plannedCents: 23280 })).toEqual({
+      expenseCents: 63280,
+      balanceCents: 52000,
+    })
+  })
+})
+
+describe('formatting helpers', () => {
+  it('formats a week range in Chinese', () => {
+    expect(formatRangeLabel({ start: '2026-11-09', end: '2026-11-15' })).toBe(
+      '11 月 9 日 – 11 月 15 日',
+    )
+    expect(formatRangeLabel(null)).toBe('')
+  })
+
+  it('formats paid minutes as hours', () => {
+    expect(formatHours(1950)).toBe('32.5 小時')
+    expect(formatHours(480)).toBe('8 小時')
   })
 })

@@ -235,6 +235,9 @@ watch(authToken, () => {
   expenses.value = []
   refreshExpenses().catch((error) => showToast(error.message))
 })
+
+// 讓首頁快捷操作可以直接打開新增表單
+defineExpose({ openForm })
 </script>
 
 <template>

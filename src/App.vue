@@ -149,6 +149,26 @@ const showBlackoutEditor = ref(false)
 const blackoutReason = ref('')
 const blackoutSaving = ref(false)
 const authPanelOpen = ref(false)
+const accountSheetOpen = ref(false)
+const expenseTrackerRef = ref(null)
+const tripTrackerRef = ref(null)
+
+// 首頁快捷操作：切到對應頁面，支出與車資直接打開新增表單
+async function handleQuickAction(action) {
+  if (action === 'shift') {
+    activeTab.value = 'payroll'
+    return
+  }
+  activeTab.value = action === 'expense' ? 'expenses' : 'trips'
+  await nextTick()
+  if (action === 'expense') expenseTrackerRef.value?.openForm()
+  else tripTrackerRef.value?.openTripForm()
+}
+
+function openAccount() {
+  if (authToken.value) accountSheetOpen.value = true
+  else authPanelOpen.value = true
+}
 const workPersistence = useWorkRecordsPersistence(records, (error) => showToast(error.message))
 let switchingAccount = false
 let rateWritePaused = false
@@ -924,7 +944,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 
 <template>
   <div class="page">
-    <div class="account-shell">
+    <div v-if="activeTab !== 'dashboard'" class="account-shell">
       <div class="account-card" :class="{ 'account-card--shopping-guest': !authToken && activeTab === 'shopping' }">
         <span class="account-card__avatar" aria-hidden="true">
           <van-icon :name="authToken ? 'user-circle-o' : 'user-o'" />
@@ -949,7 +969,17 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       :payroll-rates="{ ppeAllowance, withholdingTaxRate }"
       @mark-work-date="markDesignatedWorkDate"
       @navigate="activeTab = $event"
+      @open-account="openAccount"
+      @quick-action="handleQuickAction"
     />
+    <van-popup v-model:show="accountSheetOpen" position="bottom" round safe-area-inset-bottom>
+      <div class="account-sheet">
+        <h2>帳號</h2>
+        <p class="account-sheet__email">{{ authEmail }}</p>
+        <p class="account-sheet__note">已登入，紀錄會保存在你的會員帳號。</p>
+        <van-button class="app-page__action" block plain type="danger" @click="accountSheetOpen = false; handleSignOut()">登出</van-button>
+      </div>
+    </van-popup>
     <section v-show="activeTab === 'payroll'" class="payroll-page app-page">
     <div class="header app-page__header">
       <div class="header-main">
@@ -1291,8 +1321,8 @@ const markDesignatedWorkDate = ({ date, marked }) => {
     </van-popup>
     </section>
 
-    <TripTracker v-show="activeTab === 'trips'" />
-    <ExpenseTracker v-show="activeTab === 'expenses'" />
+    <TripTracker v-show="activeTab === 'trips'" ref="tripTrackerRef" />
+    <ExpenseTracker v-show="activeTab === 'expenses'" ref="expenseTrackerRef" />
     <MorePage v-show="activeTab === 'more'" @navigate="activeTab = $event" />
     <div v-if="activeTab === 'shopping'" class="sub-page-back">
       <button type="button" @click="activeTab = 'more'"><van-icon name="arrow-left" /> 更多</button>
@@ -1466,6 +1496,10 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 .term-glossary dd { margin: 0; color: #4b5b6b; font-size: 12px; line-height: 1.45; }
 .sub-page-back { max-width: 820px; margin: 8px auto -4px; padding: 0 max(var(--page-inset), env(safe-area-inset-left, 0px)); }
 .sub-page-back button { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 6px 10px; border: 1px solid var(--color-border); border-radius: 11px; background: #fff; color: #166dd1; font: inherit; font-size: 13px; font-weight: 700; }
+.account-sheet { padding: 20px 20px 16px; }
+.account-sheet h2 { margin: 0; color: var(--color-heading); font-size: 18px; font-weight: 800; }
+.account-sheet__email { margin: 8px 0 0; color: var(--color-heading); font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+.account-sheet__note { margin: 4px 0 16px; color: var(--color-muted); font-size: 13px; }
 .weekly-summary__range { margin-left: 4px; font-size: 14px; font-weight: 500; color: #646566; }
 .weekly-summary__value { margin-left: auto; font-size: 14px; font-weight: 600; color: #1f2937; overflow-wrap: anywhere; }
 .weekly-summary__row--tax { padding-top: 12px; margin-top: 8px; border-top: 1px dashed #e5e7eb; }

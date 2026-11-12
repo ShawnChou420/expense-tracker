@@ -20,7 +20,8 @@ permissions:
 
 jobs:
   screenshots:
-    runs-on: ubuntu-latest
+    # Playwright 1.55 的 Chromium 尚未支援 ubuntu-latest（26.04），固定用 24.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Checkout PR

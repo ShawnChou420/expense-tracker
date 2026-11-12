@@ -21,6 +21,18 @@ describe('getWeeklyPaySummary', () => {
     expect(summary.netCents).toBe(44471)
   })
 
+  it('counts paid minutes and shifts, excluding leave', () => {
+    const records = [
+      { workDate: '2026-11-09', grossPay: 100, shiftType: 'normal', paidMinutes: 450 },
+      { workDate: '2026-11-10', grossPay: 100, shiftType: 'normal', paidMinutes: 420 },
+      { workDate: '2026-11-11', grossPay: 0, shiftType: 'leave', paidMinutes: 0 },
+      { workDate: '2026-11-16', grossPay: 100, shiftType: 'normal', paidMinutes: 480 },
+    ]
+    const summary = getWeeklyPaySummary(records, '2026-11-09', rates)
+    expect(summary.shiftCount).toBe(2)
+    expect(summary.paidMinutes).toBe(870)
+  })
+
   it('adds PPE once per week, not once per shift', () => {
     const records = [
       { workDate: '2026-11-09', grossPay: 100, shiftType: 'normal' },

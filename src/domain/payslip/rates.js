@@ -107,7 +107,8 @@ export function getRateProposals(payslip, currentRates, currentSources = {}) {
     }
     const current = Number(currentRates[field.key])
     const conflicting =
-      matches.length > 1 && matches.some((other) => other.rate !== null && other.rate !== item?.rate)
+      matches.length > 1 &&
+      matches.some((other) => other.rate !== null && other.rate !== item?.rate)
     // 相同數值＝SAME；不同時，若目前是預設倍率＝NEW（新發現），若已由薪資單確認過＝CHANGED
     let status = 'NOT_OBSERVED'
     if (proposed !== null) {

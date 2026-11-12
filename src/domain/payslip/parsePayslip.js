@@ -34,7 +34,9 @@ const SECTION_END = /^\s*(Banking|Superannuation\b|Leave in|Item\s+This Pay|NET 
 const HOURLY_ITEM = new RegExp(
   String.raw`^\s*(.*?[A-Za-z].*?)\s+(\d+(?:\.\d+)?)\s*(?:Hrs?|Hours|hrs?)?\s+(\d+\.\d{2,4})\s+(${MONEY})(?:\s+[A-Z*]{1,3})?\s*$`,
 )
-const FLAT_ITEM = new RegExp(String.raw`^\s*(.*?[A-Za-z].*?)\s{2,}(${MONEY})(?:\s+[A-Z*]{1,3})?\s*$`)
+const FLAT_ITEM = new RegExp(
+  String.raw`^\s*(.*?[A-Za-z].*?)\s{2,}(${MONEY})(?:\s+[A-Z*]{1,3})?\s*$`,
+)
 
 /**
  * 解析薪資單文字（一行一字串）。只做辨識，不做任何寫入。
@@ -90,7 +92,12 @@ export function parsePayslipLines(lines) {
     }
     const flat = FLAT_ITEM.exec(line)
     if (flat) {
-      items.push({ rawName: flat[1].trim(), hours: null, rate: null, amountCents: toCents(flat[2]) })
+      items.push({
+        rawName: flat[1].trim(),
+        hours: null,
+        rate: null,
+        amountCents: toCents(flat[2]),
+      })
       continue
     }
     // 沒有金額的行：多半是上一個項目名稱太長換行（含「LEVEL」後的級數）；有金額但沒名稱的是小計，略過

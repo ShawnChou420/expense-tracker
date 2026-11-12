@@ -123,7 +123,11 @@ describe('getRateProposals', () => {
 
   it('marks rates already confirmed from a payslip as SAME or CHANGED', () => {
     const sources = { baseRate: 'payslip', casualLoadingRate: 'payslip' }
-    const rows = getRateProposals(payslip, { ...current, baseRate: 30, casualLoadingRate: 7 }, sources)
+    const rows = getRateProposals(
+      payslip,
+      { ...current, baseRate: 30, casualLoadingRate: 7 },
+      sources,
+    )
     expect(rows.find((row) => row.key === 'baseRate')?.status).toBe('SAME')
     expect(rows.find((row) => row.key === 'casualLoadingRate')).toMatchObject({
       current: 7,
@@ -137,7 +141,14 @@ describe('getRateProposals', () => {
       ...payslip,
       items: [
         ...payslip.items.filter((item) => item.type !== 'SUNDAY_LOADING'),
-        { rawName: 'SUNDAY 175%', type: 'SUNDAY_LOADING', calcMethod: 'FULL_RATE', rate: 52.5, hours: 8, amountCents: 42000 },
+        {
+          rawName: 'SUNDAY 175%',
+          type: 'SUNDAY_LOADING',
+          calcMethod: 'FULL_RATE',
+          rate: 52.5,
+          hours: 8,
+          amountCents: 42000,
+        },
       ],
     }
     const sunday = getRateProposals(fullRateSunday, current).find(

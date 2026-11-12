@@ -1,0 +1,29 @@
+# 暫時用途：這個開發環境無法安裝 oxfmt，改由 CI 執行格式化並推回分支；完成後移除。
+name: Format Sync (temporary)
+
+on:
+  push:
+    branches: [feature/payslip-import]
+    paths: [.github/workflows/format-sync.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npx oxfmt src/domain src/repositories
+      - name: Commit formatting
+        run: |
+          git diff --stat
+          git diff --quiet && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "style: format with oxfmt"
+          git push

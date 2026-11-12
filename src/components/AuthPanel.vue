@@ -12,8 +12,8 @@ const busy = ref(false)
 
 async function submit() {
   if (busy.value) return
-  if (mode.value === 'register' && password.value.length < 12) {
-    showToast('註冊密碼至少需要 12 個字元')
+  if (mode.value === 'register' && password.value.length < 8) {
+    showToast('註冊密碼至少需要 8 個字元')
     return
   }
   busy.value = true
@@ -58,7 +58,7 @@ async function submit() {
         required
       />
       <small v-if="mode === 'register'"
-        >請使用至少 12 個字元；本版尚無 Email 驗證與忘記密碼。</small
+        >請使用至少 8 個字元；本版尚無 Email 驗證與忘記密碼。</small
       >
       <van-button
         block

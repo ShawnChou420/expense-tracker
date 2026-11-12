@@ -133,7 +133,7 @@ export function getRateProposals(payslip, currentRates, currentSources = {}) {
     const current = Number(currentRates.withholdingTaxRate)
     rows.push({
       key: 'withholdingTaxRate',
-      label: '扣稅比率',
+      label: '本期實際預扣比例',
       unit: '',
       sourceName: 'Tax ÷ Gross',
       current: Number.isFinite(current) ? current : null,

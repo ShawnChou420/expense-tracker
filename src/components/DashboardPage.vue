@@ -36,6 +36,7 @@ import EmptyState from './ui/EmptyState.vue'
 import HeroCard from './ui/HeroCard.vue'
 import QuickActions from './ui/QuickActions.vue'
 import PeriodSwitcher from './ui/PeriodSwitcher.vue'
+import LatestPayslipCard from './LatestPayslipCard.vue'
 import { authEmail, authToken } from '../services/authSession.js'
 import {
   expenseRepository,
@@ -53,9 +54,20 @@ const props = defineProps({
   payrollRates: { type: Object, default: () => ({ ppeAllowance: 0, withholdingTaxRate: 0 }) },
   // 最新薪資單上的雇主財年累計（YTD），用來校準年度稅務進度
   employerYtd: { type: Object, default: null },
-  payslipImported: Boolean,
+  // 最近一張已保存的薪資單（會員存在資料庫）
+  latestPayslip: { type: Object, default: null },
+  // 工作設定完成度：{ payReady, scheduleReady, ready }
+  setup: { type: Object, default: () => ({ payReady: false, scheduleReady: false, ready: false }) },
+  taxSource: { type: Object, default: null },
 })
-const emit = defineEmits(['mark-work-date', 'navigate', 'open-account', 'quick-action', 'import-payslip'])
+const emit = defineEmits([
+  'mark-work-date',
+  'navigate',
+  'open-account',
+  'quick-action',
+  'import-payslip',
+  'work-setup',
+])
 
 const today = formatLocalDate(new Date())
 const period = ref('week')
@@ -76,6 +88,7 @@ const onboarding = computed(() =>
     savingGoal: savingGoal.value,
     salaryDeposits: salaryDeposits.value,
     isMember: Boolean(authToken.value),
+    workSetupReady: props.setup.ready,
   }),
 )
 const showSalaryForm = ref(false)
@@ -171,13 +184,51 @@ const weekBalance = computed(() =>
 const pendingFares = computed(() => getPendingFareSummary(trips.value))
 const heroItems = computed(() => [
   { label: '稅前薪資', value: formatAud(weeklyPay.value.grossCents) },
-  { label: '預估扣稅', value: formatAud(weeklyPay.value.taxCents) },
+  { label: '預估預扣', value: formatAud(weeklyPay.value.taxCents) },
 ])
-const heroMeta = computed(
-  () =>
+const heroMeta = computed(() => {
+  const flags = weeklyPay.value.rateFlags
+  return [
     `已排 ${formatHours(weeklyPay.value.paidMinutes)} · ${weeklyPay.value.shiftCount} 天班表` +
-    (weeklyPay.value.ppeCents > 0 ? ' · 含 PPE' : ''),
-)
+      (weeklyPay.value.ppeCents > 0 ? ' · 含 PPE' : ''),
+    flags.provisional.length ? '含未確認費率，僅供參考' : '',
+    flags.excluded.length ? `未含${flags.excluded.join('、')}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+})
+// 首頁主卡的空狀態：還沒設定費率→引導工作設定；設定好但這週沒班→引導排班
+const heroEmpty = computed(() => {
+  if (!props.setup.payReady && weeklyPay.value.shiftCount === 0) {
+    return {
+      title: '先完成工作設定',
+      description: '設定你的薪資費率與班別後，這裡會自動試算本週稅前、預扣與實領。',
+      action: '開始設定',
+      icon: 'setting-o',
+    }
+  }
+  if (weeklyPay.value.shiftCount === 0) {
+    return props.setup.scheduleReady
+      ? {
+          title: '這週還沒有班表',
+          description: '按一下就依你的班別排好這週，確認後才會加入。',
+          action: '排這週的班',
+          icon: 'plus',
+        }
+      : {
+          title: '這週還沒有班表',
+          description: '設定你的班別與工作日，就能一鍵排好整週並試算薪資。',
+          action: '設定班別',
+          icon: 'clock-o',
+        }
+  }
+  return null
+})
+function onHeroAction() {
+  if (!props.setup.payReady) emit('work-setup', 1)
+  else if (!props.setup.scheduleReady) emit('work-setup', 2)
+  else emit('quick-action', 'fill-week')
+}
 const quickActions = [
   { key: 'shift', label: '記錄班表', icon: 'calendar-o' },
   { key: 'expense', label: '新增支出', icon: 'records' },
@@ -316,6 +367,7 @@ watch([period, anchor, incomeMode, summary], () => {
 function runOnboardingAction(action) {
   if (action === 'goal') openGoalEditor()
   else if (action === 'salary') openSalaryEditor()
+  else if (action === 'work-setup') emit('work-setup')
   else emit('navigate', action)
 }
 
@@ -397,12 +449,24 @@ async function saveTarget() {
       unit="AUD"
       :meta="heroMeta"
       :items="heroItems"
-      :empty="weeklyPay.shiftCount === 0"
-      empty-title="這週還沒有班表"
-      empty-description="今天開始記錄第一份班表吧！排好班後會自動試算稅前、扣稅與實領。"
-      empty-action-label="新增班表"
+      :empty="heroEmpty !== null"
+      :empty-title="heroEmpty?.title"
+      :empty-description="heroEmpty?.description"
+      :empty-action-label="heroEmpty?.action"
+      :empty-action-icon="heroEmpty?.icon"
       @open="emit('navigate', 'payroll')"
-      @action="emit('quick-action', 'shift')"
+      @action="onHeroAction"
+    />
+
+    <LatestPayslipCard
+      v-if="latestPayslip"
+      class="home-block"
+      :payslip="latestPayslip"
+      :schedule-ready="setup.scheduleReady"
+      :is-member="Boolean(authToken)"
+      @setup-schedule="emit('work-setup', 2)"
+      @open-payroll="emit('navigate', 'payroll')"
+      @import-payslip="emit('import-payslip')"
     />
 
     <button type="button" class="today-strip app-page__card" @click="emit('navigate', 'payroll')">
@@ -445,7 +509,7 @@ async function saveTarget() {
     <QuickActions class="home-block" :actions="quickActions" @select="emit('quick-action', $event)" />
 
     <button
-      v-if="!payslipImported"
+      v-if="!latestPayslip"
       type="button"
       class="payslip-cta home-block app-page__card"
       @click="emit('import-payslip')"
@@ -453,7 +517,7 @@ async function saveTarget() {
       <span class="payslip-cta__icon" aria-hidden="true"><van-icon name="description-o" /></span>
       <span class="payslip-cta__text">
         <strong>讓第一張薪資單，幫你開始記帳。</strong>
-        <small>上傳 PDF，自動設定時薪、加給、扣稅比例與年度累計</small>
+        <small>上傳 PDF，自動設定時薪、加給與預扣比例，並保存這一期的薪資</small>
       </span>
       <van-icon name="arrow" aria-hidden="true" class="payslip-cta__arrow" />
     </button>

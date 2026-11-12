@@ -5,12 +5,14 @@ defineProps({
   title: { type: String, required: true },
   description: { type: String, default: '' },
   actionLabel: { type: String, default: '' },
+  // 放在卡片裡時用上下排列，讓說明文字有足夠寬度
+  stacked: Boolean,
 })
 const emit = defineEmits(['action'])
 </script>
 
 <template>
-  <div class="empty-state-box">
+  <div class="empty-state-box" :class="{ 'empty-state-box--stacked': stacked }">
     <span class="empty-state-box__icon" aria-hidden="true"><van-icon :name="icon" /></span>
     <div class="empty-state-box__text">
       <strong>{{ title }}</strong>
@@ -59,5 +61,19 @@ const emit = defineEmits(['action'])
 }
 .empty-state-box :deep(.van-button) {
   flex: none;
+}
+.empty-state-box--stacked {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.empty-state-box--stacked .empty-state-box__text {
+  flex: 1 1 180px;
+}
+.empty-state-box--stacked :deep(.van-button) {
+  width: 100%;
+  min-height: var(--touch-target);
+  border-radius: var(--radius-button);
+  font-size: 14px;
+  font-weight: 800;
 }
 </style>

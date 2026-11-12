@@ -49,7 +49,9 @@ for (const target of targets) {
     await page.waitForTimeout(500)
     await page.locator('.van-tabbar-item', { hasText: '首頁' }).click()
     await page.evaluate(() => window.scrollTo(0, 0))
-    await page.waitForTimeout(800)
+    // 等「成功加入班表」提示消失再截圖
+    await page.locator('.van-toast').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
+    await page.waitForTimeout(500)
 
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -58,7 +60,24 @@ for (const target of targets) {
     if (size.name === '390') {
       await page.screenshot({ path: join(outDir, `${target.name}-${size.name}-fold.png`) })
     }
-    report.push({ target: target.name, width: size.width, horizontalOverflowPx: overflow, errors })
+    // 互動檢查（新版才有）：展開進階統計、快捷操作「新增支出」會打開表單
+    const checks = {}
+    if (target.name === 'after' && size.name === '390') {
+      try {
+        await page.getByRole('button', { name: /進階統計/ }).click()
+        await page.waitForTimeout(1200)
+        checks.advancedOpened = await page.locator('#advanced-panel').isVisible()
+        await page.locator('#advanced-panel').screenshot({ path: join(outDir, 'after-390-advanced.png') })
+        await page.evaluate(() => window.scrollTo(0, 0))
+        await page.getByRole('button', { name: '新增支出' }).click()
+        await page.waitForTimeout(800)
+        checks.expenseFormOpened = await page.locator('.van-popup--bottom').first().isVisible()
+        await page.screenshot({ path: join(outDir, 'after-390-quick-expense.png') })
+      } catch (error) {
+        checks.error = String(error.message || error).slice(0, 300)
+      }
+    }
+    report.push({ target: target.name, width: size.width, horizontalOverflowPx: overflow, errors, checks })
     await context.close()
   }
 }

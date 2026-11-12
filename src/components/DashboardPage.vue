@@ -123,7 +123,7 @@ const taxProgressHint = computed(() => {
   if (progress.projectedWithinYear && progress.projectedCrossDate) {
     return `照最近 4 週平均 ${formatAud(progress.recentWeeklyAverageCents)}／週，預計 ${progress.projectedCrossDate} 左右超過。`
   }
-  if (progress.recentWeeklyAverageCents > 0) return '照最近 4 週的收入，本所得年度內不會超過。'
+  if (progress.recentWeeklyAverageCents > 0) return '依最近 4 週平均推算，本財年內預計不會超過。'
   return '最近 4 週沒有班表，暫時無法預估何時超過。'
 })
 const summary = computed(() =>
@@ -419,7 +419,7 @@ async function saveTarget() {
         label="本週預估結餘"
         badge="預估"
         :value="formatAud(weekBalance.balanceCents)"
-        :hint="`實領 − 本週支出 ${formatAud(weekBalance.expenseCents)}`"
+        :hint="`已扣本週支出 ${formatAud(weekBalance.expenseCents)}`"
         :tone="weekBalance.balanceCents < 0 ? 'expense' : 'income'"
         clickable
         @click="emit('navigate', 'expenses')"
@@ -514,6 +514,7 @@ async function saveTarget() {
       <template v-if="!savingGoal" #empty>
         <EmptyState
           class="home-card-empty"
+          stacked
           icon="gold-coin-o"
           title="設定你的第一個儲蓄目標。"
           description="填目標金額與開始前已有的存款，之後依實際收支自動累計。"
@@ -551,6 +552,7 @@ async function saveTarget() {
       <template v-if="workProgress.target === null" #empty>
         <EmptyState
           class="home-card-empty"
+          stacked
           icon="flag-o"
           :title="workProgress.count > 0 ? `已標記 ${workProgress.count} 天指定工作` : '設定你想追蹤的工作天數'"
           description="自行設定目標天數，這裡會顯示進度與還差幾天。"

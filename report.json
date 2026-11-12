@@ -1,0 +1,133 @@
+[
+  {
+    "target": "before",
+    "width": 320,
+    "horizontalOverflowPx": 22,
+    "errors": [],
+    "checks": {}
+  },
+  {
+    "target": "before",
+    "width": 375,
+    "horizontalOverflowPx": 18,
+    "errors": [],
+    "checks": {}
+  },
+  {
+    "target": "before",
+    "width": 390,
+    "horizontalOverflowPx": 18,
+    "errors": [],
+    "checks": {}
+  },
+  {
+    "target": "before",
+    "width": 430,
+    "horizontalOverflowPx": 18,
+    "errors": [],
+    "checks": {}
+  },
+  {
+    "target": "before",
+    "width": 1280,
+    "horizontalOverflowPx": 0,
+    "errors": [],
+    "checks": {}
+  },
+  {
+    "target": "after",
+    "width": 320,
+    "horizontalOverflowPx": 0,
+    "errors": [],
+    "checks": {
+      "heroAsksSetup": true,
+      "gateShown": true,
+      "wizardOverflowPx": 0,
+      "noRecordsWithoutSetup": true,
+      "previewShifts": 5,
+      "previewExcludedFlag": true,
+      "fillPreviewCount": 5,
+      "weekRecords": 5,
+      "noOverwrite": true
+    }
+  },
+  {
+    "target": "after",
+    "width": 375,
+    "horizontalOverflowPx": 0,
+    "errors": [],
+    "checks": {
+      "heroAsksSetup": true,
+      "gateShown": true,
+      "wizardOverflowPx": 0,
+      "noRecordsWithoutSetup": true,
+      "previewShifts": 5,
+      "previewExcludedFlag": true,
+      "fillPreviewCount": 5,
+      "weekRecords": 5,
+      "noOverwrite": true
+    }
+  },
+  {
+    "target": "after",
+    "width": 390,
+    "horizontalOverflowPx": 0,
+    "errors": [],
+    "checks": {
+      "heroAsksSetup": true,
+      "gateShown": true,
+      "wizardOverflowPx": 0,
+      "noRecordsWithoutSetup": true,
+      "previewShifts": 5,
+      "previewExcludedFlag": true,
+      "fillPreviewCount": 5,
+      "weekRecords": 5,
+      "noOverwrite": true,
+      "advancedOpened": true,
+      "expenseFormOpened": true,
+      "payslip": {
+        "wrongPasswordRejected": true,
+        "netPayShown": true,
+        "paygLabel": true,
+        "wizardOpenedAtShifts": true,
+        "latestPayslipCard": true,
+        "taxBadge": true,
+        "rateStatusShown": true
+      }
+    }
+  },
+  {
+    "target": "after",
+    "width": 430,
+    "horizontalOverflowPx": 0,
+    "errors": [],
+    "checks": {
+      "heroAsksSetup": true,
+      "gateShown": true,
+      "wizardOverflowPx": 0,
+      "noRecordsWithoutSetup": true,
+      "previewShifts": 5,
+      "previewExcludedFlag": true,
+      "fillPreviewCount": 5,
+      "weekRecords": 5,
+      "noOverwrite": true
+    }
+  },
+  {
+    "target": "after",
+    "width": 1280,
+    "horizontalOverflowPx": 0,
+    "errors": [],
+    "checks": {
+      "heroAsksSetup": true,
+      "gateShown": true,
+      "wizardOverflowPx": 0,
+      "noRecordsWithoutSetup": true,
+      "previewShifts": 5,
+      "previewExcludedFlag": true,
+      "fillPreviewCount": 5,
+      "weekRecords": 5,
+      "noOverwrite": true
+    }
+  }
+]

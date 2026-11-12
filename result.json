@@ -1,0 +1,15 @@
+{
+  "memberHeroAsksSetup": true,
+  "depositCheckedByDefault": true,
+  "wizardOpensAtShifts": true,
+  "latestPayslipCard": true,
+  "latestNetPay": true,
+  "monthPreviewHasShifts": true,
+  "monthShifts": 21,
+  "guestAfterLogout": true,
+  "payslipRestored": true,
+  "payRestored": true,
+  "scheduleRestored": true,
+  "noDuplicateAfterRelogin": true,
+  "pageErrors": []
+}

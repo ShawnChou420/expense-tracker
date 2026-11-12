@@ -42,9 +42,15 @@ jobs:
           done
       - name: Start preview servers
         run: |
-          (cd before && npx vite preview --port 4173 --strictPort > ../before.log 2>&1 &)
-          (cd after && npx vite preview --port 4174 --strictPort > ../after.log 2>&1 &)
-          npx --yes wait-on@8.0.3 -t 60000 http://127.0.0.1:4173 http://127.0.0.1:4174
+          (cd before && nohup npx vite preview --host 127.0.0.1 --port 4173 --strictPort > ../before.log 2>&1 &)
+          (cd after && nohup npx vite preview --host 127.0.0.1 --port 4174 --strictPort > ../after.log 2>&1 &)
+          for port in 4173 4174; do
+            for i in $(seq 1 60); do
+              curl -sf "http://127.0.0.1:$port" > /dev/null && break
+              sleep 1
+            done
+            curl -sf "http://127.0.0.1:$port" > /dev/null || { cat before.log after.log; exit 1; }
+          done
       - name: Install Playwright
         run: |
           mkdir -p shot && cd shot && npm init -y > /dev/null

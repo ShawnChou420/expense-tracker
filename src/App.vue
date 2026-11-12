@@ -15,8 +15,8 @@ import { shoppingRepository, getGuestShoppingItems, notifyShoppingChanged } from
 import { removeLeaveBlackout, upsertLeaveBlackout } from './domain/leaveBlackouts.js'
 import { formatCalendarAmount } from './utils/calendarMoney.js'
 import { formatLocalDate, getCalendarDateRange, getMonthRange } from './domain/date.js'
-import { applyPrepTime, PREP_MINUTES } from './domain/prepTime.js'
 import { useShiftCalculator } from './composables/useShiftCalculator.js'
+import { applyPrepTime, PREP_MINUTES } from './domain/prepTime.js'
 import {
   formatHours,
   formatRate,

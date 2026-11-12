@@ -36,9 +36,7 @@ const items = computed(() =>
       <span class="latest-pay__icon" aria-hidden="true"><van-icon name="balance-list-o" /></span>
       <div>
         <h2 id="latest-pay-title">最近一期薪資</h2>
-        <p>
-          {{ payslip.employerName || '薪資單' }} · 付款日 {{ shortDate(payslip.payDate) }}
-        </p>
+        <p>{{ payslip.employerName || '薪資單' }}</p>
       </div>
       <span class="latest-pay__badge">{{ isMember ? '已保存' : '本次開啟' }}</span>
     </header>
@@ -46,7 +44,9 @@ const items = computed(() =>
     <div class="latest-pay__amount">
       <small>實領 Net Pay</small>
       <strong>{{ formatAud(payslip.netCents) }}</strong>
-      <span v-if="periodLabel">工作期間 {{ periodLabel }}</span>
+      <span>
+        {{ periodLabel ? `工作期間 ${periodLabel} · ` : '' }}{{ shortDate(payslip.payDate) }} 入帳
+      </span>
     </div>
 
     <dl class="latest-pay__grid">

@@ -42,8 +42,8 @@ async function signIn(mode) {
   const switchLabel = mode === 'register' ? '沒有帳號？註冊' : '已有帳號？登入'
   const switcher = page.getByRole('button', { name: switchLabel })
   if (await switcher.isVisible()) await switcher.click()
-  await page.getByLabel('Email').fill(email)
-  await page.getByLabel('密碼').fill(password)
+  await page.locator('.auth-sheet input[type=email]').fill(email)
+  await page.locator('.auth-sheet input[type=password]').fill(password)
   await page.getByRole('button', { name: mode === 'register' ? '註冊' : '登入', exact: true }).click()
   await page.locator('.auth-sheet').waitFor({ state: 'hidden', timeout: 15000 })
   await page.waitForTimeout(1500)

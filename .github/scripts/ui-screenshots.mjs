@@ -99,7 +99,7 @@ for (const target of targets) {
         await page.evaluate(() => window.scrollTo(0, 0))
         await page.getByRole('button', { name: '新增支出' }).click()
         await page.waitForTimeout(800)
-        checks.expenseFormOpened = await page.locator('.van-popup--bottom').first().isVisible()
+        checks.expenseFormOpened = await page.locator('.van-popup--bottom:visible').count() > 0
       } catch (error) {
         checks.quickError = String(error.message || error).slice(0, 300)
       }
@@ -119,6 +119,7 @@ await browser.close()
 async function guestSetupFlow(page, shot) {
   const result = {}
   const capture = async (name) => {
+    await page.waitForTimeout(450) // 等彈窗動畫結束
     if (shot) await shot(name)
     result.wizardOverflowPx = Math.max(result.wizardOverflowPx ?? 0, await popupOverflow(page))
   }

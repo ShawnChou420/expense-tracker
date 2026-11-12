@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { getTodayShift } from './home.js'
+import {
+  formatHours,
+  formatRangeLabel,
+  getEstimatedWeekBalance,
+  getPendingFareSummary,
+  getTodayShift,
+} from './home.js'
 import { getIncomeYear, getIncomeYearProgress } from './incomeYear.js'
 import { getFirstBracketLimitCents } from './taxSettings.js'
 
@@ -82,6 +88,30 @@ describe('getIncomeYearProgress', () => {
     expect(progress?.estimatedGrossCents).toBe(100000)
   })
 
+  it('prefers the employer year-to-date gross from a payslip without adding it to deposits', () => {
+    const progress = getIncomeYearProgress({
+      records: [week('2026-11-02', 1000)],
+      salaryDeposits: [{ paidAt: '2026-11-12', grossCents: 164639 }],
+      employerYtd: { grossCents: 2590128, payDate: '2026-11-12' },
+      today: '2026-11-12',
+      limitCents: 4_500_000,
+    })
+    expect(progress?.basis).toBe('payslip')
+    expect(progress?.ytdGrossCents).toBe(2590128)
+    expect(progress?.actualGrossCents).toBe(164639)
+    expect(progress?.remainingCents).toBe(1909872)
+  })
+
+  it('ignores an employer year-to-date figure from a previous income year', () => {
+    const progress = getIncomeYearProgress({
+      records: [],
+      employerYtd: { grossCents: 4000000, payDate: '2026-06-25' },
+      today: '2026-11-12',
+      limitCents: 4_500_000,
+    })
+    expect(progress?.basis).toBe('estimated')
+  })
+
   it('projects when the limit will be crossed from the last four weeks', () => {
     const progress = getIncomeYearProgress({
       records: [
@@ -108,5 +138,46 @@ describe('getIncomeYearProgress', () => {
     expect(progress?.crossed).toBe(true)
     expect(progress?.percent).toBe(100)
     expect(progress?.projectedCrossDate).toBeNull()
+  })
+})
+
+describe('getPendingFareSummary', () => {
+  it('counts only charges that still have money outstanding', () => {
+    const trips = [
+      {
+        charges: [
+          { amountCents: 1000, paymentStatus: 'PENDING' },
+          { amountCents: 1000, paymentStatus: 'PAID' },
+          { amountCents: 1500, payments: [{ amountCents: 500 }] },
+          { amountCents: 0, paymentStatus: 'PENDING' },
+        ],
+      },
+      { charges: [] },
+      {},
+    ]
+    expect(getPendingFareSummary(trips)).toEqual({ pendingCents: 2000, chargeCount: 2 })
+  })
+})
+
+describe('getEstimatedWeekBalance', () => {
+  it('subtracts paid and planned expenses from the estimated take-home pay', () => {
+    expect(getEstimatedWeekBalance(115280, { paidCents: 40000, plannedCents: 23280 })).toEqual({
+      expenseCents: 63280,
+      balanceCents: 52000,
+    })
+  })
+})
+
+describe('formatting helpers', () => {
+  it('formats a week range in Chinese', () => {
+    expect(formatRangeLabel({ start: '2026-11-09', end: '2026-11-15' })).toBe(
+      '11 月 9 日 – 11 月 15 日',
+    )
+    expect(formatRangeLabel(null)).toBe('')
+  })
+
+  it('formats paid minutes as hours', () => {
+    expect(formatHours(1950)).toBe('32.5 小時')
+    expect(formatHours(480)).toBe('8 小時')
   })
 })

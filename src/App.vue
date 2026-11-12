@@ -9,15 +9,33 @@ import MorePage from './components/MorePage.vue'
 import AuthPanel from './components/AuthPanel.vue'
 import { authEmail, authToken, signOut, clearSession, apiRequest } from './services/authSession.js'
 import { useWorkRecordsPersistence } from './composables/useWorkRecordsPersistence.js'
-import { getGuestLedgerSnapshot, notifyLedgerChanged, passengerRepository, tripRepository, expenseRepository } from './repositories/appRepositories.js'
+import { getGuestLedgerSnapshot, notifyLedgerChanged, passengerRepository, tripRepository, expenseRepository, salaryDepositRepository } from './repositories/appRepositories.js'
 import { dashboardSettingsRepository, getGuestDashboardSettings } from './repositories/inMemoryDashboardSettingsRepository.js'
 import { leaveBlackoutRepository, getGuestLeaveBlackouts } from './repositories/leaveBlackoutRepository.js'
 import { shoppingRepository, getGuestShoppingItems, notifyShoppingChanged } from './repositories/shoppingRepository.js'
 import { removeLeaveBlackout, upsertLeaveBlackout } from './domain/leaveBlackouts.js'
 import { formatCalendarAmount } from './utils/calendarMoney.js'
-import { formatLocalDate, getCalendarDateRange, getMonthRange } from './domain/date.js'
+import { formatLocalDate, getCalendarDateRange, getMonthRange, getWeekRange } from './domain/date.js'
 import { centsToDollars } from './domain/money.js'
 import { getWeeklyPaySummary } from './domain/weeklyPay.js'
+import { RATE_FIELDS } from './domain/payslip/rates.js'
+import PayslipImport from './components/PayslipImport.vue'
+import WorkSetupWizard from './components/WorkSetupWizard.vue'
+import WorkSetupGate from './components/WorkSetupGate.vue'
+import FillPreviewSheet from './components/FillPreviewSheet.vue'
+import { useWorkSetup } from './composables/useWorkSetup.js'
+import { getGuestWorkSetup, payslipImportRepository, workProfileRepository } from './repositories/workSetupRepositories.js'
+import {
+  PAY_STATUS,
+  describeSmoko,
+  describeWeekPlan,
+  getPlannedShift,
+  getRateFlags,
+  getSmokoInputs,
+  inferLegacyWorkProfile,
+  planFill,
+  summarizeFillPreview,
+} from './domain/workProfile.js'
 import { useShiftCalculator } from './composables/useShiftCalculator.js'
 import { applyPrepTime, PREP_MINUTES } from './domain/prepTime.js'
 import {
@@ -137,8 +155,9 @@ const onCurrencyConfirm = ({ selectedOptions }) => {
 
 // --- 日期與時間基礎變數 ---
 const workDate = ref(getTodayDate())
-const startTime = ref('23:45')
-const endTime = ref('06:00')
+// 不預設任何人的上下班時間：有排班範本時由範本帶入，否則讓使用者自己選
+const startTime = ref('')
+const endTime = ref('')
 const dataManagementSections = ref([])
 const scheduleSections = ref([])
 const expandedRecordId = ref('')
@@ -149,19 +168,97 @@ const showBlackoutEditor = ref(false)
 const blackoutReason = ref('')
 const blackoutSaving = ref(false)
 const authPanelOpen = ref(false)
+const accountSheetOpen = ref(false)
+const payslipImportOpen = ref(false)
+const payslipDeposits = ref(null)
+
+watch(payslipImportOpen, async (open) => {
+  if (!open) return
+  payslipDeposits.value = null
+  if (!authToken.value) return
+  try { payslipDeposits.value = await salaryDepositRepository.list() } catch { payslipDeposits.value = [] }
+})
+
+// 薪資單確認後：保存薪資單（會員同時可記錄入帳）、更新費率為「已確認」。
+// 還沒設定班別時，直接接著打開設定精靈的 Step 2，不讓使用者自己找下一步。
+async function applyPayslipImport({ rates, payslip, recordDeposit }) {
+  const saved = await workSetup.applyPayslip({ rates, payslip, recordDeposit })
+  if (!saved) return
+  payslipImportOpen.value = false
+  const parts = ['已保存薪資單', Object.keys(rates).length ? `確認 ${Object.keys(rates).length} 項費率` : '']
+  if (recordDeposit) parts.push('記錄入帳')
+  showToast(parts.filter(Boolean).join('，'))
+  if (!workSetup.setup.value.scheduleReady) {
+    openWorkSetup(2)
+  } else if (workSetup.pendingAction.value) {
+    continuePendingAction(workSetup.pendingAction.value)
+  }
+}
+
+const wizardManual = ref(false)
+function openWorkSetup(step, { manual = false } = {}) {
+  wizardManual.value = manual
+  payslipImportOpen.value = false
+  workSetup.openWizard(step)
+}
+function openManualRates() {
+  openWorkSetup(1, { manual: true })
+}
+function openPayslipFromSetup() {
+  workSetup.gate.value = { ...workSetup.gate.value, show: false }
+  workSetup.wizard.value = { ...workSetup.wizard.value, show: false }
+  payslipImportOpen.value = true
+}
+
+function handlePageNavigate(target) {
+  if (target === 'payslip') payslipImportOpen.value = true
+  else if (target === 'work-setup') openWorkSetup()
+  else activeTab.value = target
+}
+const expenseTrackerRef = ref(null)
+const tripTrackerRef = ref(null)
+
+// 首頁快捷操作：切到對應頁面，支出與車資直接打開新增表單
+async function handleQuickAction(action) {
+  if (action === 'shift') {
+    activeTab.value = 'payroll'
+    return
+  }
+  if (action === 'fill-week') {
+    activeTab.value = 'payroll'
+    workDate.value = getTodayDate()
+    visibleMonth.value = workDate.value.slice(0, 7)
+    loadSelectedDate()
+    fillCurrentWeek()
+    return
+  }
+  activeTab.value = action === 'expense' ? 'expenses' : 'trips'
+  await nextTick()
+  if (action === 'expense') expenseTrackerRef.value?.openForm()
+  else tripTrackerRef.value?.openTripForm()
+}
+
+function openAccount() {
+  if (authToken.value) accountSheetOpen.value = true
+  else authPanelOpen.value = true
+}
 const workPersistence = useWorkRecordsPersistence(records, (error) => showToast(error.message))
 let switchingAccount = false
 let rateWritePaused = false
-let guestRates = { baseRate: 26.74, ppeAllowance: 5, withholdingTaxRate: 0.12 }
+// 訪客沒有任何預設費率：未設定就是 0，並由工作設定擋下試算
+let guestRates = { baseRate: 0, ppeAllowance: 0, withholdingTaxRate: 0, confirmedLoadingRates: {} }
 let guestCurrency = 'AUD'
 async function restoreGuestSettings() {
   rateWritePaused = true
   baseRate.value = guestRates.baseRate
+  confirmedLoadingRates.value = { ...(guestRates.confirmedLoadingRates || {}) }
   ppeAllowance.value = guestRates.ppeAllowance
   withholdingTaxRate.value = guestRates.withholdingTaxRate
   currentCurrency.value = guestCurrency
+  workSetup.restoreGuest(getGuestWorkSetup())
   await nextTick()
   rateWritePaused = false
+  loadSelectedDate()
 }
 
 async function handleSignedIn() {
@@ -172,21 +269,31 @@ async function handleSignedIn() {
       baseRate: baseRate.value,
       ppeAllowance: ppeAllowance.value,
       withholdingTaxRate: withholdingTaxRate.value,
+      confirmedLoadingRates: { ...confirmedLoadingRates.value },
     }
+    const guestWorkSetup = getGuestWorkSetup()
+    const guestHasPaySetup =
+      guestWorkSetup.profile && guestWorkSetup.profile.payStatus !== PAY_STATUS.NOT_CONFIGURED
     guestCurrency = currentCurrency.value
     const guestWork = workPersistence.getGuestRecords()
     const guestLedger = await getGuestLedgerSnapshot()
     const guestSettings = getGuestDashboardSettings()
     const guestBlackouts = getGuestLeaveBlackouts()
     const guestShopping = getGuestShoppingItems()
-    const [memberWork, memberPassengers, memberTrips, memberExpenses, existingRates, memberSettings, memberBlackouts] = await Promise.all([
+    const [memberWork, memberPassengers, memberTrips, memberExpenses, memberSettings, memberBlackouts] = await Promise.all([
       apiRequest('/work-records'), passengerRepository.list(), tripRepository.list(), expenseRepository.list(),
-      apiRequest('/salary-rates'), apiRequest('/dashboard-settings'), leaveBlackoutRepository.list(),
+      apiRequest('/dashboard-settings'), leaveBlackoutRepository.list(),
     ])
     let memberShopping = null
     try { memberShopping = await shoppingRepository.list() } catch { showToast('採買清單暫時無法讀取，請更新 Java 後端') }
+    const memberProfile = await workProfileRepository.load().catch(() => null)
+    const existingRates = await apiRequest('/salary-rates')
+    // 會員已有自己的設定（或舊版已存的費率）時，不用訪客的設定覆蓋
+    const memberHasPaySetup =
+      Boolean(memberProfile) || inferLegacyWorkProfile(existingRates).payStatus !== PAY_STATUS.NOT_CONFIGURED
     const hasGuestData = guestWork.length || guestLedger.passengers.length || guestLedger.trips.length ||
-      guestLedger.expenses.length || guestSettings.savingGoal || guestSettings.workDayTarget || guestBlackouts.length || (memberShopping && guestShopping.length)
+      guestLedger.expenses.length || guestSettings.savingGoal || guestSettings.workDayTarget || guestBlackouts.length || (memberShopping && guestShopping.length) ||
+      guestWorkSetup.payslips.length || (guestHasPaySetup && !memberHasPaySetup)
     const memberHasData = memberWork.length || memberPassengers.length || memberTrips.length || memberExpenses.length || memberBlackouts.length || memberShopping?.length
     if (hasGuestData) {
       try {
@@ -194,7 +301,7 @@ async function handleSignedIn() {
           title: '匯入本次訪客紀錄？',
           message: memberHasData
             ? '此會員已有紀錄。相同 ID 或同日期禁休會略過，但同一天不同 ID 的班表仍可能重複；請確認後再匯入。'
-            : '將本次訪客的班表、禁休公告、採買清單、乘客、行程、支出與目標匯入此會員。',
+            : '將本次訪客的工作設定、薪資單、班表、禁休公告、採買清單、乘客、行程、支出與目標匯入此會員。',
           confirmButtonText: '匯入',
         })
         const missing = (guestItems, memberItems) => guestItems.filter(
@@ -216,7 +323,27 @@ async function handleSignedIn() {
         }
         if (guestSettings.savingGoal && !memberSettings.savingGoal) await dashboardSettingsRepository.saveSavingGoal(guestSettings.savingGoal)
         if (guestSettings.workDayTarget && !memberSettings.workDayTarget) await dashboardSettingsRepository.saveWorkDayTarget(guestSettings.workDayTarget)
-        if (!Object.keys(existingRates).length) await apiRequest('/salary-rates', { method: 'PUT', body: guestRates })
+        // 會員還沒有自己的工作設定時，才把訪客剛完成的設定與費率帶過去（不覆蓋會員既有設定）
+        if (guestHasPaySetup && !memberHasPaySetup) {
+          await apiRequest('/salary-rates', {
+            method: 'PUT',
+            body: {
+              ...guestRates.confirmedLoadingRates,
+              baseRate: guestRates.baseRate,
+              ppeAllowance: guestRates.ppeAllowance,
+              withholdingTaxRate: guestRates.withholdingTaxRate,
+            },
+          })
+          await workProfileRepository.save(guestWorkSetup.profile)
+        }
+        for (const payslip of guestWorkSetup.payslips) {
+          try {
+            const { id: _guestId, depositId: _deposit, ...data } = payslip
+            await payslipImportRepository.create(data, { recordDeposit: false })
+          } catch {
+            // 已匯入過的同一份薪資單會被後端擋下，略過即可
+          }
+        }
       } catch (error) {
         if (error !== 'cancel') showToast(error.message || '匯入未完成，請檢查資料後重試')
       }
@@ -224,9 +351,12 @@ async function handleSignedIn() {
     await workPersistence.loadMemberRecords()
     leaveBlackouts.value = await leaveBlackoutRepository.list()
     const memberRates = await apiRequest('/salary-rates')
-    baseRate.value = Number(memberRates.baseRate ?? 26.74)
-    ppeAllowance.value = Number(memberRates.ppeAllowance ?? 5)
-    withholdingTaxRate.value = Number(memberRates.withholdingTaxRate ?? 0.12)
+    // 沒有存過費率的會員就是 0（未設定），絕不套用任何人的預設費率
+    baseRate.value = Number(memberRates.baseRate ?? 0)
+    ppeAllowance.value = Number(memberRates.ppeAllowance ?? 0)
+    withholdingTaxRate.value = Number(memberRates.withholdingTaxRate ?? 0)
+    await workSetup.loadMember(memberRates)
+    loadSelectedDate()
     currentCurrency.value = memberSettings.displayCurrency || 'AUD'
     notifyLedgerChanged()
     notifyShoppingChanged()
@@ -297,13 +427,6 @@ const parseWorkDate = (dateText) => {
   return new Date(year, month - 1, day)
 }
 
-// 自動判定禮拜二為清潔日
-watch(workDate, (newDate) => {
-  if (newDate) {
-    const d = parseWorkDate(newDate)
-    isCleaningDay.value = (d.getDay() === 2)
-  }
-}, { immediate: true })
 
 const calendarDefaultDate = computed(() => parseWorkDate(workDate.value))
 // 日曆範圍隨今天往後滾動，並涵蓋目前選取日期與所有班表日期（不再固定停在 2027 年底）
@@ -352,10 +475,13 @@ const deleteSelectedBlackout = async () => {
     blackoutSaving.value = false
   }
 }
-const selectedDateHasDefaultShift = computed(() => {
-  const defaults = getDefaultShiftForDate(parseWorkDate(workDate.value))
-  return defaults.startTime !== defaults.endTime
+// 這天依使用者的每週排班應該上什麼班（沒有設定就是 null，不再用任何人的固定班表）
+const plannedShiftFor = (date) => getPlannedShift(workSetup.profile.value, date)
+const selectedPlannedShift = computed(() => {
+  const plan = plannedShiftFor(workDate.value)
+  return plan && plan.shiftType !== 'leave' ? plan : null
 })
+const selectedDateHasDefaultShift = computed(() => Boolean(selectedPlannedShift.value))
 
 const loadSelectedDate = () => {
   const existingRecord = selectedRecord.value
@@ -369,11 +495,11 @@ const loadSelectedDate = () => {
     return
   }
 
-  const defaults = getDefaultShiftForDate(parseWorkDate(workDate.value))
-  startTime.value = defaults.startTime
-  endTime.value = defaults.endTime
-  shiftType.value = defaults.shiftType
-  isCleaningDay.value = defaults.isCleaningDay
+  const planned = selectedPlannedShift.value
+  startTime.value = planned?.startTime ?? ''
+  endTime.value = planned?.endTime ?? ''
+  shiftType.value = 'normal'
+  isCleaningDay.value = planned?.isCleaningDay ?? false
   remark.value = ''
 }
 
@@ -388,61 +514,138 @@ const onDateSelect = (date) => {
   loadSelectedDate()
 }
 
-// --- 批量填充輔助函數：取得特定星期的預設工時設定 ---
-const getDefaultShiftForDate = (dateObj) => {
-  const dayOfWeek = dateObj.getDay()
-  let defaultStartTime = '00:00'
-  let defaultEndTime = '00:00'
-  let defaultShiftType = 'normal'
-  const isCleaning = dayOfWeek === 2 // 星期二是清潔日
+// --- 填滿本週／本月：先檢查設定 → 預覽 → 使用者確認後才寫入 ---
+const fillPreviewOpen = ref(false)
+const fillPreview = ref(null)
 
-  if (dayOfWeek === 0) {
-    defaultStartTime = '20:45'
-    defaultEndTime = '05:45'
-  } else if (dayOfWeek === 1) {
-    defaultStartTime = '23:40'
-    defaultEndTime = '06:00'
-  } else if (dayOfWeek === 2) {
-    defaultStartTime = '17:45'
-    defaultEndTime = '00:00'
-  } else if (dayOfWeek === 3 || dayOfWeek === 4) {
-    defaultStartTime = '23:50'
-    defaultEndTime = '06:00'
-  } else if (dayOfWeek === 5) {
-    defaultStartTime = '23:50'
-    defaultEndTime = '07:00'
-  } else if (dayOfWeek === 6) {
-    defaultShiftType = 'leave' // 星期六預設請假
+const datesBetween = (start, end) => {
+  const dates = []
+  const cursor = parseWorkDate(start)
+  const last = parseWorkDate(end)
+  while (cursor <= last) {
+    dates.push(formatLocalDate(cursor))
+    cursor.setDate(cursor.getDate() + 1)
   }
-
-  return {
-    startTime: defaultStartTime,
-    endTime: defaultEndTime,
-    shiftType: defaultShiftType,
-    isCleaningDay: isCleaning,
-    remark: ''
-  }
+  return dates
 }
-// --- 一鍵填滿本週 (以星期一到星期日為一個週期) ---
+
+/**
+ * 依工作設定產生區間內的班表（不寫入）。已有紀錄的日期一律略過。
+ * 跨午夜的班仍記在上班當天，薪資由計算引擎依實際時段切分（含跨月、跨週）。
+ */
+function buildPlannedRecords(profile, dates, existing = records.value) {
+  const { plan, skippedExisting, offDays } = planFill(existing, profile, dates)
+  const smoko = getSmokoInputs(profile.smoko)
+  let nextId = nextRecordId(records.value)
+  const built = []
+  for (const item of plan) {
+    const record = buildWorkRecordFromInputs({
+      id: nextId++,
+      workDate: item.date,
+      startTime: item.startTime,
+      endTime: item.endTime,
+      shiftType: item.shiftType,
+      isCleaningDay: item.isCleaningDay,
+      remark: '',
+      prepMinutes: currentPrepMinutes.value,
+      smokoCountOverride: smoko.smokoCountOverride,
+      smokoMinutes: smoko.deductMinutesPerBreak,
+    })
+    if (record) built.push({ ...record, shiftName: item.shiftType === 'leave' ? '' : item.name })
+  }
+  return { records: built, skippedExisting, offDays }
+}
+
+function openFillPreview({ start, end, title }) {
+  const result = buildPlannedRecords(workSetup.profile.value, datesBetween(start, end))
+  const short = (date) => date.slice(5).replace('-', '/')
+  fillPreview.value = {
+    title,
+    rangeLabel: `${short(start)} – ${short(end)}`,
+    ...result,
+    summary: summarizeFillPreview(result.records),
+  }
+  fillPreviewOpen.value = true
+}
+
+function confirmFillPreview() {
+  const preview = fillPreview.value
+  if (!preview?.records.length) return
+  // 寫入前再確認一次：預覽打開期間若新增了紀錄，那些日期不覆蓋
+  const taken = new Set(records.value.map((record) => record.workDate))
+  const additions = preview.records
+    .filter((record) => !taken.has(record.workDate))
+    .map(({ shiftName: _name, ...record }) => record)
+  records.value = ensureUniqueRecordIds([...records.value, ...additions])
+  fillPreviewOpen.value = false
+  loadSelectedDate()
+  showToast(`已加入 ${additions.length} 筆紀錄`)
+}
+
+function runFillAction(action) {
+  if (!workSetup.requireSetup(action)) return
+  openFillPreview(action.payload)
+}
+
 const fillCurrentWeek = () => {
-  if (!workDate.value) return
-  const current = parseWorkDate(workDate.value)
-  const day = current.getDay()
-  // 換算回星期一的日期
-  const diffToMonday = current.getDate() - day + (day === 0 ? -6 : 1) 
-  
-  const monday = new Date(current.setDate(diffToMonday))
-  const sunday = new Date(monday)
-  sunday.setDate(monday.getDate() + 6)
-  
-  bulkAddRecords(monday, sunday)
+  const range = getWeekRange(workDate.value)
+  if (!range) return
+  runFillAction({
+    type: 'FILL_WEEK',
+    label: '填滿本週',
+    payload: { ...range, title: '填滿本週' },
+  })
 }
 
-// --- 一鍵填滿本月 ---
 const fillCurrentMonth = () => {
   const range = displayedMonthRange.value
   if (!range) return
-  bulkAddRecords(parseWorkDate(range.start), parseWorkDate(range.end))
+  const month = Number(visibleMonth.value.slice(5))
+  runFillAction({
+    type: 'FILL_MONTH',
+    label: `填滿 ${month} 月`,
+    payload: { ...range, title: `填滿 ${visibleMonth.value.slice(0, 4)} 年 ${month} 月` },
+  })
+}
+
+// 設定完成後回到使用者原本的操作
+function continuePendingAction(action) {
+  workSetup.wizard.value = { ...workSetup.wizard.value, show: false }
+  workSetup.pendingAction.value = null
+  if (!action) {
+    activeTab.value = 'payroll'
+    return
+  }
+  activeTab.value = 'payroll'
+  if (action.type === 'ADD_SHIFT') {
+    addTodayRecordToList()
+    return
+  }
+  openFillPreview(action.payload)
+}
+
+// 精靈 Step 3 的「以本週為例」預覽：用草稿設定試算，不寫入
+function previewSetupWeek(draftProfile) {
+  const range = getWeekRange(getTodayDate())
+  if (!range) return null
+  const dates = datesBetween(range.start, range.end)
+  const { records: built } = buildPlannedRecords(draftProfile, dates, [])
+  const byDate = new Map(built.map((record) => [record.workDate, record]))
+  const weekdayLabels = ['日', '一', '二', '三', '四', '五', '六']
+  const days = dates.map((date) => {
+    const record = byDate.get(date)
+    const worked = record && record.shiftType !== 'leave'
+    return {
+      date,
+      weekday: weekdayLabels[parseWorkDate(date).getDay()],
+      name: worked ? record.shiftName : '',
+      leave: record?.shiftType === 'leave',
+      time: worked ? `${record.startTime}–${record.endTime}${record.endTime <= record.startTime ? ' 隔天' : ''}` : '',
+      paidMinutes: worked ? record.paidMinutes : 0,
+      grossCents: worked ? Math.round(record.grossPay * 100) : 0,
+    }
+  })
+  return { days, summary: summarizeFillPreview(built) }
 }
 
 const clearCurrentMonth = async () => {
@@ -464,38 +667,6 @@ const clearCurrentMonth = async () => {
   }
 }
 
-// --- 核心批量寫入引擎 ---
-const bulkAddRecords = (startDate, endDate) => {
-  const newRecords = []
-  let nextId = nextRecordId(records.value)
-
-  for (const dateStr of getMissingScheduleDates(records.value, {
-    start: formatLocalDate(startDate),
-    end: formatLocalDate(endDate),
-  })) {
-    const defaultShift = getDefaultShiftForDate(parseWorkDate(dateStr))
-    const record = buildWorkRecordFromInputs({
-      id: nextId++,
-      workDate: dateStr,
-      startTime: defaultShift.startTime,
-      endTime: defaultShift.endTime,
-      smokoCountOverride: null,
-      shiftType: defaultShift.shiftType,
-      isCleaningDay: defaultShift.isCleaningDay,
-      remark: defaultShift.remark,
-      prepMinutes: currentPrepMinutes.value,
-    })
-    if (record) newRecords.push(record)
-  }
-
-  if (newRecords.length > 0) {
-    records.value = ensureUniqueRecordIds([...records.value, ...newRecords])
-    showToast(`成功加入 ${newRecords.length} 筆班表`)
-  } else {
-    showToast('該區間內的班表已排滿，無新增項目')
-  }
-}
-
 const selectedHolidayLabel = computed(() => {
   if (!workDate.value) return ''
   return getNswPublicHolidayLabel(parseWorkDate(workDate.value))
@@ -511,8 +682,10 @@ const holidayCalendarFormatter = (day) => {
   const dateStr = `${year}-${month}-${dayNum}`
 
   const holidayLabel = getNswPublicHolidayShortLabel(day.date)
-  const isTue = day.date.getDay() === 2
   const isBlackout = leaveBlackouts.value.some((item) => item.date === dateStr)
+  const record = records.value.find((r) => r.workDate === dateStr)
+  // 清潔班只依使用者自己的班表或排班設定標示，不再固定星期二
+  const isCleaning = record ? record.isCleaningDay === true : plannedShiftFor(dateStr)?.isCleaningDay === true
 
   // 1. 處理上方標籤 (國定假日 / 清潔日)
   if (holidayLabel) {
@@ -520,14 +693,13 @@ const holidayCalendarFormatter = (day) => {
     day.className = `${day.className || ''} holiday-day`.trim()
   } else if (isBlackout) {
     day.topInfo = '禁休'
-  } else if (isTue) {
-    day.topInfo = '清潔日'
+  } else if (isCleaning) {
+    day.topInfo = '清潔班'
     day.className = `${day.className || ''} cleaning-day`.trim()
   }
   if (isBlackout) day.className = `${day.className || ''} leave-blackout-day`.trim()
 
   // 2. 處理下方標籤 (金額 / 請假狀態)
-  const record = records.value.find((r) => r.workDate === dateStr)
   let classNames = []
   
   if (record) {
@@ -556,49 +728,87 @@ const updateRate = (targetRef, value, digits = 3) => {
 }
 
 // --- 費率設定 ---
-// 1. 將 baseRate 改為你目前最新的 Level 5 費率
-const baseRate = ref(26.74) 
+// 每位使用者自己的費率：未設定就是 0，並由「工作設定」擋下試算；不再有任何人的預設時薪或稅率。
+const baseRate = ref(0)
+const ppeAllowance = ref(0)
+// 本期實際預扣比例（PAYG withholding）＝薪資單 Tax ÷ Gross，或使用者手動輸入；與年度應繳稅額分開
+const withholdingTaxRate = ref(0)
+// 已由薪資單或使用者確認的加成費率（未確認的不在這裡）
+const confirmedLoadingRates = ref({})
 
-// 2. 將其他依賴 Base Rate 的費率改為 computed 動態計算
-const casualLoadingRate = computed(() => baseRate.value * 0.25)     // 臨時工加給 25%
-const shiftLoadingRate = computed(() => baseRate.value * 0.25)      // 輪班加給 25%
-const saturdayOrdLoadingRate = computed(() => baseRate.value * 0.5) // 週六加給 50%
-const timeHalfRate = computed(() => baseRate.value * 1.5)           // 加班 1.5 倍
-const doubleRate = computed(() => baseRate.value * 2.0)             // 加班 2 倍
-const sundayLoadingRate = computed(() => baseRate.value * 0.75)     // 週日加給 75%
+const workSetup = useWorkSetup({ baseRate, ppeAllowance, withholdingTaxRate, confirmedLoadingRates })
+const setupState = workSetup.setup
+
+// 計算用的加成費率：已確認＝實際值；未確認＝使用者同意暫估時用預設倍率，否則不計入（並在畫面標示）。
+// 舊班表的金額在儲存當下已固定，費率變更不會改變歷史班表。
+const effectiveRate = (key) => computed(() => workSetup.effective.value.rates[key] ?? 0)
+const casualLoadingRate = effectiveRate('casualLoadingRate')
+const shiftLoadingRate = effectiveRate('shiftLoadingRate')
+const saturdayOrdLoadingRate = effectiveRate('saturdayOrdLoadingRate')
+const timeHalfRate = effectiveRate('timeHalfRate')
+const doubleRate = effectiveRate('doubleRate')
+const sundayLoadingRate = effectiveRate('sundayLoadingRate')
+const rateStatus = computed(() => workSetup.effective.value.status)
+// 匯入薪資單時比對用：已確認的視為「來自薪資單」，其他視為預設
+const rateSources = computed(() =>
+  Object.fromEntries(
+    RATE_FIELDS.map(({ key }) => [key, workSetup.profile.value.confirmedRateKeys.includes(key) ? 'payslip' : 'default']),
+  ),
+)
+// 加班 1.5／2 倍是完整時薪：未確認時先以基本時薪計，其他加給未確認就不計入
+const isOvertimeKey = (key) => key === 'timeHalfRate' || key === 'doubleRate'
+const hidesRate = (key) => rateStatus.value[key] === 'EXCLUDED' && !isOvertimeKey(key)
+const rateSourceLabel = (key) => {
+  const status = rateStatus.value[key]
+  if (status === 'EXCLUDED') return isOvertimeKey(key) ? '未確認：先以基本時薪計，未含加成' : '未確認，目前不計入試算'
+  return { CONFIRMED: '已確認', PROVISIONAL: '暫估：基本時薪 × 預設倍率（未確認）' }[status] ?? ''
+}
+const currentRateValues = computed(() => ({
+  baseRate: baseRate.value,
+  casualLoadingRate: casualLoadingRate.value,
+  shiftLoadingRate: shiftLoadingRate.value,
+  saturdayOrdLoadingRate: saturdayOrdLoadingRate.value,
+  sundayLoadingRate: sundayLoadingRate.value,
+  timeHalfRate: timeHalfRate.value,
+  doubleRate: doubleRate.value,
+  ppeAllowance: ppeAllowance.value,
+  withholdingTaxRate: withholdingTaxRate.value,
+}))
 
 const ratePreviewItems = computed(() => [
-  { label: '基本時薪', value: baseRate.value, unit: '／小時' },
-  { label: 'Casual 25%', value: casualLoadingRate.value, unit: '／小時' },
-  { label: '夜班 25%', value: shiftLoadingRate.value, unit: '／小時' },
-  { label: 'Sat ORD 50%', value: saturdayOrdLoadingRate.value, unit: '／小時' },
-  { label: 'T/Half', value: timeHalfRate.value, unit: '／小時' },
-  { label: 'Double', value: doubleRate.value, unit: '／小時' },
-  { label: '星期日 75%', value: sundayLoadingRate.value, unit: '／小時' },
-  { label: 'PPE 每週津貼', value: ppeAllowance.value, unit: '／週' },
+  { key: 'baseRate', label: '基本時薪', value: baseRate.value, unit: '／小時' },
+  { key: 'casualLoadingRate', label: 'Casual 加給', value: casualLoadingRate.value, unit: '／小時' },
+  { key: 'shiftLoadingRate', label: '夜班加給', value: shiftLoadingRate.value, unit: '／小時' },
+  { key: 'saturdayOrdLoadingRate', label: '週六加給', value: saturdayOrdLoadingRate.value, unit: '／小時' },
+  { key: 'timeHalfRate', label: '加班 1.5 倍', value: timeHalfRate.value, unit: '／小時' },
+  { key: 'doubleRate', label: '加班 2 倍', value: doubleRate.value, unit: '／小時' },
+  { key: 'sundayLoadingRate', label: '週日加給', value: sundayLoadingRate.value, unit: '／小時' },
+  { key: 'ppeAllowance', label: 'PPE 每週津貼', value: ppeAllowance.value, unit: '／週' },
 ])
 const hasCurrentExchangeRate = computed(() => currentCurrency.value === 'AUD' || Number.isFinite(exchangeRates.value[currentCurrency.value]))
 
-// 3. 獨立且固定的參數維持 ref 即可
-const ppeAllowance = ref(5.0)
-const smokoMinutesPerBreak = ref(30)
+// Smoko：全域規則來自工作設定；當天的次數可另外覆寫，不會改到全域設定
+const profileSmoko = computed(() => getSmokoInputs(workSetup.profile.value.smoko))
+const smokoMinutesPerBreak = computed(() => profileSmoko.value.deductMinutesPerBreak)
 const smokoCountOverride = ref(null)
+const effectiveSmokoCountOverride = computed(() =>
+  smokoCountOverride.value !== null ? smokoCountOverride.value : profileSmoko.value.smokoCountOverride,
+)
 
-// 備註：你這邊寫 withholdingTaxRate，但薪資單上的 12% 其實是退休金 (Superannuation)。
-// 如果這是用來算退休金的，數值 0.12 沒問題；若是算所得稅，澳洲稅金通常是看級距查表的喔！
-const withholdingTaxRate = ref(0.12)
 watch(currentCurrency, async (currency) => {
   if (!authToken.value || rateWritePaused) return
   try {
     await apiRequest('/dashboard-settings/display-currency', { method: 'PUT', body: { currency } })
   } catch (error) { showToast(error.message) }
 })
-watch([baseRate, ppeAllowance, withholdingTaxRate], async () => {
-  if (!authToken.value || rateWritePaused) return
+watch([baseRate, ppeAllowance, withholdingTaxRate, confirmedLoadingRates], async () => {
+  // 還沒完成薪資設定時不寫入，避免把 0 當成會員的費率
+  if (!authToken.value || rateWritePaused || workSetup.profile.value.payStatus === PAY_STATUS.NOT_CONFIGURED) return
   try {
     await apiRequest('/salary-rates', {
       method: 'PUT',
       body: {
+        ...confirmedLoadingRates.value,
         baseRate: baseRate.value,
         ppeAllowance: ppeAllowance.value,
         withholdingTaxRate: withholdingTaxRate.value,
@@ -648,7 +858,7 @@ const {
   startTime: effectiveStartTime,
   endTime: effectiveEndTime,
   smokoMinutesPerBreak,
-  smokoCountOverride,
+  smokoCountOverride: effectiveSmokoCountOverride,
   baseRate,
   casualLoadingRate,
   shiftLoadingRate,
@@ -657,6 +867,9 @@ const {
   doubleRate,
   sundayLoadingRate,
 })
+
+// 這天的試算用到哪些未確認的費率（畫面標示「含未確認費率，僅供參考」或「未含」）
+const todayRateFlags = computed(() => getRateFlags(payBreakdown.value, rateStatus.value))
 
 // 🐛 BUG 完美修復：當狀態為請假時，100% 寫死生成 0 元數據，斬草除根
 const buildWorkRecordFromInputs = ({
@@ -670,8 +883,10 @@ const buildWorkRecordFromInputs = ({
   remark: inputRemark = '',
   designatedWork: inputDesignatedWork = false,
   prepMinutes: inputPrepMinutes = 0,
+  // 沒有指定時沿用工作設定的 Smoko 規則（自動或固定次數、每次分鐘數、是否計薪）
+  smokoMinutes: inputSmokoMinutes = smokoMinutesPerBreak.value,
 }) => {
-  
+
   if (inputShiftType === 'leave') {
     const record = createWorkRecord({
       id,
@@ -699,7 +914,8 @@ const buildWorkRecordFromInputs = ({
   const tempWorkDate = ref(paidStart.workDate)
   const tempStartTime = ref(paidStart.startTime)
   const tempEndTime = ref(inputEndTime)
-  const tempSmokoCountOverride = ref(inputSmokoCountOverride)
+  const tempSmokoCountOverride = ref(inputSmokoCountOverride ?? profileSmoko.value.smokoCountOverride)
+  const tempSmokoMinutes = ref(inputSmokoMinutes)
 
   const {
     workSummary: tempWorkSummary,
@@ -710,7 +926,7 @@ const buildWorkRecordFromInputs = ({
     workDate: tempWorkDate,
     startTime: tempStartTime,
     endTime: tempEndTime,
-    smokoMinutesPerBreak,
+    smokoMinutesPerBreak: tempSmokoMinutes,
     smokoCountOverride: tempSmokoCountOverride,
     baseRate,
     casualLoadingRate,
@@ -739,6 +955,8 @@ const buildWorkRecordFromInputs = ({
   record.remark = inputRemark
   record.designatedWork = inputDesignatedWork
   record.prepMinutes = paidStart.startTime === inputStartTime ? 0 : inputPrepMinutes
+  // 記下這一班用到哪些未確認費率；之後費率變更不會改寫這筆紀錄的金額
+  record.rateFlags = getRateFlags(tempPayBreakdown.value, rateStatus.value)
   return record
 }
 
@@ -757,14 +975,17 @@ const markSelectedDateAsLeave = () => {
 }
 
 const restoreSelectedDateShift = () => {
-  const defaults = getDefaultShiftForDate(parseWorkDate(workDate.value))
-  if (!selectedDateHasDefaultShift.value) {
+  const defaults = selectedPlannedShift.value
+  if (!defaults) {
     shiftType.value = 'normal'
+    startTime.value = ''
+    endTime.value = ''
     openSelectedDateEditor()
-    showToast('這天沒有預設工時，請先選擇上下班時間')
+    showToast('這天沒有排班設定，請選擇上下班時間後儲存')
     return
   }
-  // 恢復出勤使用本月填滿的預設班別；休假紀錄不保存先前的個人工時。
+  if (!workSetup.requireSetup({ type: 'ADD_SHIFT', label: '新增班表' }, 'pay')) return
+  // 恢復出勤使用使用者自己的每週排班；休假紀錄不保存先前的工時。
   const record = buildWorkRecordFromInputs({
     id: selectedRecord.value?.id ?? nextRecordId(records.value),
     workDate: workDate.value,
@@ -873,7 +1094,14 @@ const getDayOfWeek = (dateStr) => {
 }
 
 const addTodayRecordToList = () => {
-  if (shiftType.value !== 'leave' && (!isValidTime(startTime.value) || !isValidTime(endTime.value))) return
+  if (shiftType.value !== 'leave') {
+    if (!isValidTime(startTime.value) || !isValidTime(endTime.value)) {
+      showToast('請先選擇上下班時間')
+      return
+    }
+    // 需要計算薪資的班表：先確認費率（休假紀錄不需要）
+    if (!workSetup.requireSetup({ type: 'ADD_SHIFT', label: '儲存這天的班表' }, 'pay')) return
+  }
 
   const todayRecord = buildWorkRecordFromInputs({
     id: selectedRecord.value?.id ?? nextRecordId(records.value),
@@ -924,7 +1152,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 
 <template>
   <div class="page">
-    <div class="account-shell">
+    <div v-if="activeTab !== 'dashboard'" class="account-shell">
       <div class="account-card" :class="{ 'account-card--shopping-guest': !authToken && activeTab === 'shopping' }">
         <span class="account-card__avatar" aria-hidden="true">
           <van-icon :name="authToken ? 'user-circle-o' : 'user-o'" />
@@ -947,9 +1175,64 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       :work-records="records"
       :active="activeTab === 'dashboard'"
       :payroll-rates="{ ppeAllowance, withholdingTaxRate }"
+      :employer-ytd="workSetup.employerYtd.value"
+      :latest-payslip="workSetup.latestPayslip.value"
+      :setup="setupState"
+      :tax-source="workSetup.profile.value.taxRateSource"
       @mark-work-date="markDesignatedWorkDate"
       @navigate="activeTab = $event"
+      @open-account="openAccount"
+      @quick-action="handleQuickAction"
+      @import-payslip="payslipImportOpen = true"
+      @work-setup="openWorkSetup($event)"
     />
+    <PayslipImport
+      v-model:show="payslipImportOpen"
+      :current-rates="currentRateValues"
+      :rate-sources="rateSources"
+      :is-member="Boolean(authToken)"
+      :existing-deposits="payslipDeposits"
+      :existing-payslips="workSetup.payslips.value"
+      :first-time="!workSetup.latestPayslip.value"
+      @apply="applyPayslipImport"
+      @manual="openManualRates"
+    />
+    <WorkSetupGate
+      v-model:show="workSetup.gate.value.show"
+      :needs="workSetup.gate.value.needs"
+      :pending-label="workSetup.pendingAction.value?.label ?? ''"
+      @upload-payslip="openPayslipFromSetup"
+      @manual="openWorkSetup(1, { manual: true })"
+      @schedule="openWorkSetup(2)"
+    />
+    <WorkSetupWizard
+      v-model:show="workSetup.wizard.value.show"
+      :step="workSetup.wizard.value.step"
+      :manual="wizardManual"
+      :profile="workSetup.profile.value"
+      :pay="{ baseRate, ppeAllowance, withholdingTaxRate, loadings: confirmedLoadingRates }"
+      :latest-payslip="workSetup.latestPayslip.value"
+      :pending-action="workSetup.pendingAction.value"
+      :preview-week="previewSetupWeek"
+      :save-pay="workSetup.applyManualPay"
+      :save-schedule="workSetup.saveSchedule"
+      @upload-payslip="openPayslipFromSetup"
+      @continue="continuePendingAction"
+    />
+    <FillPreviewSheet
+      v-model:show="fillPreviewOpen"
+      :preview="fillPreview"
+      @confirm="confirmFillPreview"
+      @edit-setup="fillPreviewOpen = false; openWorkSetup(2)"
+    />
+    <van-popup v-model:show="accountSheetOpen" position="bottom" round safe-area-inset-bottom>
+      <div class="account-sheet">
+        <h2>帳號</h2>
+        <p class="account-sheet__email">{{ authEmail }}</p>
+        <p class="account-sheet__note">已登入，紀錄會保存在你的會員帳號。</p>
+        <van-button class="app-page__action" block plain type="danger" @click="accountSheetOpen = false; handleSignOut()">登出</van-button>
+      </div>
+    </van-popup>
     <section v-show="activeTab === 'payroll'" class="payroll-page app-page">
     <div class="header app-page__header">
       <div class="header-main">
@@ -960,6 +1243,48 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       </div>
       <p>記錄班表，預估薪資。</p>
     </div>
+
+    <section class="work-setup-card" :class="{ 'work-setup-card--todo': !setupState.ready }" aria-labelledby="work-setup-title">
+      <div class="work-setup-card__head">
+        <span class="work-setup-card__icon" aria-hidden="true">
+          <van-icon :name="setupState.ready ? 'passed' : 'setting-o'" />
+        </span>
+        <div>
+          <h2 id="work-setup-title">工作設定</h2>
+          <p v-if="!setupState.ready">先設定薪資費率與班別，再使用自動排班。</p>
+          <p v-else>試算依照你自己的費率與班表</p>
+        </div>
+      </div>
+      <button type="button" class="work-setup-card__row" @click="openWorkSetup(1)">
+        <span class="work-setup-card__label">薪資費率</span>
+        <span class="work-setup-card__value">
+          <template v-if="setupState.payReady">
+            ${{ baseRate.toFixed(2) }}／時 ·
+            {{ workSetup.profile.value.payStatus === PAY_STATUS.PAYSLIP_CONFIRMED ? '薪資單確認' : '手動設定' }}
+          </template>
+          <em v-else>尚未設定</em>
+        </span>
+        <van-icon name="arrow" aria-hidden="true" />
+      </button>
+      <button type="button" class="work-setup-card__row" @click="openWorkSetup(2)">
+        <span class="work-setup-card__label">班別與工作日</span>
+        <span class="work-setup-card__value">
+          <template v-if="setupState.scheduleReady">
+            <span v-for="line in describeWeekPlan(workSetup.profile.value)" :key="line" class="work-setup-card__line">{{ line }}</span>
+          </template>
+          <em v-else>尚未設定</em>
+        </span>
+        <van-icon name="arrow" aria-hidden="true" />
+      </button>
+      <button v-if="setupState.scheduleReady" type="button" class="work-setup-card__row" @click="openWorkSetup(3)">
+        <span class="work-setup-card__label">Smoko</span>
+        <span class="work-setup-card__value">{{ describeSmoko(workSetup.profile.value.smoko) }}</span>
+        <van-icon name="arrow" aria-hidden="true" />
+      </button>
+      <van-button v-if="!setupState.ready" type="primary" block class="work-setup-card__cta" @click="openWorkSetup()">
+        {{ setupState.payReady ? '設定班別' : '開始設定' }}
+      </van-button>
+    </section>
 
     <div class="section calendar-section">
       <div class="calendar-intro">
@@ -999,14 +1324,14 @@ const markDesignatedWorkDate = ({ date, marked }) => {
           </strong>
         </div>
         <div class="calendar-day-actions__buttons">
-          <van-button v-if="selectedRecord?.shiftType === 'leave'" block plain type="primary" @click="restoreSelectedDateShift">{{ selectedDateHasDefaultShift ? '恢復預設出勤' : '設定出勤時間' }}</van-button>
+          <van-button v-if="selectedRecord?.shiftType === 'leave'" block plain type="primary" @click="restoreSelectedDateShift">{{ selectedDateHasDefaultShift ? `恢復${selectedPlannedShift.name}` : '設定出勤時間' }}</van-button>
           <van-button v-else block plain type="danger" @click="markSelectedDateAsLeave">設為休假</van-button>
           <van-button block plain type="default" @click="openSelectedDateEditor">{{ selectedRecord ? '編輯當天工時' : '新增當天班表' }}</van-button>
           <van-button block plain type="warning" class="calendar-day-actions__blackout-button" @click="openBlackoutEditor">
             {{ selectedLeaveBlackout ? '編輯禁休公告' : '新增禁休' }}
           </van-button>
         </div>
-        <p v-if="selectedRecord?.shiftType === 'leave'" class="calendar-day-actions__hint">{{ selectedDateHasDefaultShift ? '恢復時會套用填滿本月的預設時間；如需不同工時，請再編輯。' : '這天沒有預設工時，請設定上下班時間後儲存。' }}</p>
+        <p v-if="selectedRecord?.shiftType === 'leave'" class="calendar-day-actions__hint">{{ selectedDateHasDefaultShift ? `恢復時套用你的排班：${selectedPlannedShift.startTime}–${selectedPlannedShift.endTime}；如需不同工時，請再編輯。` : '這天沒有排班設定，請設定上下班時間後儲存。' }}</p>
         <p class="calendar-day-actions__hint">禁休只用來提醒主管公告，不會變更班表、休假或薪資。</p>
       </div>
     </div>
@@ -1043,7 +1368,8 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       <van-cell-group inset>
         <van-cell title="當前選取日期" :value="`${workDate} (${getDayOfWeek(workDate)})`" size="large" title-style="font-weight: bold;" />
         <van-cell v-if="selectedHolidayLabel" title="🔥 澳洲國定假日" :value="selectedHolidayLabel" value-class="holiday-text" />
-        <van-cell v-if="isCleaningDay" title="✨ 每週例行狀態" value="固定清潔日費率" value-class="cleaning-text" />
+        <van-cell v-if="isCleaningDay" title="班別" value="清潔班" value-class="cleaning-text" />
+        <van-cell v-else-if="!selectedRecord && selectedPlannedShift" title="依你的排班" :value="`${selectedPlannedShift.name} ${selectedPlannedShift.startTime}–${selectedPlannedShift.endTime}`" />
         
 <!-- 找到這個區塊，在 endTime 下方加入開關 -->
         <template v-if="shiftType !== 'leave'">
@@ -1069,6 +1395,11 @@ const markDesignatedWorkDate = ({ date, marked }) => {
           <van-cell center title="提早 5 分鐘換裝打卡">
             <template #right-icon>
               <van-switch v-model="enablePrepTime" size="20px" />
+            </template>
+          </van-cell>
+          <van-cell center title="這天 Smoko 次數" :label="smokoCountOverride === null ? '依工作設定' : '只套用這一天，不改工作設定'">
+            <template #right-icon>
+              <van-stepper :model-value="displayedSmokoCount" :min="0" :max="3" integer theme="round" button-size="28px" disable-input @change="(val) => { smokoCountOverride = Number(val) }" />
             </template>
           </van-cell>
         </template>
@@ -1117,12 +1448,29 @@ const markDesignatedWorkDate = ({ date, marked }) => {
         </div>
       </div>
 
-      <div class="section" v-if="workSummary && shiftType !== 'leave'">
+      <div v-if="shiftType !== 'leave' && !setupState.payReady" class="section">
+        <h2>當日薪資預估</h2>
+        <div class="section-card setup-needed">
+          <van-icon name="balance-o" aria-hidden="true" />
+          <div>
+            <strong>還沒有設定薪資費率</strong>
+            <p>上傳 Payslip 或手動輸入時薪後，這裡會顯示這天的預估薪資。</p>
+          </div>
+          <van-button size="small" type="primary" @click="openWorkSetup(1)">設定</van-button>
+        </div>
+      </div>
+      <div class="section" v-else-if="workSummary && shiftType !== 'leave'">
         <h2>當日薪資預估 ({{ currentCurrency }})</h2>
+        <p v-if="todayRateFlags.provisional.length" class="rate-flag">
+          <van-icon name="info-o" aria-hidden="true" />含未確認費率，僅供參考（{{ todayRateFlags.provisional.join('、') }}）
+        </p>
+        <p v-if="todayRateFlags.excluded.length" class="rate-flag rate-flag--warn">
+          <van-icon name="warning-o" aria-hidden="true" />未含 {{ todayRateFlags.excluded.join('、') }}（費率未確認）
+        </p>
         <van-cell-group inset style="margin-bottom: 12px;">
           <van-cell title="實際計薪總工時" :value="`${formatHours(workSummary.paidMinutes)} 小時`" value-class="highlight-blue" />
           <van-cell title="夜班津貼判定" :value="isNightShift ? '有符合' : '無符合'" />
-          <van-cell title="自動算 Smoko 次數" :value="`${workSummary.smokoCount} 次`" />
+          <van-cell title="Smoko 次數" :value="`${workSummary.smokoCount} 次${workSetup.profile.value.smoko.paid ? '（照常計薪）' : ''}`" />
         </van-cell-group>
         <van-cell-group inset>
           <van-cell title="當日總薪資 (稅前)" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.grossPay * currentExchangeRate)}`" class="gross-cell" />
@@ -1154,36 +1502,45 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       </div>
 
       <div class="section">
-        <h2>基本費率 · {{ currentCurrency }}{{ currentCurrency === 'AUD' ? '' : ' 參考換算' }}</h2>
-        <p v-if="!hasCurrentExchangeRate" class="section-note">尚未取得 {{ currentCurrency }} 匯率，暫不顯示參考換算。</p>
-        <div v-else class="rate-preview section-card">
-          <div v-for="rate in ratePreviewItems" :key="rate.label" class="rate-preview__row">
-            <span>{{ rate.label }}</span>
-            <strong>{{ currencySymbol }}{{ formatDisplayMoney(rate.value * currentExchangeRate) }} {{ currentCurrency }}{{ rate.unit }}</strong>
+        <h2>我的費率 · {{ currentCurrency }}{{ currentCurrency === 'AUD' ? '' : ' 參考換算' }}</h2>
+        <button type="button" class="payslip-entry" @click="payslipImportOpen = true">
+          <span class="payslip-entry__icon" aria-hidden="true"><van-icon name="description-o" /></span>
+          <span class="payslip-entry__text">
+            <strong>{{ workSetup.latestPayslip.value ? '上傳新的薪資單' : '從薪資單匯入費率' }}</strong>
+            <small>上傳 PDF，自動讀出時薪、各項加給與本期預扣比例</small>
+          </span>
+          <van-icon name="arrow" aria-hidden="true" />
+        </button>
+        <template v-if="setupState.payReady">
+          <p v-if="!hasCurrentExchangeRate" class="section-note">尚未取得 {{ currentCurrency }} 匯率，暫不顯示參考換算。</p>
+          <div v-else class="rate-preview section-card">
+            <div v-for="rate in ratePreviewItems" :key="rate.label" class="rate-preview__row">
+              <span>
+                {{ rate.label }}
+                <small v-if="rateStatus[rate.key] === 'PROVISIONAL'" class="rate-preview__status rate-preview__status--provisional">暫估</small>
+                <small v-else-if="rateStatus[rate.key] === 'EXCLUDED'" class="rate-preview__status rate-preview__status--excluded">{{ isOvertimeKey(rate.key) ? '未含加成' : '未計入' }}</small>
+              </span>
+              <strong>{{ hidesRate(rate.key) ? '—' : `${currencySymbol}${formatDisplayMoney(rate.value * currentExchangeRate)} ${currentCurrency}${rate.unit}` }}</strong>
+            </div>
           </div>
+          <van-collapse v-model="advancedRatesOpen" class="advanced-collapse">
+            <van-collapse-item name="rates" title="費率來源與說明">
+              <van-cell-group :border="false">
+                <van-cell v-for="rate in ratePreviewItems.slice(1, 7)" :key="rate.key" :title="rate.label" :value="hidesRate(rate.key) ? '—' : formatRate(rate.value)" :label="rateSourceLabel(rate.key)" />
+              </van-cell-group>
+              <p class="section-note section-note--compact">只有薪資單或你手動確認過的費率算「已確認」。未確認的加給，需要你在工作設定中同意暫估才會計入；上傳含該項目的薪資單後會自動校正。已存的班表金額不會因費率變更而改變。</p>
+              <van-button size="small" plain type="primary" class="rate-reset-btn" @click="openWorkSetup(1, { manual: true })">手動修改費率</van-button>
+            </van-collapse-item>
+          </van-collapse>
+        </template>
+        <div v-else class="section-card setup-needed">
+          <van-icon name="info-o" aria-hidden="true" />
+          <div>
+            <strong>尚未設定費率</strong>
+            <p>每個人的時薪與加給不同，請上傳 Payslip 或手動設定。</p>
+          </div>
+          <van-button size="small" type="primary" @click="openWorkSetup(1, { manual: true })">手動設定</van-button>
         </div>
-        <p class="section-note rate-input-note">下方以 AUD 輸入原始費率；切換顯示幣別不會改動計薪參數或已存班表。</p>
-        <van-cell-group inset>
-          <van-cell title="Smoko 次數" center>
-            <template #right-icon>
-              <van-stepper :model-value="displayedSmokoCount" :min="0" :max="3" integer theme="round" button-size="28px" disable-input @change="(val) => { smokoCountOverride = Number(val) }" />
-            </template>
-          </van-cell>
-          <van-field :model-value="formatRate(baseRate)" label="基本時薪 AUD" type="number" input-align="right" @update:model-value="(val) => updateRate(baseRate, val, 3)" />
-          <van-field :model-value="formatRate(ppeAllowance)" label="PPE 每週 AUD" type="number" input-align="right" @update:model-value="(val) => updateRate(ppeAllowance, val, 2)" />
-        </van-cell-group>
-        <van-collapse v-model="advancedRatesOpen" class="advanced-collapse">
-          <van-collapse-item name="rates" title="進階：各項加給費率（依基本時薪自動計算）">
-            <van-cell-group :border="false">
-              <van-cell title="Casual 25% · AUD" :value="formatRate(casualLoadingRate)" />
-              <van-cell title="夜班 25% · AUD" :value="formatRate(shiftLoadingRate)" />
-              <van-cell title="Sat ORD 50% · AUD" :value="formatRate(saturdayOrdLoadingRate)" />
-              <van-cell title="T/Half · AUD" :value="formatRate(timeHalfRate)" />
-              <van-cell title="Double · AUD" :value="formatRate(doubleRate)" />
-              <van-cell title="星期日 75% · AUD" :value="formatRate(sundayLoadingRate)" />
-            </van-cell-group>
-          </van-collapse-item>
-        </van-collapse>
       </div>
 
       <div class="section">
@@ -1216,7 +1573,8 @@ const markDesignatedWorkDate = ({ date, marked }) => {
                 <div class="schedule-detail">
                   <div class="schedule-detail__tags">
                     <van-tag v-if="record.shiftType === 'leave'" type="danger">請假</van-tag>
-                    <van-tag v-if="record.isCleaningDay" type="success">清潔日</van-tag>
+                    <van-tag v-if="record.isCleaningDay" type="success">清潔班</van-tag>
+                    <van-tag v-if="record.rateFlags?.provisional?.length" plain type="warning">含暫估費率</van-tag>
                     <van-tag v-if="record.shiftPay > 0" plain type="primary">夜班</van-tag>
                   </div>
                   <p v-if="record.shiftType !== 'leave'">{{ record.startTime }} – {{ record.endTime }} · 計薪 {{ formatHours(record.paidMinutes) }} 小時 · smoko {{ record.smokoCount }} 次</p>
@@ -1234,6 +1592,12 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 
       <div class="section">
         <h2>本週結算預估<span v-if="weeklyRangeLabel" class="weekly-summary__range">（{{ weeklyRangeLabel }}）</span></h2>
+        <p v-if="weeklyPaySummary.rateFlags.provisional.length" class="rate-flag">
+          <van-icon name="info-o" aria-hidden="true" />含未確認費率，僅供參考
+        </p>
+        <p v-if="weeklyPaySummary.rateFlags.excluded.length" class="rate-flag rate-flag--warn">
+          <van-icon name="warning-o" aria-hidden="true" />未含 {{ weeklyPaySummary.rateFlags.excluded.join('、') }}（費率未確認）
+        </p>
         <div class="section-card weekly-summary-card">
           <div class="weekly-summary__row">
             <span class="weekly-summary__label">本週班表薪資小計 ({{ currentCurrency }})</span>
@@ -1248,7 +1612,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
             <span class="weekly-summary__value" style="font-size: 14px; color: #646566; font-weight: 500;">{{ currencySymbol }}{{ formatDisplayMoney(weeklyTotal * currentExchangeRate) }}</span>
           </div>
           <div class="weekly-summary__row weekly-summary__row--tax" style="margin-bottom: 8px;">
-            <span class="weekly-summary__label">預估扣稅扣繳 {{ weeklyTaxRateLabel }} ({{ currentCurrency }})</span>
+            <span class="weekly-summary__label">預估預扣 {{ weeklyTaxRateLabel }}{{ workSetup.profile.value.taxRateSource?.type === 'PAYSLIP_PERIOD' ? '（依最近一期實際比例）' : '' }} ({{ currentCurrency }})</span>
             <span class="weekly-summary__value weekly-summary__value--tax">-{{ currencySymbol }}{{ formatDisplayMoney(weeklyTaxEstimate * currentExchangeRate) }}</span>
           </div>
           <div class="weekly-summary__total weekly-summary__total--net">
@@ -1291,9 +1655,9 @@ const markDesignatedWorkDate = ({ date, marked }) => {
     </van-popup>
     </section>
 
-    <TripTracker v-show="activeTab === 'trips'" />
-    <ExpenseTracker v-show="activeTab === 'expenses'" />
-    <MorePage v-show="activeTab === 'more'" @navigate="activeTab = $event" />
+    <TripTracker v-show="activeTab === 'trips'" ref="tripTrackerRef" />
+    <ExpenseTracker v-show="activeTab === 'expenses'" ref="expenseTrackerRef" />
+    <MorePage v-show="activeTab === 'more'" @navigate="handlePageNavigate" />
     <div v-if="activeTab === 'shopping'" class="sub-page-back">
       <button type="button" @click="activeTab = 'more'"><van-icon name="arrow-left" /> 更多</button>
     </div>
@@ -1466,6 +1830,42 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 .term-glossary dd { margin: 0; color: #4b5b6b; font-size: 12px; line-height: 1.45; }
 .sub-page-back { max-width: 820px; margin: 8px auto -4px; padding: 0 max(var(--page-inset), env(safe-area-inset-left, 0px)); }
 .sub-page-back button { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 6px 10px; border: 1px solid var(--color-border); border-radius: 11px; background: #fff; color: #166dd1; font: inherit; font-size: 13px; font-weight: 700; }
+/* 工作設定卡片 */
+.work-setup-card { margin: 0 0 var(--page-section-gap); padding: 16px; border: 1px solid var(--color-border); border-radius: var(--page-card-radius); background: var(--color-surface); box-shadow: var(--shadow-card); }
+.work-setup-card--todo { border-color: var(--color-primary); background: linear-gradient(180deg, var(--color-primary-soft), var(--color-surface) 70%); }
+.work-setup-card__head { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.work-setup-card__icon { display: grid; flex: none; place-items: center; width: 40px; height: 40px; border-radius: 13px; background: var(--color-income-soft); color: var(--color-income); font-size: 22px; }
+.work-setup-card--todo .work-setup-card__icon { background: var(--color-primary); color: #fff; }
+.work-setup-card__head h2 { margin: 0; color: var(--color-heading); font-size: 16px; font-weight: 800; }
+.work-setup-card__head p { margin: 2px 0 0; color: var(--color-muted); font-size: 13px; }
+.work-setup-card__row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 8px 0; border: 0; border-top: 1px solid var(--color-border); background: none; color: var(--color-heading); font: inherit; text-align: left; cursor: pointer; }
+.work-setup-card__row > .van-icon { flex: none; color: var(--color-muted); }
+.work-setup-card__label { flex: none; width: 92px; color: var(--color-muted); font-size: 13px; }
+.work-setup-card__value { display: grid; flex: 1; gap: 2px; min-width: 0; font-size: 13px; font-weight: 700; line-height: 1.45; }
+.work-setup-card__value em { color: var(--color-pending); font-style: normal; }
+.work-setup-card__line { overflow-wrap: anywhere; }
+.work-setup-card__cta { height: var(--page-button-height); margin-top: 10px; border-radius: var(--radius-button); font-weight: 700; }
+.setup-needed { display: flex; align-items: center; gap: 12px; }
+.setup-needed > .van-icon { flex: none; color: var(--color-primary); font-size: 24px; }
+.setup-needed > div { flex: 1; min-width: 0; }
+.setup-needed strong { color: var(--color-heading); font-size: 14px; }
+.setup-needed p { margin: 2px 0 0; color: var(--color-muted); font-size: 12px; line-height: 1.5; }
+.setup-needed .van-button { flex: none; border-radius: 10px; }
+.rate-flag { display: flex; gap: 6px; margin: 0 0 10px; padding: 9px 12px; border-radius: var(--radius-medium); background: var(--color-pending-soft); color: var(--color-pending); font-size: 12px; line-height: 1.5; }
+.rate-flag--warn { background: #fdecec; color: var(--color-expense); }
+.rate-preview__status { margin-left: 4px; padding: 1px 6px; border-radius: 999px; font-size: 10px; font-weight: 700; }
+.rate-preview__status--provisional { background: var(--color-pending-soft); color: var(--color-pending); }
+.rate-preview__status--excluded { background: #fdecec; color: var(--color-expense); }
+.payslip-entry { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; margin: 0 0 12px; padding: 12px 14px; border: 1px solid var(--color-primary); border-radius: var(--radius-large); background: var(--color-primary-soft); color: var(--color-heading); font: inherit; text-align: left; cursor: pointer; }
+.payslip-entry__icon { display: grid; flex: none; place-items: center; width: 40px; height: 40px; border-radius: 13px; background: var(--color-surface); color: var(--color-primary); font-size: 21px; }
+.payslip-entry__text { display: grid; flex: 1; gap: 2px; min-width: 0; }
+.payslip-entry__text strong { font-size: 15px; }
+.payslip-entry__text small { color: var(--color-muted); font-size: 12px; }
+.rate-reset-btn { margin-top: 8px; }
+.account-sheet { padding: 20px 20px 16px; }
+.account-sheet h2 { margin: 0; color: var(--color-heading); font-size: 18px; font-weight: 800; }
+.account-sheet__email { margin: 8px 0 0; color: var(--color-heading); font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+.account-sheet__note { margin: 4px 0 16px; color: var(--color-muted); font-size: 13px; }
 .weekly-summary__range { margin-left: 4px; font-size: 14px; font-weight: 500; color: #646566; }
 .weekly-summary__value { margin-left: auto; font-size: 14px; font-weight: 600; color: #1f2937; overflow-wrap: anywhere; }
 .weekly-summary__row--tax { padding-top: 12px; margin-top: 8px; border-top: 1px dashed #e5e7eb; }

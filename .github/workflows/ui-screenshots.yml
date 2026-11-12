@@ -1,0 +1,90 @@
+# 前端 PR 自動截圖：同時建置 PR 與 base 分支，在多種手機寬度下截取首頁，
+# 並檢查是否有水平溢出。結果上傳為 artifact「ui-screenshots」，不影響部署。
+name: UI Screenshots
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'index.html'
+      - '.github/scripts/ui-screenshots.mjs'
+      - '.github/fixtures/**'
+      - '.github/workflows/ui-screenshots.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ui-screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  screenshots:
+    # Playwright 1.55 的 Chromium 尚未支援 ubuntu-latest（26.04），固定用 24.04
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write # 把截圖推到 ui-screenshots/pr-<編號> 分支，方便在 PR 中直接顯示
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v6
+        with:
+          path: after
+      - name: Checkout base
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.base_ref || 'main' }}
+          path: before
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build both versions
+        run: |
+          for dir in before after; do
+            (cd "$dir" && npm ci --no-audit --no-fund && npm run build)
+          done
+      - name: Start preview servers
+        run: |
+          (cd before && nohup npx vite preview --host 127.0.0.1 --port 4173 --strictPort > ../before.log 2>&1 &)
+          (cd after && nohup npx vite preview --host 127.0.0.1 --port 4174 --strictPort > ../after.log 2>&1 &)
+          for port in 4173 4174; do
+            for i in $(seq 1 60); do
+              curl -sf "http://127.0.0.1:$port" > /dev/null && break
+              sleep 1
+            done
+            curl -sf "http://127.0.0.1:$port" > /dev/null || { cat before.log after.log; exit 1; }
+          done
+      - name: Install Playwright
+        run: |
+          mkdir -p shot && cd shot && npm init -y > /dev/null
+          npm i --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Take screenshots
+        working-directory: shot
+        run: node ../after/.github/scripts/ui-screenshots.mjs
+        env:
+          OUT_DIR: ${{ github.workspace }}/ui-screenshots
+          FIXTURE_DIR: ${{ github.workspace }}/after/.github/fixtures
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-screenshots
+          path: ui-screenshots
+          retention-days: 14
+      - name: Publish screenshots branch
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        working-directory: ui-screenshots
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          TOKEN: ${{ github.token }}
+        run: |
+          # 只放圖片的獨立分支；vercel.json 讓 Vercel 不部署這個分支
+          echo '{ "git": { "deploymentEnabled": false } }' > vercel.json
+          git init -q -b screenshots
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "UI screenshots for PR #${PR_NUMBER} (${HEAD_SHA})"
+          git push -q -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/ui-screenshots/pr-${PR_NUMBER}"

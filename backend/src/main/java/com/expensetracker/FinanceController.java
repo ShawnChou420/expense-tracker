@@ -49,15 +49,33 @@ public class FinanceController {
         }
     }
 
+    /**
+     * 加成費率：前端從薪資單確認過的實際費率優先；沒有提供時沿用「基本時薪 × 預設倍率」。
+     */
+    static BigDecimal derivedRate(Map<String, Object> body, String key, BigDecimal base, String multiplier) {
+        Object value = body.get(key);
+        return value == null ? base.multiply(new BigDecimal(multiplier)) : rate(value, new BigDecimal("1000"));
+    }
+
     @GetMapping("/salary-rates")
     Map<String, Object> salaryRates(Authentication auth) {
         var rows = db.query("""
-            SELECT base_rate, ppe_allowance, withholding_tax_rate FROM salary_setting_info
-            WHERE user_seq=?
-            """, (rs, row) -> Map.<String, Object>of(
-                "baseRate", rs.getBigDecimal("base_rate"),
-                "ppeAllowance", rs.getBigDecimal("ppe_allowance"),
-                "withholdingTaxRate", rs.getBigDecimal("withholding_tax_rate")),
+            SELECT base_rate, casual_loading_rate, shift_loading_rate, saturday_ord_loading_rate,
+              sunday_loading_rate, time_half_rate, double_rate, ppe_allowance, withholding_tax_rate
+            FROM salary_setting_info WHERE user_seq=?
+            """, (rs, row) -> {
+                Map<String, Object> rates = new HashMap<>();
+                rates.put("baseRate", rs.getBigDecimal("base_rate"));
+                rates.put("casualLoadingRate", rs.getBigDecimal("casual_loading_rate"));
+                rates.put("shiftLoadingRate", rs.getBigDecimal("shift_loading_rate"));
+                rates.put("saturdayOrdLoadingRate", rs.getBigDecimal("saturday_ord_loading_rate"));
+                rates.put("sundayLoadingRate", rs.getBigDecimal("sunday_loading_rate"));
+                rates.put("timeHalfRate", rs.getBigDecimal("time_half_rate"));
+                rates.put("doubleRate", rs.getBigDecimal("double_rate"));
+                rates.put("ppeAllowance", rs.getBigDecimal("ppe_allowance"));
+                rates.put("withholdingTaxRate", rs.getBigDecimal("withholding_tax_rate"));
+                return rates;
+            },
             LedgerController.owner(auth));
         return rows.isEmpty() ? Map.of() : rows.get(0);
     }
@@ -67,7 +85,12 @@ public class FinanceController {
         BigDecimal base = rate(body.get("baseRate"), new BigDecimal("1000"));
         BigDecimal ppe = rate(body.get("ppeAllowance"), new BigDecimal("1000"));
         BigDecimal tax = rate(body.get("withholdingTaxRate"), BigDecimal.ONE);
-        BigDecimal quarter = base.multiply(new BigDecimal("0.25"));
+        BigDecimal casual = derivedRate(body, "casualLoadingRate", base, "0.25");
+        BigDecimal shift = derivedRate(body, "shiftLoadingRate", base, "0.25");
+        BigDecimal saturday = derivedRate(body, "saturdayOrdLoadingRate", base, "0.5");
+        BigDecimal sunday = derivedRate(body, "sundayLoadingRate", base, "0.75");
+        BigDecimal timeHalf = derivedRate(body, "timeHalfRate", base, "1.5");
+        BigDecimal doubleTime = derivedRate(body, "doubleRate", base, "2.0");
         db.update("""
             INSERT INTO salary_setting_info(user_seq, base_rate, casual_loading_rate,
               shift_loading_rate, saturday_ord_loading_rate, sunday_loading_rate,
@@ -81,9 +104,8 @@ public class FinanceController {
               time_half_rate=EXCLUDED.time_half_rate, double_rate=EXCLUDED.double_rate,
               ppe_allowance=EXCLUDED.ppe_allowance,
               withholding_tax_rate=EXCLUDED.withholding_tax_rate, update_time=now()
-            """, LedgerController.owner(auth), base, quarter, quarter,
-            base.multiply(new BigDecimal("0.5")), base.multiply(new BigDecimal("0.75")),
-            base.multiply(new BigDecimal("1.5")), base.multiply(new BigDecimal("2.0")), ppe, tax);
+            """, LedgerController.owner(auth), base, casual, shift, saturday, sunday,
+            timeHalf, doubleTime, ppe, tax);
         return Map.of("baseRate", base, "ppeAllowance", ppe, "withholdingTaxRate", tax);
     }
 

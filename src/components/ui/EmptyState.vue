@@ -5,12 +5,14 @@ defineProps({
   title: { type: String, required: true },
   description: { type: String, default: '' },
   actionLabel: { type: String, default: '' },
+  // 放在卡片裡時用上下排列，讓說明文字有足夠寬度
+  stacked: Boolean,
 })
 const emit = defineEmits(['action'])
 </script>
 
 <template>
-  <div class="empty-state-box">
+  <div class="empty-state-box" :class="{ 'empty-state-box--stacked': stacked }">
     <span class="empty-state-box__icon" aria-hidden="true"><van-icon :name="icon" /></span>
     <div class="empty-state-box__text">
       <strong>{{ title }}</strong>
@@ -28,9 +30,9 @@ const emit = defineEmits(['action'])
   align-items: center;
   gap: 12px;
   padding: 12px;
-  border: 1px dashed #cbdff4;
-  border-radius: 14px;
-  background: #f7fbff;
+  border: 1px dashed #c9dbf3;
+  border-radius: var(--radius-medium);
+  background: #f8fbff;
 }
 .empty-state-box__icon {
   display: grid;
@@ -39,8 +41,8 @@ const emit = defineEmits(['action'])
   width: 38px;
   height: 38px;
   border-radius: 12px;
-  background: #eaf3fe;
-  color: #166dd1;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
   font-size: 20px;
 }
 .empty-state-box__text {
@@ -59,5 +61,19 @@ const emit = defineEmits(['action'])
 }
 .empty-state-box :deep(.van-button) {
   flex: none;
+}
+.empty-state-box--stacked {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.empty-state-box--stacked .empty-state-box__text {
+  flex: 1 1 180px;
+}
+.empty-state-box--stacked :deep(.van-button) {
+  width: 100%;
+  min-height: var(--touch-target);
+  border-radius: var(--radius-button);
+  font-size: 14px;
+  font-weight: 800;
 }
 </style>

@@ -1,28 +1,54 @@
 :root {
-  --font-title: 28px;
-  --font-heading: 20px;
-  --font-body: 16px;
+  /* 字級 */
+  --font-title: 26px;
+  --font-heading: 18px;
+  --font-body: 15px;
   --font-caption: 13px;
+  --font-amount: clamp(30px, 9vw, 38px);
+  /* 間距 */
   --space-1: 8px;
   --space-2: 16px;
   --space-3: 24px;
   --space-4: 32px;
+  /* 圓角 */
   --radius-small: 8px;
-  --radius-medium: 12px;
-  --radius-large: 16px;
-  --color-primary: #1989fa;
-  --color-income: #15803d;
-  --color-expense: #dc2626;
-  --color-pending: #b45309;
-  --color-muted: #657588;
-  --color-background: #f5f7fa;
+  --radius-medium: 14px;
+  --radius-large: 20px;
+  --radius-hero: 24px;
+  --radius-button: 14px;
+  /* 色彩（Soft Blue Fintech）；文字色皆通過 WCAG AA 對比 */
+  --color-primary: #1268da;
+  --color-primary-bright: #2383ee;
+  --color-primary-soft: #eaf2fd;
+  --color-income: #16845b;
+  --color-income-soft: #e8f5ef;
+  --color-expense: #c62828;
+  --color-pending: #a86412;
+  --color-pending-bar: #c17a19;
+  --color-pending-soft: #fdf3e4;
+  --color-muted: #5e6e82;
+  --color-background: #f5f7fb;
   --color-surface: #fff;
   --color-heading: #1b2a3b;
-  --color-border: #e6edf5;
+  --color-border: #e5ecf4;
+  --shadow-card: 0 1px 2px rgba(16, 42, 67, 0.04), 0 6px 20px rgba(16, 42, 67, 0.05);
+  /* 版面 */
   --page-inset: 16px;
-  --page-section-gap: 22px;
-  --page-card-radius: 22px;
+  --page-section-gap: 20px;
+  --page-card-radius: 20px;
+  --page-card-padding: 18px;
   --page-button-height: 48px;
+  --touch-target: 44px;
+  --motion-fast: 180ms;
+  /* Vant 主題沿用同一組色彩 */
+  --van-primary-color: var(--color-primary);
+  --van-success-color: var(--color-income);
+  --van-warning-color: var(--color-pending-bar);
+  --van-danger-color: var(--color-expense);
+  --van-text-color-2: var(--color-muted);
+  --van-border-color: var(--color-border);
+  --van-background: var(--color-background);
+  --van-tabbar-item-active-color: var(--color-primary);
 }
 
 html {
@@ -49,8 +75,7 @@ body {
     var(--van-tabbar-height, 50px) + var(--page-section-gap) + env(safe-area-inset-bottom, 0px)
   );
   padding-left: max(var(--page-inset), env(safe-area-inset-left, 0px));
-  background:
-    radial-gradient(circle at 12% 0, #e8f4ff 0, transparent 260px), var(--color-background);
+  background: var(--color-background);
 }
 
 .app-page__header {
@@ -85,13 +110,13 @@ body {
 .app-page__card {
   border-radius: var(--page-card-radius);
   background: var(--color-surface);
-  box-shadow: 0 12px 28px rgba(29, 66, 106, 0.07);
+  box-shadow: var(--shadow-card);
 }
 
 .app-page__action.van-button {
   min-height: var(--page-button-height);
   height: auto;
-  border-radius: 15px;
+  border-radius: var(--radius-button);
   font-size: 15px;
   font-weight: 800;
 }
@@ -99,5 +124,17 @@ body {
 @media (max-width: 340px) {
   :root {
     --page-inset: 12px;
+  }
+}
+
+/* 動畫：尊重系統「減少動態效果」設定 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
   }
 }

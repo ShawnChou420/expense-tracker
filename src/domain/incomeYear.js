@@ -66,6 +66,7 @@ export function getIncomeYearProgress({ records = [], salaryDeposits = null, tod
   )
 
   const remainingCents = Math.max(0, limit - ytdGrossCents)
+  /** @type {string | null} */
   let projectedCrossDate = null
   if (remainingCents > 0 && recentWeeklyAverageCents > 0) {
     const date = parseLocalDate(today)

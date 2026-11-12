@@ -10,6 +10,7 @@ defineProps({
   emptyTitle: { type: String, default: '' },
   emptyDescription: { type: String, default: '' },
   emptyActionLabel: { type: String, default: '' },
+  emptyActionIcon: { type: String, default: 'plus' },
 })
 const emit = defineEmits(['open', 'action'])
 </script>
@@ -38,7 +39,7 @@ const emit = defineEmits(['open', 'action'])
       <strong>{{ emptyTitle }}</strong>
       <p v-if="emptyDescription">{{ emptyDescription }}</p>
       <button type="button" class="hero-card__cta" @click="emit('action')">
-        <van-icon name="plus" aria-hidden="true" />{{ emptyActionLabel }}
+        <van-icon :name="emptyActionIcon" aria-hidden="true" />{{ emptyActionLabel }}
       </button>
     </div>
   </section>

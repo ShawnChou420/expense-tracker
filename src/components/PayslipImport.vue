@@ -19,6 +19,8 @@ const props = defineProps({
   rateSources: { type: Object, default: () => ({}) },
   isMember: Boolean,
   existingDeposits: { type: Array, default: null },
+  // 已保存的薪資單（會員存在資料庫，訪客只在這次開啟期間），用來擋重複匯入
+  existingPayslips: { type: Array, default: () => [] },
   firstTime: Boolean,
 })
 const emit = defineEmits(['update:show', 'apply', 'manual'])
@@ -179,6 +181,9 @@ const reviewCount = computed(
 const duplicate = computed(() => {
   const deposits = props.existingDeposits || []
   if (!reviewed.value) return null
+  if (fileHash && props.existingPayslips.some((item) => item.fileSha256 === fileHash)) {
+    return '這份薪資單之前已經匯入過'
+  }
   if (fileHash && deposits.some((deposit) => deposit.sourceRef === `payslip:${fileHash}`)) {
     return '這份薪資單之前已經匯入過'
   }
@@ -227,40 +232,61 @@ function setItemType(item, type) {
   item.userConfirmed = true
 }
 
+// 薪資單本身一定會保存（之後首頁可以看到這一期賺了多少），所以付款日與實領必填
+const missingRequired = computed(() => {
+  if (!reviewed.value) return ''
+  if (!reviewed.value.payDate) return '請填寫付款日期'
+  if (reviewed.value.netCents === null || reviewed.value.netCents < 0) return '請填寫實領金額'
+  return ''
+})
 const canConfirm = computed(
-  () =>
-    reviewed.value &&
-    (selectedRateKeys.value.length > 0 || (recordDeposit.value && props.isMember)) &&
-    (!recordDeposit.value ||
-      (reviewed.value.payDate && reviewed.value.netCents !== null && reviewed.value.netCents >= 0)),
+  () => Boolean(reviewed.value) && !missingRequired.value && !duplicateFile.value,
 )
+const duplicateFile = computed(() => duplicate.value === '這份薪資單之前已經匯入過')
 
 function confirmImport() {
   if (!canConfirm.value) return
   const applicable = getRatesToApply(
     proposals.value.map((row) => ({ ...row, proposed: proposedValue(row) })),
   )
+  // 勾選的新費率＋和目前相同的費率（薪資單也證實了它們，一併標為已確認）
+  const sameKeys = proposals.value.filter((row) => row.status === 'SAME').map((row) => row.key)
   const rates = Object.fromEntries(
-    Object.entries(applicable).filter(([key]) => selectedRateKeys.value.includes(key)),
+    Object.entries(applicable).filter(
+      ([key]) => selectedRateKeys.value.includes(key) || sameKeys.includes(key),
+    ),
   )
   const data = reviewed.value
-  const deposit =
-    recordDeposit.value && props.isMember
-      ? {
-          paidAt: data.payDate,
-          amountCents: data.netCents,
-          grossCents: data.grossCents,
-          taxCents: data.taxCents,
-          periodStart: data.periodStart,
-          periodEnd: data.periodEnd,
-          sourceRef: fileHash ? `payslip:${fileHash}` : null,
-        }
-      : null
-  const employerYtd =
-    data.ytd?.grossCents !== null && data.ytd?.grossCents !== undefined
-      ? { grossCents: data.ytd.grossCents, taxCents: data.ytd.taxCents, payDate: data.payDate }
-      : null
-  emit('apply', { rates, deposit, employerYtd })
+  const payslipRecord = {
+    employerName: form.value.employer || null,
+    employerAbn: data.employer?.abn || null,
+    fileSha256: fileHash,
+    payDate: data.payDate,
+    periodStart: data.periodStart,
+    periodEnd: data.periodEnd,
+    grossCents: data.grossCents,
+    taxCents: data.taxCents,
+    netCents: data.netCents,
+    superCents: data.superCents,
+    ytd: {
+      grossCents: data.ytd?.grossCents ?? null,
+      taxCents: data.ytd?.taxCents ?? null,
+      superCents: data.ytd?.superCents ?? null,
+    },
+    items: items.value.map((item) => ({
+      rawName: item.rawName,
+      type: item.type,
+      calcMethod: item.calcMethod ?? null,
+      hours: item.hours ?? null,
+      rate: item.rate ?? null,
+      amountCents: item.amountCents ?? null,
+    })),
+  }
+  emit('apply', {
+    rates,
+    payslip: payslipRecord,
+    recordDeposit: props.isMember && recordDeposit.value,
+  })
 }
 </script>
 
@@ -287,7 +313,7 @@ function confirmImport() {
           {{ firstTime ? '讓第一張薪資單，幫你開始記帳。' : '上傳新的薪資單，更新費率與收入紀錄。' }}
         </p>
         <p class="payslip__sub">
-          自動讀出時薪、各項加給、扣稅比例與年度累計。確認後才會套用，不會自動入帳。
+          自動讀出時薪、各項加給、本期預扣比例與年度累計。你確認後才會保存與套用。
         </p>
         <div class="payslip__options">
           <label class="payslip__option payslip__option--primary">
@@ -395,7 +421,7 @@ function confirmImport() {
           </van-tab>
 
           <van-tab name="rates" title="工作費率">
-            <p class="payslip__hint">勾選的費率會套用到薪資設定。舊班表的金額不會改變。</p>
+            <p class="payslip__hint">勾選的費率會設為「已確認」並用於之後的試算。已存的班表金額不會改變。</p>
             <ul class="rate-list">
               <li v-for="row in proposals" :key="row.key" class="rate-row" :class="`rate-row--${row.status}`">
                 <div class="rate-row__top">
@@ -433,7 +459,7 @@ function confirmImport() {
               </li>
             </ul>
             <p class="payslip__hint">
-              扣稅比率是本次 Tax ÷ Gross。WHM 採級距制，超過第一級距後比例會改變。
+              本期實際預扣比例＝本次 Tax ÷ Gross，只用來估算之後每期的預扣金額；年度實際應繳稅額另計，需以 ATO 公告確認。
             </p>
           </van-tab>
 
@@ -470,9 +496,10 @@ function confirmImport() {
           <van-checkbox v-if="isMember" v-model="recordDeposit" shape="square" icon-size="18px">
             同時記錄這筆薪資入帳（實領 {{ reviewed.netCents === null ? '—' : formatAud(reviewed.netCents) }}）
           </van-checkbox>
-          <p v-else class="payslip__guest">登入後可同時記錄薪資入帳；訪客模式只套用費率。</p>
+          <p v-else class="payslip__guest">訪客模式：薪資單只保留到關閉 App；登入後會永久保存並可記錄入帳。</p>
+          <p v-if="missingRequired" class="payslip__required">{{ missingRequired }}</p>
           <van-button type="primary" block class="app-page__action" :disabled="!canConfirm" @click="confirmImport">
-            確認並套用
+            {{ duplicateFile ? '這份薪資單已經匯入過' : '確認並保存' }}
           </van-button>
         </footer>
       </section>
@@ -833,6 +860,12 @@ function confirmImport() {
 .payslip__footer :deep(.van-checkbox__label) {
   color: var(--color-heading);
   font-size: 13px;
+}
+.payslip__required {
+  margin: 0;
+  color: var(--color-expense, #c2410c);
+  font-size: 13px;
+  font-weight: 700;
 }
 .payslip__guest {
   margin: 0;

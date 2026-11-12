@@ -49,21 +49,39 @@ export const WEEKDAYS = [
   { day: 0, label: '日' },
 ]
 
-/** 全新的工作設定：什麼都沒設定 */
+/**
+ * @typedef {{ id: string, name: string, startTime: string, endTime: string, isCleaning: boolean, preset: string | null }} ShiftTemplate
+ * @typedef {{ mode: string, count: number, minutes: number, paid: boolean }} SmokoSetting
+ * @typedef {{
+ *   version: number,
+ *   payStatus: 'NOT_CONFIGURED' | 'MANUAL_CONFIRMED' | 'PAYSLIP_CONFIRMED',
+ *   confirmedRateKeys: string[],
+ *   allowProvisionalRates: boolean,
+ *   taxRateSource: { type: 'PAYSLIP_PERIOD' | 'MANUAL', payDate?: string | null } | null,
+ *   scheduleStatus: 'NOT_CONFIGURED' | 'CONFIGURED',
+ *   shiftTemplates: ShiftTemplate[],
+ *   weekPlan: Record<string, string | null>,
+ *   offDayRule: string,
+ *   smoko: SmokoSetting,
+ * }} WorkProfile
+ */
+
+/**
+ * 全新的工作設定：什麼都沒設定
+ * @returns {WorkProfile}
+ */
 export function createEmptyWorkProfile() {
   return {
     version: 1,
     payStatus: PAY_STATUS.NOT_CONFIGURED,
-    /** @type {string[]} 已由薪資單或使用者確認的費率 */
+    // 已由薪資單或使用者確認的費率
     confirmedRateKeys: [],
-    /** 使用者是否明確同意：未確認的加成先用「基本時薪 × 預設倍率」暫估 */
+    // 使用者是否明確同意：未確認的加成先用「基本時薪 × 預設倍率」暫估
     allowProvisionalRates: false,
-    /** @type {{ type: 'PAYSLIP_PERIOD' | 'MANUAL', payDate?: string | null } | null} */
     taxRateSource: null,
     scheduleStatus: SCHEDULE_STATUS.NOT_CONFIGURED,
-    /** @type {Array<{ id: string, name: string, startTime: string, endTime: string, isCleaning: boolean, preset: string | null }>} */
     shiftTemplates: [],
-    /** @type {Record<string, string | null>} 星期（0=日…6=六）→ 班別 id；null＝休息 */
+    // 星期（0=日…6=六）→ 班別 id；null＝休息
     weekPlan: {},
     /** 沒有排班的日子：SKIP＝不建立紀錄；LEAVE＝建立休假紀錄 */
     offDayRule: 'SKIP',
@@ -76,6 +94,7 @@ const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
 /**
  * 把儲存的資料（可能是舊版或不完整）整理成完整的工作設定，不信任任何欄位。
  * @param {any} raw
+ * @returns {WorkProfile}
  */
 export function normalizeWorkProfile(raw) {
   const base = createEmptyWorkProfile()
@@ -136,6 +155,7 @@ export function normalizeWorkProfile(raw) {
  * - 費率不是開發者的測試預設值（26.74）→ 視為手動確認過，未確認的加成沿用原本的預設倍率（暫定）
  * - 仍是測試預設值 → 視為尚未設定
  * @param {Record<string, unknown> | null} storedRates GET /salary-rates 的結果
+ * @returns {WorkProfile}
  */
 export function inferLegacyWorkProfile(storedRates) {
   const profile = createEmptyWorkProfile()
@@ -151,7 +171,7 @@ export function inferLegacyWorkProfile(storedRates) {
   }
 }
 
-/** @param {ReturnType<typeof createEmptyWorkProfile>} profile @param {{ baseRate: number }} rates */
+/** @param {WorkProfile} profile @param {{ baseRate: number }} rates */
 export function getSetupCompleteness(profile, rates) {
   const missing = []
   const payReady =
@@ -171,7 +191,7 @@ export function getSetupCompleteness(profile, rates) {
 
 /**
  * 某天依每週排班應該上什麼班；沒有排班時回傳 null（或依規則回傳休假）。
- * @param {ReturnType<typeof createEmptyWorkProfile>} profile
+ * @param {WorkProfile} profile
  * @param {string} dateText YYYY-MM-DD
  */
 export function getPlannedShift(profile, dateText) {
@@ -194,7 +214,7 @@ export function getPlannedShift(profile, dateText) {
 }
 
 /** Smoko 設定 → 計算引擎的參數。自動＝沿用現有依工時判定（null）；計薪的 Smoko 不扣分鐘 */
-export function getSmokoInputs(/** @type {ReturnType<typeof createEmptyWorkProfile>['smoko']} */ smoko) {
+export function getSmokoInputs(/** @type {SmokoSetting} */ smoko) {
   return {
     smokoCountOverride: smoko.mode === 'FIXED' ? smoko.count : null,
     deductMinutesPerBreak: smoko.paid ? 0 : smoko.minutes,
@@ -204,7 +224,7 @@ export function getSmokoInputs(/** @type {ReturnType<typeof createEmptyWorkProfi
 /**
  * 計算用的加成費率：已確認的用實際值；未確認的，只有使用者同意暫估時才用預設倍率，否則為 0 並標示「未含」。
  * @param {Record<string, number>} values 目前保存的費率值
- * @param {ReturnType<typeof createEmptyWorkProfile>} profile
+ * @param {WorkProfile} profile
  */
 export function getEffectiveRates(values, profile) {
   const confirmed = new Set(profile.confirmedRateKeys)
@@ -257,7 +277,7 @@ export function getRateFlags(breakdown, status) {
 /**
  * 填滿本週／本月前的預覽：只列出還沒有任何紀錄的日期，既有班表與休假一律不動。
  * @param {Array<{ workDate: string }>} records
- * @param {ReturnType<typeof createEmptyWorkProfile>} profile
+ * @param {WorkProfile} profile
  * @param {string[]} dates 區間內所有日期
  */
 export function planFill(records, profile, dates) {
@@ -294,5 +314,50 @@ export function createShiftTemplate(/** @type {string} */ id, /** @type {Partial
 }
 
 /** 下班時間早於或等於上班時間＝跨午夜 */
-export const crossesMidnight = (/** @type {{ startTime: string, endTime: string }} */ template) =>
+export const crossesMidnight = (/** @type {{ startTime: string, endTime: string } | undefined} */ template) =>
+  !!template &&
   template.endTime <= template.startTime
+
+/**
+ * 填滿預覽的摘要：新增幾筆班、幾筆休假、總計薪工時、預估稅前（cents），以及用到哪些未確認費率。
+ * @param {Array<{ shiftType?: string, paidMinutes?: number, grossPay?: number, rateFlags?: { provisional?: string[], excluded?: string[] } }>} records
+ */
+export function summarizeFillPreview(records) {
+  const worked = records.filter((record) => record.shiftType !== 'leave')
+  const unique = (/** @type {string[]} */ labels) => [...new Set(labels)]
+  return {
+    shiftCount: worked.length,
+    leaveCount: records.length - worked.length,
+    paidMinutes: worked.reduce((total, record) => total + (Number(record.paidMinutes) || 0), 0),
+    grossCents: worked.reduce(
+      (total, record) => total + Math.round((Number(record.grossPay) || 0) * 100),
+      0,
+    ),
+    rateFlags: {
+      provisional: unique(worked.flatMap((record) => record.rateFlags?.provisional ?? [])),
+      excluded: unique(worked.flatMap((record) => record.rateFlags?.excluded ?? [])),
+    },
+  }
+}
+
+/**
+ * 班別摘要文字，例如「晚班 23:50–06:00（隔天）· 一三四五」。
+ * @param {WorkProfile} profile
+ */
+export function describeWeekPlan(profile) {
+  return profile.shiftTemplates
+    .map((template) => {
+      const days = WEEKDAYS.filter(({ day }) => profile.weekPlan[day] === template.id)
+        .map(({ label }) => label)
+        .join('')
+      const time = `${template.startTime}–${template.endTime}${crossesMidnight(template) ? '（隔天）' : ''}`
+      return days ? `${template.name} ${time} · 週${days}` : null
+    })
+    .filter(Boolean)
+}
+
+/** Smoko 設定的說明文字 */
+export function describeSmoko(/** @type {SmokoSetting} */ smoko) {
+  const count = smoko.mode === 'FIXED' ? `每班固定 ${smoko.count} 次` : '依工時自動（滿 4 小時 1 次、滿 8 小時 2 次）'
+  return `${count} · 每次 ${smoko.minutes} 分鐘 · ${smoko.paid ? '照常計薪' : '不計薪（扣工時）'}`
+}

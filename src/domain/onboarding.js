@@ -8,6 +8,7 @@
  *   savingGoal?: unknown,
  *   salaryDeposits?: Array<unknown> | null,
  *   isMember?: boolean,
+ *   workSetupReady?: boolean,
  * }} sources
  */
 export function getOnboardingSteps({
@@ -16,12 +17,21 @@ export function getOnboardingSteps({
   savingGoal = null,
   salaryDeposits = null,
   isMember = false,
+  workSetupReady = false,
 }) {
   const steps = [
     {
+      id: 'setup',
+      title: '完成工作設定',
+      description: '先設定薪資費率與班別，再使用自動排班。',
+      actionLabel: '開始設定',
+      action: 'work-setup',
+      done: workSetupReady,
+    },
+    {
       id: 'schedule',
       title: '排好這週的班表',
-      description: '在薪資頁點日曆上的日期，或按「填滿本週」，自動試算週薪。',
+      description: '設定好班別後，按「填滿本週」預覽並加入班表，自動試算週薪。',
       actionLabel: '去排班',
       action: 'payroll',
       done: workRecords.some(

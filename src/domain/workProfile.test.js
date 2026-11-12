@@ -6,6 +6,8 @@ import {
   createEmptyWorkProfile,
   createShiftTemplate,
   crossesMidnight,
+  describeSmoko,
+  describeWeekPlan,
   getEffectiveRates,
   getPlannedShift,
   getRateFlags,
@@ -14,6 +16,7 @@ import {
   inferLegacyWorkProfile,
   normalizeWorkProfile,
   planFill,
+  summarizeFillPreview,
 } from './workProfile.js'
 
 const baiada = (/** @type {string} */ preset) => SHIFT_PRESETS.find((item) => item.preset === preset)
@@ -200,5 +203,32 @@ describe('normalizeWorkProfile', () => {
     expect(profile.weekPlan[1]).toBe('a')
     expect(profile.weekPlan[2]).toBeNull()
     expect(profile.smoko).toEqual({ mode: 'FIXED', count: 3, minutes: 60, paid: true })
+  })
+})
+
+describe('fill preview summary', () => {
+  it('counts shifts, leave, hours, gross and unconfirmed rates', () => {
+    const summary = summarizeFillPreview([
+      { shiftType: 'normal', paidMinutes: 360, grossPay: 210.5, rateFlags: { provisional: ['夜班加給'] } },
+      { shiftType: 'normal', paidMinutes: 345, grossPay: 200.25, rateFlags: { excluded: ['週日加給'] } },
+      { shiftType: 'leave', paidMinutes: 0, grossPay: 0 },
+    ])
+    expect(summary).toEqual({
+      shiftCount: 2,
+      leaveCount: 1,
+      paidMinutes: 705,
+      grossCents: 41075,
+      rateFlags: { provisional: ['夜班加給'], excluded: ['週日加給'] },
+    })
+  })
+
+  it('describes the week plan and smoko rule in plain words', () => {
+    expect(describeWeekPlan(configuredProfile())).toEqual([
+      '晚班 23:50–06:00（隔天） · 週一三四五',
+      '晚班清潔班 17:45–00:00（隔天） · 週二',
+    ])
+    expect(describeSmoko({ mode: 'FIXED', count: 1, minutes: 20, paid: true })).toBe(
+      '每班固定 1 次 · 每次 20 分鐘 · 照常計薪',
+    )
   })
 })

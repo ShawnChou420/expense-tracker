@@ -8,6 +8,7 @@ import {
   getStoredRateOverrides,
 } from './rates.js'
 import { buildTextLines } from './textLines.js'
+import { getLatestPayslip, getPayslipHighlights } from './summary.js'
 import { SAMPLE_PAYSLIP_LINES } from './fixtures/samplePayslip.js'
 
 describe('buildTextLines', () => {
@@ -171,5 +172,34 @@ describe('getRateProposals', () => {
         sundayLoadingRate: null,
       }),
     ).toEqual({ shiftLoadingRate: 8.5 })
+  })
+})
+
+describe('payslip highlights', () => {
+  it('adds only full-rate hours so loadings are not double counted', () => {
+    const highlights = getPayslipHighlights({
+      grossCents: 194500,
+      items: [
+        { type: 'BASE_PAY', calcMethod: 'FULL_RATE', hours: 38 },
+        { type: 'CASUAL_LOADING', calcMethod: 'ADDITIONAL', hours: 38 },
+        { type: 'SHIFT_LOADING', calcMethod: 'ADDITIONAL', hours: 30 },
+        { type: 'SATURDAY_LOADING', calcMethod: 'FULL_RATE', hours: 7 },
+        { type: 'PPE_ALLOWANCE', calcMethod: 'FLAT', hours: null },
+      ],
+    })
+    expect(highlights).toEqual({ hours: 45, effectiveHourlyCents: 4322 })
+  })
+
+  it('returns null hours when the payslip has no hour details', () => {
+    expect(getPayslipHighlights({ grossCents: 1000, items: [] })).toEqual({
+      hours: null,
+      effectiveHourlyCents: null,
+    })
+  })
+
+  it('picks the newest payslip by pay date', () => {
+    expect(
+      getLatestPayslip([{ payDate: '2026-10-30' }, { payDate: '2026-11-06' }, { payDate: null }]),
+    ).toEqual({ payDate: '2026-11-06' })
   })
 })

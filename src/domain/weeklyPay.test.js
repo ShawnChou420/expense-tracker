@@ -33,6 +33,28 @@ describe('getWeeklyPaySummary', () => {
     expect(summary.paidMinutes).toBe(870)
   })
 
+  it('collects unconfirmed-rate flags from the week shifts', () => {
+    const records = [
+      {
+        workDate: '2026-11-09',
+        grossPay: 100,
+        shiftType: 'normal',
+        rateFlags: { provisional: ['週日加給'], excluded: [] },
+      },
+      {
+        workDate: '2026-11-10',
+        grossPay: 100,
+        shiftType: 'normal',
+        rateFlags: { provisional: ['週日加給'], excluded: ['週六加給'] },
+      },
+      { workDate: '2026-11-11', grossPay: 100, shiftType: 'normal' },
+    ]
+    expect(getWeeklyPaySummary(records, '2026-11-09', rates).rateFlags).toEqual({
+      provisional: ['週日加給'],
+      excluded: ['週六加給'],
+    })
+  })
+
   it('adds PPE once per week, not once per shift', () => {
     const records = [
       { workDate: '2026-11-09', grossPay: 100, shiftType: 'normal' },

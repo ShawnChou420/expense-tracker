@@ -381,7 +381,7 @@ function confirmImport() {
               <van-field v-model="form.gross" label="稅前 Gross" type="number" input-align="right" />
               <van-field v-model="form.tax" label="扣稅 PAYG" type="number" input-align="right" />
               <van-field v-model="form.net" label="實領 Net" type="number" input-align="right" />
-              <van-field v-model="form.super" label="Super（另計）" type="number" input-align="right" />
+              <van-field v-model="form.super" label="Super" type="number" input-align="right" />
             </van-cell-group>
             <div v-if="reviewed.ytd && reviewed.ytd.grossCents !== null" class="payslip__ytd">
               <h3>財年累計（雇主 YTD）</h3>

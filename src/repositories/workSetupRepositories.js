@@ -40,7 +40,10 @@ export const payslipImportRepository = {
    */
   async create(payslip, { recordDeposit }) {
     if (!authToken.value) {
-      if (payslip.fileSha256 && guestPayslips.some((item) => item.fileSha256 === payslip.fileSha256)) {
+      if (
+        payslip.fileSha256 &&
+        guestPayslips.some((item) => item.fileSha256 === payslip.fileSha256)
+      ) {
         throw new Error('這份薪資單之前已經匯入過')
       }
       const saved = { ...payslip, id: crypto.randomUUID(), depositId: null }

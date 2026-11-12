@@ -11,7 +11,13 @@ describe('getOnboardingSteps', () => {
 
   it('adds the salary deposit step for members only', () => {
     const result = getOnboardingSteps({ isMember: true })
-    expect(result.steps.map((step) => step.id)).toEqual(['setup', 'schedule', 'salary', 'expense', 'goal'])
+    expect(result.steps.map((step) => step.id)).toEqual([
+      'setup',
+      'schedule',
+      'salary',
+      'expense',
+      'goal',
+    ])
   })
 
   it('does not count leave days as a scheduled shift', () => {

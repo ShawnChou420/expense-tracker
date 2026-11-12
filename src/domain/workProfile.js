@@ -28,7 +28,13 @@ export const LOADING_KEYS = RATE_FIELDS.filter(
  */
 export const SHIFT_PRESETS = [
   { preset: 'BAIADA_EARLY', name: '早班', startTime: '06:00', endTime: '15:00', isCleaning: false },
-  { preset: 'BAIADA_MIDDLE', name: '中班', startTime: '15:00', endTime: '23:50', isCleaning: false },
+  {
+    preset: 'BAIADA_MIDDLE',
+    name: '中班',
+    startTime: '15:00',
+    endTime: '23:50',
+    isCleaning: false,
+  },
   { preset: 'BAIADA_NIGHT', name: '晚班', startTime: '23:50', endTime: '06:00', isCleaning: false },
   {
     preset: 'BAIADA_CLEANING',
@@ -130,8 +136,9 @@ export function normalizeWorkProfile(raw) {
       ? raw.payStatus
       : PAY_STATUS.NOT_CONFIGURED,
     confirmedRateKeys: Array.isArray(raw.confirmedRateKeys)
-      ? raw.confirmedRateKeys.filter((/** @type {string} */ key) =>
-          RATE_FIELDS.some((field) => field.key === key) || key === 'withholdingTaxRate',
+      ? raw.confirmedRateKeys.filter(
+          (/** @type {string} */ key) =>
+            RATE_FIELDS.some((field) => field.key === key) || key === 'withholdingTaxRate',
         )
       : [],
     allowProvisionalRates: raw.allowProvisionalRates === true,
@@ -146,7 +153,12 @@ export function normalizeWorkProfile(raw) {
     shiftTemplates: templates,
     weekPlan,
     offDayRule: raw.offDayRule === 'LEAVE' ? 'LEAVE' : 'SKIP',
-    smoko: { mode: smokoMode, count: smokoCount, minutes: smokoMinutes, paid: raw.smoko?.paid === true },
+    smoko: {
+      mode: smokoMode,
+      count: smokoCount,
+      minutes: smokoMinutes,
+      paid: raw.smoko?.paid === true,
+    },
   }
 }
 
@@ -201,7 +213,13 @@ export function getPlannedShift(profile, dateText) {
   const template = profile.shiftTemplates.find((item) => item.id === templateId)
   if (!template) {
     return profile.offDayRule === 'LEAVE'
-      ? { shiftType: 'leave', startTime: '00:00', endTime: '00:00', isCleaningDay: false, name: '休息' }
+      ? {
+          shiftType: 'leave',
+          startTime: '00:00',
+          endTime: '00:00',
+          isCleaningDay: false,
+          name: '休息',
+        }
       : null
   }
   return {
@@ -302,7 +320,10 @@ export function planFill(records, profile, dates) {
 }
 
 /** 由班別範本建立新的班別（id 由呼叫端提供，方便測試） */
-export function createShiftTemplate(/** @type {string} */ id, /** @type {Partial<typeof SHIFT_PRESETS[number]>} */ source = {}) {
+export function createShiftTemplate(
+  /** @type {string} */ id,
+  /** @type {Partial<typeof SHIFT_PRESETS[number]>} */ source = {},
+) {
   return {
     id,
     name: source.name || '自訂班別',
@@ -314,9 +335,9 @@ export function createShiftTemplate(/** @type {string} */ id, /** @type {Partial
 }
 
 /** 下班時間早於或等於上班時間＝跨午夜 */
-export const crossesMidnight = (/** @type {{ startTime: string, endTime: string } | undefined} */ template) =>
-  !!template &&
-  template.endTime <= template.startTime
+export const crossesMidnight = (
+  /** @type {{ startTime: string, endTime: string } | undefined} */ template,
+) => !!template && template.endTime <= template.startTime
 
 /**
  * 填滿預覽的摘要：新增幾筆班、幾筆休假、總計薪工時、預估稅前（cents），以及用到哪些未確認費率。
@@ -358,6 +379,9 @@ export function describeWeekPlan(profile) {
 
 /** Smoko 設定的說明文字 */
 export function describeSmoko(/** @type {SmokoSetting} */ smoko) {
-  const count = smoko.mode === 'FIXED' ? `每班固定 ${smoko.count} 次` : '依工時自動（滿 4 小時 1 次、滿 8 小時 2 次）'
+  const count =
+    smoko.mode === 'FIXED'
+      ? `每班固定 ${smoko.count} 次`
+      : '依工時自動（滿 4 小時 1 次、滿 8 小時 2 次）'
   return `${count} · 每次 ${smoko.minutes} 分鐘 · ${smoko.paid ? '照常計薪' : '不計薪（扣工時）'}`
 }

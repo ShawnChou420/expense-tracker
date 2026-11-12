@@ -11,7 +11,10 @@ export function getPayslipHighlights(payslip) {
   let hours = 0
   for (const item of payslip.items ?? []) {
     if (!(Number(item.hours) > 0)) continue
-    if (FULL_TYPES.has(item.type) || (MAYBE_FULL.has(item.type) && item.calcMethod === 'FULL_RATE')) {
+    if (
+      FULL_TYPES.has(item.type) ||
+      (MAYBE_FULL.has(item.type) && item.calcMethod === 'FULL_RATE')
+    ) {
       hours += Number(item.hours)
     }
   }
@@ -19,8 +22,7 @@ export function getPayslipHighlights(payslip) {
   const grossCents = payslip.grossCents ?? null
   return {
     hours: hours > 0 ? hours : null,
-    effectiveHourlyCents:
-      hours > 0 && grossCents !== null ? Math.round(grossCents / hours) : null,
+    effectiveHourlyCents: hours > 0 && grossCents !== null ? Math.round(grossCents / hours) : null,
   }
 }
 

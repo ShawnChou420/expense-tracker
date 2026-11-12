@@ -19,7 +19,8 @@ import {
   summarizeFillPreview,
 } from './workProfile.js'
 
-const baiada = (/** @type {string} */ preset) => SHIFT_PRESETS.find((item) => item.preset === preset)
+const baiada = (/** @type {string} */ preset) =>
+  SHIFT_PRESETS.find((item) => item.preset === preset)
 
 function configuredProfile() {
   const night = createShiftTemplate('night', baiada('BAIADA_NIGHT'))
@@ -69,7 +70,9 @@ describe('legacy members', () => {
   })
 
   it('treats the old developer test rate as not configured', () => {
-    expect(inferLegacyWorkProfile({ baseRate: '26.7400' }).payStatus).toBe(PAY_STATUS.NOT_CONFIGURED)
+    expect(inferLegacyWorkProfile({ baseRate: '26.7400' }).payStatus).toBe(
+      PAY_STATUS.NOT_CONFIGURED,
+    )
     expect(inferLegacyWorkProfile(null).payStatus).toBe(PAY_STATUS.NOT_CONFIGURED)
   })
 })
@@ -162,7 +165,10 @@ describe('unconfirmed rates', () => {
   }
 
   it('does not silently apply unconfirmed rates', () => {
-    const profile = { ...createEmptyWorkProfile(), confirmedRateKeys: ['baseRate', 'casualLoadingRate'] }
+    const profile = {
+      ...createEmptyWorkProfile(),
+      confirmedRateKeys: ['baseRate', 'casualLoadingRate'],
+    }
     const { rates, status } = getEffectiveRates(values, profile)
     expect(rates.casualLoadingRate).toBe(7.0025)
     expect(status.saturdayOrdLoadingRate).toBe('EXCLUDED')
@@ -209,8 +215,18 @@ describe('normalizeWorkProfile', () => {
 describe('fill preview summary', () => {
   it('counts shifts, leave, hours, gross and unconfirmed rates', () => {
     const summary = summarizeFillPreview([
-      { shiftType: 'normal', paidMinutes: 360, grossPay: 210.5, rateFlags: { provisional: ['夜班加給'] } },
-      { shiftType: 'normal', paidMinutes: 345, grossPay: 200.25, rateFlags: { excluded: ['週日加給'] } },
+      {
+        shiftType: 'normal',
+        paidMinutes: 360,
+        grossPay: 210.5,
+        rateFlags: { provisional: ['夜班加給'] },
+      },
+      {
+        shiftType: 'normal',
+        paidMinutes: 345,
+        grossPay: 200.25,
+        rateFlags: { excluded: ['週日加給'] },
+      },
       { shiftType: 'leave', paidMinutes: 0, grossPay: 0 },
     ])
     expect(summary).toEqual({

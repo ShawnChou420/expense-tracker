@@ -51,8 +51,11 @@ const props = defineProps({
   active: Boolean,
   // 薪資頁的 PPE 與扣稅比率，用來算首頁的「本週預估實領」
   payrollRates: { type: Object, default: () => ({ ppeAllowance: 0, withholdingTaxRate: 0 }) },
+  // 最新薪資單上的雇主財年累計（YTD），用來校準年度稅務進度
+  employerYtd: { type: Object, default: null },
+  payslipImported: Boolean,
 })
-const emit = defineEmits(['mark-work-date', 'navigate', 'open-account', 'quick-action'])
+const emit = defineEmits(['mark-work-date', 'navigate', 'open-account', 'quick-action', 'import-payslip'])
 
 const today = formatLocalDate(new Date())
 const period = ref('week')
@@ -114,7 +117,12 @@ const thisWeekSummary = computed(() =>
   }),
 )
 const incomeYearProgress = computed(() =>
-  getIncomeYearProgress({ records: props.workRecords, salaryDeposits: salaryDeposits.value, today }),
+  getIncomeYearProgress({
+    records: props.workRecords,
+    salaryDeposits: salaryDeposits.value,
+    employerYtd: props.employerYtd,
+    today,
+  }),
 )
 const taxProgressHint = computed(() => {
   const progress = incomeYearProgress.value
@@ -436,6 +444,20 @@ async function saveTarget() {
 
     <QuickActions class="home-block" :actions="quickActions" @select="emit('quick-action', $event)" />
 
+    <button
+      v-if="!payslipImported"
+      type="button"
+      class="payslip-cta home-block app-page__card"
+      @click="emit('import-payslip')"
+    >
+      <span class="payslip-cta__icon" aria-hidden="true"><van-icon name="description-o" /></span>
+      <span class="payslip-cta__text">
+        <strong>讓第一張薪資單，幫你開始記帳。</strong>
+        <small>上傳 PDF，自動設定時薪、加給、扣稅比例與年度累計</small>
+      </span>
+      <van-icon name="arrow" aria-hidden="true" class="payslip-cta__arrow" />
+    </button>
+
     <section
       v-if="!onboarding.allDone && !onboardingDismissed"
       class="onboarding-card app-page__card home-block"
@@ -566,7 +588,7 @@ async function saveTarget() {
       v-if="incomeYearProgress"
       class="home-block"
       title="年度稅務追蹤"
-      :badge="incomeYearProgress.basis === 'actual' ? '實際入帳' : '預估'"
+      :badge="{ payslip: '薪資單 YTD', actual: '實際入帳', estimated: '預估' }[incomeYearProgress.basis]"
       :subtitle="`${incomeYearProgress.incomeYear.label} 財年 · 稅前收入累計`"
       :current="formatAud(incomeYearProgress.ytdGrossCents)"
       :target="formatAud(incomeYearProgress.limitCents)"
@@ -581,7 +603,13 @@ async function saveTarget() {
     >
       <p class="home-card-note">{{ taxProgressHint }}</p>
       <p class="home-card-fine">
-        {{ incomeYearProgress.basis === 'actual' ? '依已記錄的薪資入帳稅前金額。' : '依班表預估（不含 PPE），記錄薪資入帳後改用實際金額。' }}級距需以 ATO 公告為準，此為個人估算。
+        {{
+          {
+            payslip: `依 ${employerYtd?.payDate ?? ''} 薪資單上的雇主財年累計（不與其他入帳重複相加）。`,
+            actual: '依已記錄的薪資入帳稅前金額。',
+            estimated: '依班表預估（不含 PPE），匯入薪資單後改用雇主財年累計。',
+          }[incomeYearProgress.basis]
+        }}級距需以 ATO 公告為準，此為個人估算。
       </p>
     </ProgressCard>
 
@@ -1043,6 +1071,50 @@ async function saveTarget() {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+.payslip-cta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--color-primary);
+  background: var(--color-primary-soft);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.payslip-cta__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
+  background: var(--color-surface);
+  color: var(--color-primary);
+  font-size: 21px;
+}
+.payslip-cta__text {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+.payslip-cta__text strong {
+  color: var(--color-heading);
+  font-size: 15px;
+  font-weight: 800;
+}
+.payslip-cta__text small {
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.payslip-cta__arrow {
+  flex: none;
+  color: var(--color-primary);
 }
 .icon-button {
   display: grid;

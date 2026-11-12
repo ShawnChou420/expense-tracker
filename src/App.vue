@@ -9,7 +9,7 @@ import MorePage from './components/MorePage.vue'
 import AuthPanel from './components/AuthPanel.vue'
 import { authEmail, authToken, signOut, clearSession, apiRequest } from './services/authSession.js'
 import { useWorkRecordsPersistence } from './composables/useWorkRecordsPersistence.js'
-import { getGuestLedgerSnapshot, notifyLedgerChanged, passengerRepository, tripRepository, expenseRepository } from './repositories/appRepositories.js'
+import { getGuestLedgerSnapshot, notifyLedgerChanged, passengerRepository, tripRepository, expenseRepository, salaryDepositRepository } from './repositories/appRepositories.js'
 import { dashboardSettingsRepository, getGuestDashboardSettings } from './repositories/inMemoryDashboardSettingsRepository.js'
 import { leaveBlackoutRepository, getGuestLeaveBlackouts } from './repositories/leaveBlackoutRepository.js'
 import { shoppingRepository, getGuestShoppingItems, notifyShoppingChanged } from './repositories/shoppingRepository.js'
@@ -18,6 +18,8 @@ import { formatCalendarAmount } from './utils/calendarMoney.js'
 import { formatLocalDate, getCalendarDateRange, getMonthRange } from './domain/date.js'
 import { centsToDollars } from './domain/money.js'
 import { getWeeklyPaySummary } from './domain/weeklyPay.js'
+import { RATE_FIELDS, getDefaultDerivedRate, getStoredRateOverrides } from './domain/payslip/rates.js'
+import PayslipImport from './components/PayslipImport.vue'
 import { useShiftCalculator } from './composables/useShiftCalculator.js'
 import { applyPrepTime, PREP_MINUTES } from './domain/prepTime.js'
 import {
@@ -150,6 +152,55 @@ const blackoutReason = ref('')
 const blackoutSaving = ref(false)
 const authPanelOpen = ref(false)
 const accountSheetOpen = ref(false)
+const payslipImportOpen = ref(false)
+const payslipDeposits = ref(null)
+// 最新一張薪資單上的雇主財年累計（YTD）；目前只保存在這次開啟 App 期間
+const employerYtd = ref(null)
+
+watch(payslipImportOpen, async (open) => {
+  if (!open) return
+  payslipDeposits.value = null
+  if (!authToken.value) return
+  try { payslipDeposits.value = await salaryDepositRepository.list() } catch { payslipDeposits.value = [] }
+})
+
+async function applyPayslipImport({ rates, deposit, employerYtd: ytd }) {
+  const { baseRate: base, ppeAllowance: ppe, withholdingTaxRate: tax, ...derived } = rates
+  if (base !== undefined) baseRate.value = base
+  if (ppe !== undefined) ppeAllowance.value = ppe
+  if (tax !== undefined) withholdingTaxRate.value = tax
+  if (Object.keys(derived).length) payslipRates.value = { ...payslipRates.value, ...derived }
+  if (ytd) employerYtd.value = ytd
+  const appliedCount = Object.keys(rates).length
+  let depositSaved = false
+  if (deposit) {
+    try {
+      await salaryDepositRepository.save({ id: crypto.randomUUID(), ...deposit })
+      depositSaved = true
+    } catch (error) {
+      showToast(`費率已套用，但入帳未記錄：${error.message}`)
+      payslipImportOpen.value = false
+      return
+    }
+  }
+  payslipImportOpen.value = false
+  showToast(
+    [appliedCount ? `已套用 ${appliedCount} 項費率` : '', depositSaved ? '已記錄薪資入帳' : '']
+      .filter(Boolean)
+      .join('，') || '已完成',
+  )
+}
+
+function openManualRates() {
+  payslipImportOpen.value = false
+  activeTab.value = 'payroll'
+  advancedRatesOpen.value = ['rates']
+}
+
+function handlePageNavigate(target) {
+  if (target === 'payslip') payslipImportOpen.value = true
+  else activeTab.value = target
+}
 const expenseTrackerRef = ref(null)
 const tripTrackerRef = ref(null)
 
@@ -172,11 +223,12 @@ function openAccount() {
 const workPersistence = useWorkRecordsPersistence(records, (error) => showToast(error.message))
 let switchingAccount = false
 let rateWritePaused = false
-let guestRates = { baseRate: 26.74, ppeAllowance: 5, withholdingTaxRate: 0.12 }
+let guestRates = { baseRate: 26.74, ppeAllowance: 5, withholdingTaxRate: 0.12, payslipRates: {} }
 let guestCurrency = 'AUD'
 async function restoreGuestSettings() {
   rateWritePaused = true
   baseRate.value = guestRates.baseRate
+  payslipRates.value = { ...(guestRates.payslipRates || {}) }
   ppeAllowance.value = guestRates.ppeAllowance
   withholdingTaxRate.value = guestRates.withholdingTaxRate
   currentCurrency.value = guestCurrency
@@ -192,6 +244,7 @@ async function handleSignedIn() {
       baseRate: baseRate.value,
       ppeAllowance: ppeAllowance.value,
       withholdingTaxRate: withholdingTaxRate.value,
+      payslipRates: { ...payslipRates.value },
     }
     guestCurrency = currentCurrency.value
     const guestWork = workPersistence.getGuestRecords()
@@ -236,7 +289,7 @@ async function handleSignedIn() {
         }
         if (guestSettings.savingGoal && !memberSettings.savingGoal) await dashboardSettingsRepository.saveSavingGoal(guestSettings.savingGoal)
         if (guestSettings.workDayTarget && !memberSettings.workDayTarget) await dashboardSettingsRepository.saveWorkDayTarget(guestSettings.workDayTarget)
-        if (!Object.keys(existingRates).length) await apiRequest('/salary-rates', { method: 'PUT', body: guestRates })
+        if (!Object.keys(existingRates).length) await apiRequest('/salary-rates', { method: 'PUT', body: { ...guestRates.payslipRates, ...guestRates, payslipRates: undefined } })
       } catch (error) {
         if (error !== 'cancel') showToast(error.message || '匯入未完成，請檢查資料後重試')
       }
@@ -245,6 +298,7 @@ async function handleSignedIn() {
     leaveBlackouts.value = await leaveBlackoutRepository.list()
     const memberRates = await apiRequest('/salary-rates')
     baseRate.value = Number(memberRates.baseRate ?? 26.74)
+    payslipRates.value = getStoredRateOverrides(memberRates)
     ppeAllowance.value = Number(memberRates.ppeAllowance ?? 5)
     withholdingTaxRate.value = Number(memberRates.withholdingTaxRate ?? 0.12)
     currentCurrency.value = memberSettings.displayCurrency || 'AUD'
@@ -579,13 +633,36 @@ const updateRate = (targetRef, value, digits = 3) => {
 // 1. 將 baseRate 改為你目前最新的 Level 5 費率
 const baseRate = ref(26.74) 
 
-// 2. 將其他依賴 Base Rate 的費率改為 computed 動態計算
-const casualLoadingRate = computed(() => baseRate.value * 0.25)     // 臨時工加給 25%
-const shiftLoadingRate = computed(() => baseRate.value * 0.25)      // 輪班加給 25%
-const saturdayOrdLoadingRate = computed(() => baseRate.value * 0.5) // 週六加給 50%
-const timeHalfRate = computed(() => baseRate.value * 1.5)           // 加班 1.5 倍
-const doubleRate = computed(() => baseRate.value * 2.0)             // 加班 2 倍
-const sundayLoadingRate = computed(() => baseRate.value * 0.75)     // 週日加給 75%
+// 2. 加成費率：薪資單確認過的實際費率優先；沒出現在薪資單的項目沿用「基本時薪 × 預設倍率」
+//    （見 src/domain/payslip/rates.js）。舊班表的金額在儲存當下已固定，不會因此改變。
+const payslipRates = ref({})
+const derivedRate = (key) => computed(() => payslipRates.value[key] ?? getDefaultDerivedRate(key, baseRate.value))
+const casualLoadingRate = derivedRate('casualLoadingRate')
+const shiftLoadingRate = derivedRate('shiftLoadingRate')
+const saturdayOrdLoadingRate = derivedRate('saturdayOrdLoadingRate')
+const timeHalfRate = derivedRate('timeHalfRate')
+const doubleRate = derivedRate('doubleRate')
+const sundayLoadingRate = derivedRate('sundayLoadingRate')
+const rateSources = computed(() =>
+  Object.fromEntries(RATE_FIELDS.map(({ key }) => [key, payslipRates.value[key] === undefined ? 'default' : 'payslip'])),
+)
+const rateSourceLabel = (key) => (rateSources.value[key] === 'payslip' ? '來自薪資單' : '預設倍率（尚未出現在薪資單）')
+const hasPayslipRates = computed(() => Object.keys(payslipRates.value).length > 0)
+const resetPayslipRates = () => {
+  payslipRates.value = {}
+  showToast('已恢復預設倍率')
+}
+const currentRateValues = computed(() => ({
+  baseRate: baseRate.value,
+  casualLoadingRate: casualLoadingRate.value,
+  shiftLoadingRate: shiftLoadingRate.value,
+  saturdayOrdLoadingRate: saturdayOrdLoadingRate.value,
+  sundayLoadingRate: sundayLoadingRate.value,
+  timeHalfRate: timeHalfRate.value,
+  doubleRate: doubleRate.value,
+  ppeAllowance: ppeAllowance.value,
+  withholdingTaxRate: withholdingTaxRate.value,
+}))
 
 const ratePreviewItems = computed(() => [
   { label: '基本時薪', value: baseRate.value, unit: '／小時' },
@@ -604,8 +681,7 @@ const ppeAllowance = ref(5.0)
 const smokoMinutesPerBreak = ref(30)
 const smokoCountOverride = ref(null)
 
-// 備註：你這邊寫 withholdingTaxRate，但薪資單上的 12% 其實是退休金 (Superannuation)。
-// 如果這是用來算退休金的，數值 0.12 沒問題；若是算所得稅，澳洲稅金通常是看級距查表的喔！
+// 扣稅比率（PAYG withholding）。匯入薪資單後改用「本次 Tax ÷ Gross」的實際比例。
 const withholdingTaxRate = ref(0.12)
 watch(currentCurrency, async (currency) => {
   if (!authToken.value || rateWritePaused) return
@@ -613,12 +689,13 @@ watch(currentCurrency, async (currency) => {
     await apiRequest('/dashboard-settings/display-currency', { method: 'PUT', body: { currency } })
   } catch (error) { showToast(error.message) }
 })
-watch([baseRate, ppeAllowance, withholdingTaxRate], async () => {
+watch([baseRate, ppeAllowance, withholdingTaxRate, payslipRates], async () => {
   if (!authToken.value || rateWritePaused) return
   try {
     await apiRequest('/salary-rates', {
       method: 'PUT',
       body: {
+        ...payslipRates.value,
         baseRate: baseRate.value,
         ppeAllowance: ppeAllowance.value,
         withholdingTaxRate: withholdingTaxRate.value,
@@ -967,10 +1044,23 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       :work-records="records"
       :active="activeTab === 'dashboard'"
       :payroll-rates="{ ppeAllowance, withholdingTaxRate }"
+      :employer-ytd="employerYtd"
+      :payslip-imported="hasPayslipRates || employerYtd !== null"
       @mark-work-date="markDesignatedWorkDate"
       @navigate="activeTab = $event"
       @open-account="openAccount"
       @quick-action="handleQuickAction"
+      @import-payslip="payslipImportOpen = true"
+    />
+    <PayslipImport
+      v-model:show="payslipImportOpen"
+      :current-rates="currentRateValues"
+      :rate-sources="rateSources"
+      :is-member="Boolean(authToken)"
+      :existing-deposits="payslipDeposits"
+      :first-time="!hasPayslipRates"
+      @apply="applyPayslipImport"
+      @manual="openManualRates"
     />
     <van-popup v-model:show="accountSheetOpen" position="bottom" round safe-area-inset-bottom>
       <div class="account-sheet">
@@ -1185,6 +1275,14 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 
       <div class="section">
         <h2>基本費率 · {{ currentCurrency }}{{ currentCurrency === 'AUD' ? '' : ' 參考換算' }}</h2>
+        <button type="button" class="payslip-entry" @click="payslipImportOpen = true">
+          <span class="payslip-entry__icon" aria-hidden="true"><van-icon name="description-o" /></span>
+          <span class="payslip-entry__text">
+            <strong>從薪資單匯入費率</strong>
+            <small>上傳 PDF，自動讀出時薪、各項加給與扣稅比例</small>
+          </span>
+          <van-icon name="arrow" aria-hidden="true" />
+        </button>
         <p v-if="!hasCurrentExchangeRate" class="section-note">尚未取得 {{ currentCurrency }} 匯率，暫不顯示參考換算。</p>
         <div v-else class="rate-preview section-card">
           <div v-for="rate in ratePreviewItems" :key="rate.label" class="rate-preview__row">
@@ -1203,15 +1301,17 @@ const markDesignatedWorkDate = ({ date, marked }) => {
           <van-field :model-value="formatRate(ppeAllowance)" label="PPE 每週 AUD" type="number" input-align="right" @update:model-value="(val) => updateRate(ppeAllowance, val, 2)" />
         </van-cell-group>
         <van-collapse v-model="advancedRatesOpen" class="advanced-collapse">
-          <van-collapse-item name="rates" title="進階：各項加給費率（依基本時薪自動計算）">
+          <van-collapse-item name="rates" title="進階：各項加給費率">
             <van-cell-group :border="false">
-              <van-cell title="Casual 25% · AUD" :value="formatRate(casualLoadingRate)" />
-              <van-cell title="夜班 25% · AUD" :value="formatRate(shiftLoadingRate)" />
-              <van-cell title="Sat ORD 50% · AUD" :value="formatRate(saturdayOrdLoadingRate)" />
-              <van-cell title="T/Half · AUD" :value="formatRate(timeHalfRate)" />
-              <van-cell title="Double · AUD" :value="formatRate(doubleRate)" />
-              <van-cell title="星期日 75% · AUD" :value="formatRate(sundayLoadingRate)" />
+              <van-cell title="Casual 25% · AUD" :value="formatRate(casualLoadingRate)" :label="rateSourceLabel('casualLoadingRate')" />
+              <van-cell title="夜班 25% · AUD" :value="formatRate(shiftLoadingRate)" :label="rateSourceLabel('shiftLoadingRate')" />
+              <van-cell title="Sat ORD 50% · AUD" :value="formatRate(saturdayOrdLoadingRate)" :label="rateSourceLabel('saturdayOrdLoadingRate')" />
+              <van-cell title="T/Half · AUD" :value="formatRate(timeHalfRate)" :label="rateSourceLabel('timeHalfRate')" />
+              <van-cell title="Double · AUD" :value="formatRate(doubleRate)" :label="rateSourceLabel('doubleRate')" />
+              <van-cell title="星期日 75% · AUD" :value="formatRate(sundayLoadingRate)" :label="rateSourceLabel('sundayLoadingRate')" />
             </van-cell-group>
+            <p class="section-note section-note--compact">未出現在薪資單的項目依基本時薪 × 預設倍率計算；匯入含該項目的薪資單後會改用實際費率。</p>
+            <van-button v-if="hasPayslipRates" size="small" plain type="primary" class="rate-reset-btn" @click="resetPayslipRates">恢復預設倍率</van-button>
           </van-collapse-item>
         </van-collapse>
       </div>
@@ -1323,7 +1423,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 
     <TripTracker v-show="activeTab === 'trips'" ref="tripTrackerRef" />
     <ExpenseTracker v-show="activeTab === 'expenses'" ref="expenseTrackerRef" />
-    <MorePage v-show="activeTab === 'more'" @navigate="activeTab = $event" />
+    <MorePage v-show="activeTab === 'more'" @navigate="handlePageNavigate" />
     <div v-if="activeTab === 'shopping'" class="sub-page-back">
       <button type="button" @click="activeTab = 'more'"><van-icon name="arrow-left" /> 更多</button>
     </div>
@@ -1496,6 +1596,12 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 .term-glossary dd { margin: 0; color: #4b5b6b; font-size: 12px; line-height: 1.45; }
 .sub-page-back { max-width: 820px; margin: 8px auto -4px; padding: 0 max(var(--page-inset), env(safe-area-inset-left, 0px)); }
 .sub-page-back button { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 6px 10px; border: 1px solid var(--color-border); border-radius: 11px; background: #fff; color: #166dd1; font: inherit; font-size: 13px; font-weight: 700; }
+.payslip-entry { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; margin: 0 0 12px; padding: 12px 14px; border: 1px solid var(--color-primary); border-radius: var(--radius-large); background: var(--color-primary-soft); color: var(--color-heading); font: inherit; text-align: left; cursor: pointer; }
+.payslip-entry__icon { display: grid; flex: none; place-items: center; width: 40px; height: 40px; border-radius: 13px; background: var(--color-surface); color: var(--color-primary); font-size: 21px; }
+.payslip-entry__text { display: grid; flex: 1; gap: 2px; min-width: 0; }
+.payslip-entry__text strong { font-size: 15px; }
+.payslip-entry__text small { color: var(--color-muted); font-size: 12px; }
+.rate-reset-btn { margin-top: 8px; }
 .account-sheet { padding: 20px 20px 16px; }
 .account-sheet h2 { margin: 0; color: var(--color-heading); font-size: 18px; font-weight: 800; }
 .account-sheet__email { margin: 8px 0 0; color: var(--color-heading); font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }

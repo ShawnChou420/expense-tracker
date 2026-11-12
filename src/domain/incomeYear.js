@@ -31,9 +31,16 @@ export function getIncomeYear(dateText) {
  *   salaryDeposits?: Array<{ paidAt: string, grossCents?: number | null }> | null,
  *   today: string,
  *   limitCents?: number,
+ *   employerYtd?: { grossCents: number | null, payDate: string | null } | null,
  * }} input
  */
-export function getIncomeYearProgress({ records = [], salaryDeposits = null, today, limitCents }) {
+export function getIncomeYearProgress({
+  records = [],
+  salaryDeposits = null,
+  today,
+  limitCents,
+  employerYtd = null,
+}) {
   const incomeYear = getIncomeYear(today)
   if (!incomeYear) return null
   const limit = limitCents ?? getFirstBracketLimitCents(incomeYear.startYear)
@@ -51,8 +58,17 @@ export function getIncomeYearProgress({ records = [], salaryDeposits = null, tod
     depositsWithGross.length > 0
       ? sumCents(depositsWithGross.map((deposit) => /** @type {number} */ (deposit.grossCents)))
       : null
-  const basis = actualGrossCents !== null ? 'actual' : 'estimated'
-  const ytdGrossCents = actualGrossCents ?? estimatedGrossCents
+  // 薪資單上的雇主 YTD 最完整（含 App 之前的收入），只作為校準參考，不和入帳或班表相加
+  const payslipYtdCents =
+    employerYtd &&
+    Number.isSafeInteger(employerYtd.grossCents) &&
+    employerYtd.payDate &&
+    isDateInRange(employerYtd.payDate, toDate)
+      ? /** @type {number} */ (employerYtd.grossCents)
+      : null
+  const basis =
+    payslipYtdCents !== null ? 'payslip' : actualGrossCents !== null ? 'actual' : 'estimated'
+  const ytdGrossCents = payslipYtdCents ?? actualGrossCents ?? estimatedGrossCents
 
   const windowStart = parseLocalDate(today)
   windowStart?.setDate(windowStart.getDate() - 27)
@@ -82,6 +98,7 @@ export function getIncomeYearProgress({ records = [], salaryDeposits = null, tod
     ytdGrossCents,
     estimatedGrossCents,
     actualGrossCents,
+    payslipYtdCents,
     remainingCents,
     crossed: ytdGrossCents >= limit,
     percent: limit > 0 ? Math.min(100, (ytdGrossCents / limit) * 100) : 0,

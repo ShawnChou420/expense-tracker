@@ -4,6 +4,12 @@ const emit = defineEmits(['navigate'])
 
 const tools = [
   {
+    name: 'payslip',
+    icon: 'description-o',
+    title: '匯入薪資單',
+    description: '上傳 PDF，自動讀出時薪、加給、扣稅比例與年度累計。',
+  },
+  {
     name: 'shopping',
     icon: 'cart-o',
     title: '採買清單',

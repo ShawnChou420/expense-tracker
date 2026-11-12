@@ -8,6 +8,7 @@ const require = createRequire(join(process.cwd(), 'package.json'))
 const { chromium } = require('playwright')
 
 const outDir = process.env.OUT_DIR || 'ui-screenshots'
+const fixtureDir = process.env.FIXTURE_DIR || ''
 mkdirSync(outDir, { recursive: true })
 
 const targets = [
@@ -77,10 +78,63 @@ for (const target of targets) {
         checks.error = String(error.message || error).slice(0, 300)
       }
     }
+    if (target.name === 'after' && size.name === '390' && fixtureDir) {
+      checks.payslip = await payslipFlow(page)
+    }
     report.push({ target: target.name, width: size.width, horizontalOverflowPx: overflow, errors, checks })
     await context.close()
   }
 }
 await browser.close()
+
+// 薪資單匯入：合成的加密 PDF → 錯誤密碼 → 正確密碼 → 確認 → 套用費率
+async function payslipFlow(page) {
+  const result = {}
+  const shot = (name) => page.screenshot({ path: join(outDir, `payslip-${name}.png`) })
+  try {
+    await page.locator('.van-tabbar-item', { hasText: '首頁' }).click()
+    await page.evaluate(() => window.scrollTo(0, 0))
+    await page.getByRole('button', { name: /讓第一張薪資單/ }).click()
+    await page.waitForTimeout(600)
+    await shot('1-choose')
+    await page
+      .locator('input[type=file][accept*="pdf"]')
+      .setInputFiles(join(fixtureDir, 'sample-payslip-locked.pdf'))
+    await page.getByLabel('PDF 密碼').waitFor({ timeout: 15000 })
+    await shot('2-password')
+    await page.getByLabel('PDF 密碼').fill('wrong-password')
+    await page.getByRole('button', { name: '解鎖並讀取' }).click()
+    await page.getByText('密碼不正確').waitFor({ timeout: 15000 })
+    result.wrongPasswordRejected = true
+    await shot('3-wrong-password')
+    await page.getByLabel('PDF 密碼').fill('sample1234')
+    await page.getByRole('button', { name: '解鎖並讀取' }).click()
+    await page.getByText('確認薪資單內容').waitFor({ timeout: 15000 })
+    await page.waitForTimeout(400)
+    result.netPayShown = await page.getByText('$1,653.00').first().isVisible()
+    await shot('4-summary')
+    await page.getByRole('tab', { name: '工作費率' }).click()
+    await page.waitForTimeout(400)
+    await shot('5-rates')
+    result.saturdayKept = await page.getByText('保留目前設定，不會設為 0').first().isVisible()
+    await page.getByRole('button', { name: '確認並套用' }).click()
+    await page.waitForTimeout(1200)
+    await page.locator('.van-tabbar-item', { hasText: '薪資' }).click()
+    await page.getByText('進階：各項加給費率').click()
+    await page.waitForTimeout(600)
+    const rates = page.locator('.payslip-entry').locator('..')
+    await rates.screenshot({ path: join(outDir, 'payslip-6-applied-rates.png') })
+    result.ratesFromPayslip = await page.getByText('來自薪資單').count()
+    await page.locator('.van-tabbar-item', { hasText: '首頁' }).click()
+    await page.waitForTimeout(600)
+    await page.getByText('年度稅務追蹤').scrollIntoViewIfNeeded()
+    await shot('7-dashboard-tax')
+    result.taxBadge = await page.getByText('薪資單 YTD').first().isVisible()
+  } catch (error) {
+    result.error = String(error.message || error).slice(0, 400)
+    await shot('error').catch(() => {})
+  }
+  return result
+}
 writeFileSync(join(outDir, 'report.json'), JSON.stringify(report, null, 2))
 console.log(JSON.stringify(report, null, 2))

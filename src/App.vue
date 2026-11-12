@@ -18,6 +18,7 @@ import { formatLocalDate, getCalendarDateRange, getMonthRange } from './domain/d
 import { centsToDollars } from './domain/money.js'
 import { getWeeklyPaySummary } from './domain/weeklyPay.js'
 import { useShiftCalculator } from './composables/useShiftCalculator.js'
+import { applyPrepTime, PREP_MINUTES } from './domain/prepTime.js'
 import {
   formatHours,
   formatRate,
@@ -477,6 +478,7 @@ const bulkAddRecords = (startDate, endDate) => {
       shiftType: defaultShift.shiftType,
       isCleaningDay: defaultShift.isCleaningDay,
       remark: defaultShift.remark,
+      prepMinutes: currentPrepMinutes.value,
     })
     if (record) newRecords.push(record)
   }
@@ -612,24 +614,19 @@ const displayedSmokoCount = computed(() => {
 // --- 5. 新增：提早換裝 5 分鐘打卡開關 ---
 const enablePrepTime = ref(true) // 預設開啟
 
-// 修改原本的 effectiveStartTime，加入自動減去 5 分鐘的邏輯
-const effectiveStartTime = computed(() => {
-  if (shiftType.value === 'leave') return '00:00'
-  
-  let timeToCalculate = startTime.value
-  
-  if (enablePrepTime.value) {
-    let [hours, minutes] = startTime.value.split(':').map(Number)
-    minutes -= 5
-    if (minutes < 0) {
-      minutes += 60
-      hours = (hours - 1 + 24) % 24 // 處理跨日退回前一天的小時
+// 換裝時間計薪：預覽與儲存都使用同一個實際計薪起點（見 src/domain/prepTime.js）
+const currentPrepMinutes = computed(() => (enablePrepTime.value ? PREP_MINUTES : 0))
+const effectiveShiftStart = computed(() => {
+  if (shiftType.value === 'leave') return { workDate: workDate.value, startTime: '00:00' }
+  return (
+    applyPrepTime(workDate.value, startTime.value, currentPrepMinutes.value) ?? {
+      workDate: workDate.value,
+      startTime: startTime.value,
     }
-    timeToCalculate = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
-  }
-  
-  return timeToCalculate
+  )
 })
+const effectiveWorkDate = computed(() => effectiveShiftStart.value.workDate)
+const effectiveStartTime = computed(() => effectiveShiftStart.value.startTime)
 
 // 原本的 effectiveEndTime 維持不變
 const effectiveEndTime = computed(() => shiftType.value === 'leave' ? '00:00' : endTime.value)
@@ -642,7 +639,7 @@ const {
   saturdayRuleBreakdown,
   payBreakdown,
 } = useShiftCalculator({
-  workDate,
+  workDate: effectiveWorkDate,
   startTime: effectiveStartTime,
   endTime: effectiveEndTime,
   smokoMinutesPerBreak,
@@ -667,6 +664,7 @@ const buildWorkRecordFromInputs = ({
   isCleaningDay: inputIsCleaningDay = false,
   remark: inputRemark = '',
   designatedWork: inputDesignatedWork = false,
+  prepMinutes: inputPrepMinutes = 0,
 }) => {
   
   if (inputShiftType === 'leave') {
@@ -684,11 +682,17 @@ const buildWorkRecordFromInputs = ({
     record.isCleaningDay = false
     record.remark = inputRemark
     record.designatedWork = false
+    record.prepMinutes = 0
     return record
   }
 
-  const tempWorkDate = ref(inputWorkDate)
-  const tempStartTime = ref(inputStartTime)
+  // 薪資用套用換裝時間後的起點計算；紀錄仍保存使用者輸入的上班時間
+  const paidStart = applyPrepTime(inputWorkDate, inputStartTime, inputPrepMinutes) ?? {
+    workDate: inputWorkDate,
+    startTime: inputStartTime,
+  }
+  const tempWorkDate = ref(paidStart.workDate)
+  const tempStartTime = ref(paidStart.startTime)
   const tempEndTime = ref(inputEndTime)
   const tempSmokoCountOverride = ref(inputSmokoCountOverride)
 
@@ -729,6 +733,7 @@ const buildWorkRecordFromInputs = ({
   record.isCleaningDay = inputIsCleaningDay
   record.remark = inputRemark
   record.designatedWork = inputDesignatedWork
+  record.prepMinutes = paidStart.startTime === inputStartTime ? 0 : inputPrepMinutes
   return record
 }
 
@@ -763,6 +768,7 @@ const restoreSelectedDateShift = () => {
     shiftType: 'normal',
     isCleaningDay: defaults.isCleaningDay,
     remark: selectedRecord.value?.remark || '',
+    prepMinutes: currentPrepMinutes.value,
   })
   if (!record) return
   records.value = upsertRecordForDate(records.value, record)
@@ -800,7 +806,7 @@ const isEditingRecord = computed(() => Boolean(selectedRecord.value))
 // ======= 備份控制中心與 Excel 生成引擎 =======
 const exportTodayJson = () => {
   if (!workSummary.value || !payBreakdown.value) return
-  const todayRecord = buildWorkRecordFromInputs({ workDate: workDate.value, startTime: startTime.value, endTime: endTime.value, smokoCountOverride: smokoCountOverride.value, shiftType: shiftType.value, isCleaningDay: isCleaningDay.value, remark: remark.value, designatedWork: selectedRecord.value?.designatedWork === true })
+  const todayRecord = buildWorkRecordFromInputs({ workDate: workDate.value, startTime: startTime.value, endTime: endTime.value, smokoCountOverride: smokoCountOverride.value, shiftType: shiftType.value, isCleaningDay: isCleaningDay.value, remark: remark.value, designatedWork: selectedRecord.value?.designatedWork === true, prepMinutes: currentPrepMinutes.value })
   if (!todayRecord) return
   const blob = new Blob([JSON.stringify(todayRecord, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
@@ -821,11 +827,11 @@ const importJsonFiles = async (payload) => {
   for (const file of files) {
     const text = await file.text(); const jsonData = JSON.parse(text)
     if (Array.isArray(jsonData)) {
-      importedRecords.push(...jsonData.map((record) => normalizeWorkRecord(record)).map((record) => { return buildWorkRecordFromInputs({ id: record.id, workDate: record.workDate, startTime: record.startTime, endTime: record.endTime, shiftType: record.shiftType || 'normal', isCleaningDay: record.isCleaningDay || false, remark: record.remark || '', designatedWork: record.designatedWork }) ?? record }))
+      importedRecords.push(...jsonData.map((record) => normalizeWorkRecord(record)).map((record) => { return buildWorkRecordFromInputs({ id: record.id, workDate: record.workDate, startTime: record.startTime, endTime: record.endTime, shiftType: record.shiftType || 'normal', isCleaningDay: record.isCleaningDay || false, remark: record.remark || '', designatedWork: record.designatedWork, prepMinutes: Number(record.prepMinutes) || 0 }) ?? record }))
       continue
     }
     const normalizedRecord = normalizeWorkRecord(jsonData)
-    importedRecords.push(buildWorkRecordFromInputs({ id: normalizedRecord.id, workDate: normalizedRecord.workDate, startTime: normalizedRecord.startTime, endTime: normalizedRecord.endTime, shiftType: normalizedRecord.shiftType || 'normal', isCleaningDay: normalizedRecord.isCleaningDay || false, remark: normalizedRecord.remark || '', designatedWork: normalizedRecord.designatedWork }) ?? normalizedRecord)
+    importedRecords.push(buildWorkRecordFromInputs({ id: normalizedRecord.id, workDate: normalizedRecord.workDate, startTime: normalizedRecord.startTime, endTime: normalizedRecord.endTime, shiftType: normalizedRecord.shiftType || 'normal', isCleaningDay: normalizedRecord.isCleaningDay || false, remark: normalizedRecord.remark || '', designatedWork: normalizedRecord.designatedWork, prepMinutes: Number(normalizedRecord.prepMinutes) || 0 }) ?? normalizedRecord)
   }
   records.value = ensureUniqueRecordIds(importedRecords.sort((a, b) => { if (a.workDate === b.workDate) return b.startTime.localeCompare(a.startTime); return b.workDate.localeCompare(a.workDate) }))
 }
@@ -874,6 +880,7 @@ const addTodayRecordToList = () => {
     isCleaningDay: isCleaningDay.value,
     remark: remark.value,
     designatedWork: selectedRecord.value?.designatedWork === true,
+    prepMinutes: currentPrepMinutes.value,
   })
 
   if (!todayRecord) return

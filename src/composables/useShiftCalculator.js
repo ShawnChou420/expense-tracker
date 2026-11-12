@@ -251,6 +251,8 @@ export function useShiftCalculator({
     )
 
     return {
+      // 實際有計夜班加給的工時（用來判斷這一班是否用到夜班費率）
+      nightHours: isNightShift.value ? regularNightHours : 0,
       weekdayHours, saturdayHours, sunOrdHours, holidayHours,
       ordinaryHours, satOrdHours, timeHalfHours, doubleHours,
       basePay, casualPay, shiftPay, holidayPenaltyRate, holidayPenaltyPay,

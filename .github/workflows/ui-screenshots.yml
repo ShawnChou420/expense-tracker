@@ -8,6 +8,7 @@ on:
       - 'src/**'
       - 'index.html'
       - '.github/scripts/ui-screenshots.mjs'
+      - '.github/fixtures/**'
       - '.github/workflows/ui-screenshots.yml'
   workflow_dispatch:
 
@@ -64,6 +65,7 @@ jobs:
         run: node ../after/.github/scripts/ui-screenshots.mjs
         env:
           OUT_DIR: ${{ github.workspace }}/ui-screenshots
+          FIXTURE_DIR: ${{ github.workspace }}/after/.github/fixtures
       - uses: actions/upload-artifact@v4
         if: always()
         with:

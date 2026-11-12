@@ -88,6 +88,30 @@ describe('getIncomeYearProgress', () => {
     expect(progress?.estimatedGrossCents).toBe(100000)
   })
 
+  it('prefers the employer year-to-date gross from a payslip without adding it to deposits', () => {
+    const progress = getIncomeYearProgress({
+      records: [week('2026-11-02', 1000)],
+      salaryDeposits: [{ paidAt: '2026-11-12', grossCents: 164639 }],
+      employerYtd: { grossCents: 2590128, payDate: '2026-11-12' },
+      today: '2026-11-12',
+      limitCents: 4_500_000,
+    })
+    expect(progress?.basis).toBe('payslip')
+    expect(progress?.ytdGrossCents).toBe(2590128)
+    expect(progress?.actualGrossCents).toBe(164639)
+    expect(progress?.remainingCents).toBe(1909872)
+  })
+
+  it('ignores an employer year-to-date figure from a previous income year', () => {
+    const progress = getIncomeYearProgress({
+      records: [],
+      employerYtd: { grossCents: 4000000, payDate: '2026-06-25' },
+      today: '2026-11-12',
+      limitCents: 4_500_000,
+    })
+    expect(progress?.basis).toBe('estimated')
+  })
+
   it('projects when the limit will be crossed from the last four weeks', () => {
     const progress = getIncomeYearProgress({
       records: [

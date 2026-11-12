@@ -32,15 +32,17 @@ public class AuthController {
             .body(Map.of("detail", exception.getReason() == null ? "請檢查輸入資料" : exception.getReason()));
     }
 
-    private static void validate(Credentials credentials) {
+    static final int MIN_PASSWORD_LENGTH = 8;
+
+    static void validate(Credentials credentials) {
         if (credentials == null || credentials.email() == null ||
             credentials.email().length() > 100 ||
             !credentials.email().trim().matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "請輸入有效的 Email");
         }
-        if (credentials.password() == null || credentials.password().isBlank() || credentials.password().length() < 12 ||
+        if (credentials.password() == null || credentials.password().isBlank() || credentials.password().length() < MIN_PASSWORD_LENGTH ||
             credentials.password().length() > 128) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "密碼須為 12 至 128 個字元");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "密碼須為 8 至 128 個字元");
         }
     }
 

@@ -4,6 +4,18 @@ const emit = defineEmits(['navigate'])
 
 const tools = [
   {
+    name: 'work-setup',
+    icon: 'setting-o',
+    title: '工作設定',
+    description: '薪資費率、班別、每週工作日與 Smoko 規則。',
+  },
+  {
+    name: 'payslip',
+    icon: 'description-o',
+    title: '匯入薪資單',
+    description: '上傳 PDF，自動讀出時薪、加給、本期預扣比例與年度累計。',
+  },
+  {
     name: 'shopping',
     icon: 'cart-o',
     title: '採買清單',

@@ -119,7 +119,7 @@ try {
   await tab('薪資')
   await page.locator('.work-setup-card').scrollIntoViewIfNeeded()
   check('payRestored', await page.getByText(/\$30\.00／時/).isVisible())
-  check('scheduleRestored', await page.getByText(/晚班 23:50–06:00（隔天） · 週一二三四五/).isVisible())
+  check('scheduleRestored', await page.locator('.work-setup-card').getByText(/晚班 23:50–06:00（隔天） · 週一二三四五/).isVisible())
   await shot('payroll-after-relogin')
   await page.getByRole('button', { name: '填滿此月' }).click()
   await page.getByText('沒有需要新增的班表').waitFor()

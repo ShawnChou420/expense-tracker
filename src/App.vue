@@ -15,6 +15,8 @@ import { shoppingRepository, getGuestShoppingItems, notifyShoppingChanged } from
 import { removeLeaveBlackout, upsertLeaveBlackout } from './domain/leaveBlackouts.js'
 import { formatCalendarAmount } from './utils/calendarMoney.js'
 import { formatLocalDate, getCalendarDateRange, getMonthRange } from './domain/date.js'
+import { centsToDollars } from './domain/money.js'
+import { getWeeklyPaySummary } from './domain/weeklyPay.js'
 import { useShiftCalculator } from './composables/useShiftCalculator.js'
 import {
   formatHours,
@@ -772,19 +774,25 @@ const openSelectedDateEditor = () => {
   nextTick(() => workInputSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
 }
 
-// --- 本週總結加總 ---
-const weeklySubtotal = computed(() => {
-  return roundTo(records.value.reduce((sum, record) => sum + record.grossPay, 0), 2)
+// --- 本週總結加總：只計算目前選取日期所在的週（週一至週日）---
+const weeklyPaySummary = computed(() =>
+  getWeeklyPaySummary(records.value, workDate.value, {
+    ppeAllowance: ppeAllowance.value,
+    withholdingTaxRate: withholdingTaxRate.value,
+  }),
+)
+const weeklyRangeLabel = computed(() => {
+  const range = weeklyPaySummary.value.range
+  if (!range) return ''
+  const short = (date) => date.slice(5).replace('-', '/')
+  return `${short(range.start)}–${short(range.end)}`
 })
-
-const weeklyPPE = computed(() => {
-  const hasValidShift = records.value.some(r => r.shiftType !== 'leave')
-  return hasValidShift ? roundTo(ppeAllowance.value, 2) : 0
-})
-
-const weeklyTotal = computed(() => roundTo(weeklySubtotal.value + weeklyPPE.value, 2))
-const weeklyTaxEstimate = computed(() => roundTo(weeklyTotal.value * withholdingTaxRate.value, 2))
-const weeklyNetTotal = computed(() => roundTo(weeklyTotal.value - weeklyTaxEstimate.value, 2))
+const weeklySubtotal = computed(() => centsToDollars(weeklyPaySummary.value.shiftCents))
+const weeklyPPE = computed(() => centsToDollars(weeklyPaySummary.value.ppeCents))
+const weeklyTotal = computed(() => centsToDollars(weeklyPaySummary.value.grossCents))
+const weeklyTaxEstimate = computed(() => centsToDollars(weeklyPaySummary.value.taxCents))
+const weeklyNetTotal = computed(() => centsToDollars(weeklyPaySummary.value.netCents))
+const weeklyTaxRateLabel = computed(() => `${roundTo(withholdingTaxRate.value * 100, 2)}%`)
 const convertedNetTotal = computed(() => roundTo(weeklyNetTotal.value * currentExchangeRate.value, 2))
 
 const isEditingRecord = computed(() => Boolean(selectedRecord.value))
@@ -1190,7 +1198,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       </div>
 
       <div class="section">
-        <h2>本週結算預估</h2>
+        <h2>本週結算預估<span v-if="weeklyRangeLabel" class="weekly-summary__range">（{{ weeklyRangeLabel }}）</span></h2>
         <div class="section-card weekly-summary-card">
           <div class="weekly-summary__row">
             <span class="weekly-summary__label">本週班表薪資小計 ({{ currentCurrency }})</span>
@@ -1205,7 +1213,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
             <span class="weekly-summary__value" style="font-size: 14px; color: #646566; font-weight: 500;">{{ currencySymbol }}{{ formatDisplayMoney(weeklyTotal * currentExchangeRate) }}</span>
           </div>
           <div class="weekly-summary__row weekly-summary__row--tax" style="margin-bottom: 8px;">
-            <span class="weekly-summary__label">預估扣稅扣繳 12% ({{ currentCurrency }})</span>
+            <span class="weekly-summary__label">預估扣稅扣繳 {{ weeklyTaxRateLabel }} ({{ currentCurrency }})</span>
             <span class="weekly-summary__value weekly-summary__value--tax">-{{ currencySymbol }}{{ formatDisplayMoney(weeklyTaxEstimate * currentExchangeRate) }}</span>
           </div>
           <div class="weekly-summary__total weekly-summary__total--net">
@@ -1412,6 +1420,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 .weekly-summary-card { padding: 14px 16px 16px; }
 .weekly-summary__row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; padding: 6px 0; }
 .weekly-summary__label { font-size: 13px; color: #4b5563; }
+.weekly-summary__range { margin-left: 4px; font-size: 14px; font-weight: 500; color: #646566; }
 .weekly-summary__value { margin-left: auto; font-size: 14px; font-weight: 600; color: #1f2937; overflow-wrap: anywhere; }
 .weekly-summary__row--tax { padding-top: 12px; margin-top: 8px; border-top: 1px dashed #e5e7eb; }
 .weekly-summary__value--tax { color: #b45309; font-weight: bold; }

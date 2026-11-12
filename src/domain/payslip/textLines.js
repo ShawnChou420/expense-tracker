@@ -29,6 +29,7 @@ export function buildTextLines(items) {
     .map((row) => {
       const sorted = row.pieces.sort((a, b) => a.x - b.x)
       let line = ''
+      /** @type {number | null} */
       let lastEnd = null
       for (const piece of sorted) {
         if (lastEnd !== null) {

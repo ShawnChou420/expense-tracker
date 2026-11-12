@@ -92,17 +92,18 @@ export function getRateProposals(payslip, currentRates, currentSources = {}) {
   const rows = RATE_FIELDS.map((field) => {
     const matches = payslip.items.filter((item) => item.type === field.type)
     const item = matches[0]
+    /** @type {number | null} */
     let proposed = null
     if (item && field.mode === 'FLAT') {
       proposed = item.amountCents === null ? null : item.amountCents / 100
     } else if (item && item.rate !== null) {
-      proposed = item.rate
+      let value = item.rate
       if (base && field.mode === 'ADDITIONAL' && item.calcMethod === 'FULL_RATE') {
-        proposed = item.rate - base
+        value = item.rate - base
       } else if (base && field.mode === 'FULL' && item.calcMethod === 'ADDITIONAL') {
-        proposed = item.rate + base
+        value = item.rate + base
       }
-      proposed = round4(proposed)
+      proposed = round4(value)
     }
     const current = Number(currentRates[field.key])
     const conflicting =

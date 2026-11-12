@@ -39,6 +39,7 @@ export function classifyPayItem(rawName, context = {}) {
   let type = isBase ? 'BASE_PAY' : rule?.type || 'UNKNOWN'
 
   let calcMethod = hours === null ? 'FLAT' : 'HOURLY'
+  /** @type {number | null} */
   let ratio = null
   if (hours !== null && rate !== null && baseRate) {
     ratio = Math.round((rate / baseRate) * 1000) / 1000

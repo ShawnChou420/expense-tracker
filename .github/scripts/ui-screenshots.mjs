@@ -92,8 +92,9 @@ async function payslipFlow(page) {
   const result = {}
   const shot = (name) => page.screenshot({ path: join(outDir, `payslip-${name}.png`) })
   try {
-    await page.locator('.van-tabbar-item', { hasText: '首頁' }).click()
-    await page.evaluate(() => window.scrollTo(0, 0))
+    // 重新載入，關掉前面檢查留下的彈窗（訪客資料會清空）
+    await page.reload({ waitUntil: 'networkidle' })
+    await page.waitForTimeout(600)
     await page.getByRole('button', { name: /讓第一張薪資單/ }).click()
     await page.waitForTimeout(600)
     await shot('1-choose')

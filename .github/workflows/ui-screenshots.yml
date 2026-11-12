@@ -23,6 +23,8 @@ jobs:
     # Playwright 1.55 的 Chromium 尚未支援 ubuntu-latest（26.04），固定用 24.04
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      contents: write # 把截圖推到 ui-screenshots/pr-<編號> 分支，方便在 PR 中直接顯示
     steps:
       - name: Checkout PR
         uses: actions/checkout@v6
@@ -68,3 +70,19 @@ jobs:
           name: ui-screenshots
           path: ui-screenshots
           retention-days: 14
+      - name: Publish screenshots branch
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        working-directory: ui-screenshots
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          TOKEN: ${{ github.token }}
+        run: |
+          # 只放圖片的獨立分支；vercel.json 讓 Vercel 不部署這個分支
+          echo '{ "git": { "deploymentEnabled": false } }' > vercel.json
+          git init -q -b screenshots
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "UI screenshots for PR #${PR_NUMBER} (${HEAD_SHA})"
+          git push -q -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/ui-screenshots/pr-${PR_NUMBER}"

@@ -59,7 +59,7 @@ const weekdayOf = (date) => {
               <template v-if="record.shiftType === 'leave'">休假</template>
               <template v-else>
                 <strong>{{ record.shiftName || '班表' }}</strong>
-                <small>{{ record.startTime }}–{{ record.endTime }}{{ record.endTime <= record.startTime ? ' 隔天' : '' }} · {{ formatHours(record.paidMinutes) }}</small>
+                <small><span class="nowrap">{{ record.startTime }}–{{ record.endTime }}{{ record.endTime <= record.startTime ? ' 隔天' : '' }}</span> · <span class="nowrap">{{ formatHours(record.paidMinutes) }}</span></small>
               </template>
             </span>
             <span class="fill__pay">{{ record.shiftType === 'leave' ? '' : formatAud(Math.round(record.grossPay * 100)) }}</span>
@@ -212,6 +212,9 @@ const weekdayOf = (date) => {
 .fill__shift small {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+.nowrap {
+  white-space: nowrap;
 }
 .fill__pay {
   color: var(--color-income);

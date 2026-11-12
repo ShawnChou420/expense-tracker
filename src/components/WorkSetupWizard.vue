@@ -594,7 +594,7 @@ function goTo(step) {
               <span class="preview__shift">
                 <template v-if="day.name">
                   <strong>{{ day.name }}</strong>
-                  <small>{{ day.time }} · {{ formatHours(day.paidMinutes) }}</small>
+                  <small><span class="nowrap">{{ day.time }}</span> · <span class="nowrap">{{ formatHours(day.paidMinutes) }}</span></small>
                 </template>
                 <template v-else>{{ day.leave ? '休假' : '休息' }}</template>
               </span>
@@ -710,20 +710,22 @@ function goTo(step) {
 }
 .setup__step-dot {
   display: grid;
+  flex: none;
   place-items: center;
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: currentColor;
-  font-size: 11px;
-}
-.setup__step-dot,
-.setup__step-dot .van-icon {
-  color: #fff;
-}
-.setup__steps li:not(.is-active):not(.is-done) .setup__step-dot {
   background: var(--color-border);
   color: var(--color-muted);
+  font-size: 11px;
+}
+.setup__steps .is-active .setup__step-dot {
+  background: var(--color-primary);
+  color: #fff;
+}
+.setup__steps .is-done .setup__step-dot {
+  background: var(--color-income);
+  color: #fff;
 }
 .setup__body {
   padding: 12px 20px 24px;
@@ -1028,7 +1030,7 @@ function goTo(step) {
 }
 .template__times {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: end;
   gap: 8px;
   margin-top: 10px;
@@ -1040,6 +1042,7 @@ function goTo(step) {
 .template__times label {
   display: grid;
   gap: 4px;
+  min-width: 0;
 }
 .template__times small {
   color: var(--color-muted);
@@ -1049,13 +1052,14 @@ function goTo(step) {
   width: 100%;
   min-height: 42px;
   box-sizing: border-box;
-  padding: 0 10px;
+  min-width: 0;
+  padding: 0 6px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
   background: var(--color-surface);
   color: var(--color-heading);
   font: inherit;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -1266,6 +1270,9 @@ function goTo(step) {
   color: var(--color-muted);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+.nowrap {
+  white-space: nowrap;
 }
 .preview__pay {
   color: var(--color-income);

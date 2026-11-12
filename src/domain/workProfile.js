@@ -245,6 +245,7 @@ export function getSmokoInputs(/** @type {SmokoSetting} */ smoko) {
  * @param {WorkProfile} profile
  */
 export function getEffectiveRates(values, profile) {
+  const FULL_RATE_KEYS = RATE_FIELDS.filter((field) => field.mode === 'FULL').map((field) => field.key)
   const confirmed = new Set(profile.confirmedRateKeys)
   /** @type {Record<string, number>} */
   const rates = {}
@@ -258,7 +259,9 @@ export function getEffectiveRates(values, profile) {
       rates[key] = getDefaultDerivedRate(key, values.baseRate) ?? 0
       status[key] = 'PROVISIONAL'
     } else {
-      rates[key] = 0
+      // 加班（T/Half、Double）是「完整時薪」：未確認時仍以已確認的基本時薪計，只是不含加成；
+      // 其他加給是額外加多少，未確認就不計入。兩者都會標示「未含」。
+      rates[key] = FULL_RATE_KEYS.includes(key) && Number.isFinite(values.baseRate) ? values.baseRate : 0
       status[key] = 'EXCLUDED'
     }
   }
@@ -269,8 +272,8 @@ const LOADING_USAGE = [
   { key: 'casualLoadingRate', hours: 'ordinaryHours', label: 'Casual 加給' },
   { key: 'shiftLoadingRate', hours: 'nightHours', label: '夜班加給' },
   { key: 'saturdayOrdLoadingRate', hours: 'satOrdHours', label: '週六加給' },
-  { key: 'timeHalfRate', hours: 'timeHalfHours', label: '加班 1.5 倍' },
-  { key: 'doubleRate', hours: 'doubleHours', label: '加班 2 倍' },
+  { key: 'timeHalfRate', hours: 'timeHalfHours', label: '加班 1.5 倍加成' },
+  { key: 'doubleRate', hours: 'doubleHours', label: '加班 2 倍加成' },
   { key: 'sundayLoadingRate', hours: 'sunOrdHours', label: '週日加給' },
 ]
 

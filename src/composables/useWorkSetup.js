@@ -113,7 +113,8 @@ export function useWorkSetup({ baseRate, ppeAllowance, withholdingTaxRate, confi
   }
 
   async function saveSchedule(draft) {
-    await saveProfile({ ...draft, scheduleStatus: SCHEDULE_STATUS.CONFIGURED })
+    // draft 只有班別、排班、休息日與 Smoko；薪資設定沿用目前的
+    await saveProfile({ ...profile.value, ...draft, scheduleStatus: SCHEDULE_STATUS.CONFIGURED })
   }
 
   async function removePayslip(id) {

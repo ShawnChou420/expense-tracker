@@ -177,6 +177,15 @@ describe('unconfirmed rates', () => {
     expect(flags.excluded).toEqual(['週六加給'])
   })
 
+  it('keeps the confirmed base rate for unconfirmed overtime instead of paying 0', () => {
+    const profile = { ...createEmptyWorkProfile(), confirmedRateKeys: ['baseRate'] }
+    const { rates, status } = getEffectiveRates({ baseRate: 30 }, profile)
+    expect(rates.timeHalfRate).toBe(30)
+    expect(rates.doubleRate).toBe(30)
+    expect(status.timeHalfRate).toBe('EXCLUDED')
+    expect(getRateFlags({ timeHalfHours: 6 }, status).excluded).toEqual(['加班 1.5 倍加成'])
+  })
+
   it('uses default multipliers only after the user accepts provisional rates', () => {
     const profile = {
       ...createEmptyWorkProfile(),

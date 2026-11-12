@@ -78,6 +78,8 @@ for (const target of targets) {
       } catch (error) {
         checks.error = String(error.message || error).slice(0, 400)
         await shot('error').catch(() => {})
+        // 關掉卡住的彈窗，繼續截其他畫面
+        await page.reload({ waitUntil: 'networkidle' })
       }
     }
 

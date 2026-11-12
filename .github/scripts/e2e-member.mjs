@@ -12,7 +12,7 @@ const url = 'http://127.0.0.1:4174'
 mkdirSync(outDir, { recursive: true })
 
 const email = `e2e-${Date.now()}@example.com`
-const password = 'e2e-password-123456'
+const password = 'e2e-pass' // 8 個字元：最短允許長度
 const result = {}
 
 const browser = await chromium.launch()

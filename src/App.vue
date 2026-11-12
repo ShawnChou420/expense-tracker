@@ -755,10 +755,14 @@ const rateSources = computed(() =>
     RATE_FIELDS.map(({ key }) => [key, workSetup.profile.value.confirmedRateKeys.includes(key) ? 'payslip' : 'default']),
   ),
 )
-const rateSourceLabel = (key) =>
-  ({ CONFIRMED: '已確認', PROVISIONAL: '暫估：基本時薪 × 預設倍率（未確認）', EXCLUDED: '未確認，目前不計入試算' })[
-    rateStatus.value[key]
-  ] ?? ''
+// 加班 1.5／2 倍是完整時薪：未確認時先以基本時薪計，其他加給未確認就不計入
+const isOvertimeKey = (key) => key === 'timeHalfRate' || key === 'doubleRate'
+const hidesRate = (key) => rateStatus.value[key] === 'EXCLUDED' && !isOvertimeKey(key)
+const rateSourceLabel = (key) => {
+  const status = rateStatus.value[key]
+  if (status === 'EXCLUDED') return isOvertimeKey(key) ? '未確認：先以基本時薪計，未含加成' : '未確認，目前不計入試算'
+  return { CONFIRMED: '已確認', PROVISIONAL: '暫估：基本時薪 × 預設倍率（未確認）' }[status] ?? ''
+}
 const currentRateValues = computed(() => ({
   baseRate: baseRate.value,
   casualLoadingRate: casualLoadingRate.value,
@@ -1514,15 +1518,15 @@ const markDesignatedWorkDate = ({ date, marked }) => {
               <span>
                 {{ rate.label }}
                 <small v-if="rateStatus[rate.key] === 'PROVISIONAL'" class="rate-preview__status rate-preview__status--provisional">暫估</small>
-                <small v-else-if="rateStatus[rate.key] === 'EXCLUDED'" class="rate-preview__status rate-preview__status--excluded">未計入</small>
+                <small v-else-if="rateStatus[rate.key] === 'EXCLUDED'" class="rate-preview__status rate-preview__status--excluded">{{ isOvertimeKey(rate.key) ? '未含加成' : '未計入' }}</small>
               </span>
-              <strong>{{ rateStatus[rate.key] === 'EXCLUDED' ? '—' : `${currencySymbol}${formatDisplayMoney(rate.value * currentExchangeRate)} ${currentCurrency}${rate.unit}` }}</strong>
+              <strong>{{ hidesRate(rate.key) ? '—' : `${currencySymbol}${formatDisplayMoney(rate.value * currentExchangeRate)} ${currentCurrency}${rate.unit}` }}</strong>
             </div>
           </div>
           <van-collapse v-model="advancedRatesOpen" class="advanced-collapse">
             <van-collapse-item name="rates" title="費率來源與說明">
               <van-cell-group :border="false">
-                <van-cell v-for="rate in ratePreviewItems.slice(1, 7)" :key="rate.key" :title="rate.label" :value="rateStatus[rate.key] === 'EXCLUDED' ? '—' : formatRate(rate.value)" :label="rateSourceLabel(rate.key)" />
+                <van-cell v-for="rate in ratePreviewItems.slice(1, 7)" :key="rate.key" :title="rate.label" :value="hidesRate(rate.key) ? '—' : formatRate(rate.value)" :label="rateSourceLabel(rate.key)" />
               </van-cell-group>
               <p class="section-note section-note--compact">只有薪資單或你手動確認過的費率算「已確認」。未確認的加給，需要你在工作設定中同意暫估才會計入；上傳含該項目的薪資單後會自動校正。已存的班表金額不會因費率變更而改變。</p>
               <van-button size="small" plain type="primary" class="rate-reset-btn" @click="openWorkSetup(1, { manual: true })">手動修改費率</van-button>

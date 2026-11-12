@@ -1,0 +1,63 @@
+# 前端 PR 自動截圖：同時建置 PR 與 base 分支，在多種手機寬度下截取首頁，
+# 並檢查是否有水平溢出。結果上傳為 artifact「ui-screenshots」，不影響部署。
+name: UI Screenshots
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'index.html'
+      - '.github/scripts/ui-screenshots.mjs'
+      - '.github/workflows/ui-screenshots.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ui-screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v6
+        with:
+          path: after
+      - name: Checkout base
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.base_ref || 'main' }}
+          path: before
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build both versions
+        run: |
+          for dir in before after; do
+            (cd "$dir" && npm ci --no-audit --no-fund && npm run build)
+          done
+      - name: Start preview servers
+        run: |
+          (cd before && npx vite preview --port 4173 --strictPort > ../before.log 2>&1 &)
+          (cd after && npx vite preview --port 4174 --strictPort > ../after.log 2>&1 &)
+          npx --yes wait-on@8.0.3 -t 60000 http://127.0.0.1:4173 http://127.0.0.1:4174
+      - name: Install Playwright
+        run: |
+          mkdir -p shot && cd shot && npm init -y > /dev/null
+          npm i --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Take screenshots
+        working-directory: shot
+        run: node ../after/.github/scripts/ui-screenshots.mjs
+        env:
+          OUT_DIR: ${{ github.workspace }}/ui-screenshots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-screenshots
+          path: ui-screenshots
+          retention-days: 14

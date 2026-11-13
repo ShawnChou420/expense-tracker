@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { Capacitor } from '@capacitor/core'
 
+/** @type {import('vue').Ref<string | null>} */
 export const authToken = ref(null)
 export const authEmail = ref('')
 export const isAuthenticated = computed(() => Boolean(authToken.value))

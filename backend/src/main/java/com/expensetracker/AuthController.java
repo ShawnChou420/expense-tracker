@@ -40,6 +40,25 @@ public class AuthController {
     }
 
     static final int MIN_PASSWORD_LENGTH = 8;
+    static final String PASSWORD_RULE = "密碼須為 8 至 128 個字元，且包含大寫字母、小寫字母、數字與特殊符號";
+
+    /** 註冊／重設／修改密碼的規則：8–128 字元，大寫、小寫、數字、特殊符號（非英數、非空白）各至少一個。 */
+    static boolean meetsPasswordPolicy(String password) {
+        return password != null
+            && password.length() >= MIN_PASSWORD_LENGTH && password.length() <= 128
+            && password.chars().anyMatch(c -> c >= 'A' && c <= 'Z')
+            && password.chars().anyMatch(c -> c >= 'a' && c <= 'z')
+            && password.chars().anyMatch(c -> c >= '0' && c <= '9')
+            && password.chars().anyMatch(c -> !(c >= 'A' && c <= 'Z') && !(c >= 'a' && c <= 'z')
+                && !(c >= '0' && c <= '9') && !Character.isWhitespace(c));
+    }
+
+    /** 設定新密碼時（註冊、忘記密碼重設）：先做基本檢查，再套用完整密碼規則。登入不套用，舊帳號才能繼續登入。 */
+    static void validateNewPassword(Credentials credentials) {
+        validate(credentials);
+        if (!meetsPasswordPolicy(credentials.password()))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, PASSWORD_RULE);
+    }
 
     static void validate(Credentials credentials) {
         if (credentials == null || credentials.email() == null ||
@@ -82,7 +101,7 @@ public class AuthController {
     @PostMapping("/register")
     TokenResponse register(@RequestBody RegisterRequest request) {
         if (request == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "請輸入有效的 Email");
-        validate(new Credentials(request.email(), request.password()));
+        validateNewPassword(new Credentials(request.email(), request.password()));
         boolean verify = codes.enabled();
         if (verify) {
             codes.verify(AuthService.normalizeEmail(request.email()), EmailCodeService.Purpose.REGISTER, request.code());
@@ -103,7 +122,7 @@ public class AuthController {
     TokenResponse resetPassword(@RequestBody RegisterRequest request) {
         if (request == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "請輸入有效的 Email");
         if (!codes.enabled()) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Email 驗證尚未啟用");
-        validate(new Credentials(request.email(), request.password()));
+        validateNewPassword(new Credentials(request.email(), request.password()));
         codes.verify(AuthService.normalizeEmail(request.email()), EmailCodeService.Purpose.RESET_PASSWORD, request.code());
         var result = auth.resetPassword(request.email(), request.password());
         return new TokenResponse(result.token(), result.expiresAt(), result.email());

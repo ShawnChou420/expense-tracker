@@ -3,9 +3,10 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { showToast } from 'vant'
 import { getAuthConfig, isApiAvailable, requestEmailCode, signIn } from '../services/authSession.js'
+import { passwordChecks, passwordPolicyError } from '../domain/password.js'
 
 const props = defineProps({ show: Boolean })
-const emit = defineEmits(['update:show', 'signed-in'])
+const emit = defineEmits(['update:show', 'signed-in', 'open-privacy'])
 
 const MIN_PASSWORD = 8
 const mode = ref('login') // login | register | forgot
@@ -38,10 +39,9 @@ const title = computed(() => titles[mode.value])
 const needsCode = computed(() => mode.value === 'forgot' || (mode.value === 'register' && emailVerification.value))
 const trimmedEmail = computed(() => email.value.trim())
 const emailValid = computed(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail.value))
-const passwordHint = computed(() => {
-  if (mode.value === 'login' || !password.value) return ''
-  return password.value.length < MIN_PASSWORD ? `還差 ${MIN_PASSWORD - password.value.length} 個字元` : '密碼長度可以'
-})
+// 註冊與重設密碼時逐項顯示密碼規則；登入不套用，舊帳號才能繼續登入
+const checks = computed(() => passwordChecks(password.value))
+const showChecks = computed(() => mode.value !== 'login' && Boolean(password.value))
 
 function switchMode(next) {
   mode.value = next
@@ -68,8 +68,8 @@ function fail(message, action = null) {
 
 async function sendCode() {
   if (!emailValid.value) return fail('請輸入有效的 Email')
-  if (mode.value === 'register' && password.value.length < MIN_PASSWORD) {
-    return fail(`密碼至少需要 ${MIN_PASSWORD} 個字元`)
+  if (mode.value === 'register' && passwordPolicyError(password.value)) {
+    return fail(passwordPolicyError(password.value))
   }
   busy.value = true
   error.value = ''
@@ -93,8 +93,8 @@ async function submit() {
   errorAction.value = null
   if (needsCode.value && step.value === 'form') return sendCode()
   if (!emailValid.value) return fail('請輸入有效的 Email')
-  if (mode.value !== 'login' && password.value.length < MIN_PASSWORD) {
-    return fail(`密碼至少需要 ${MIN_PASSWORD} 個字元`)
+  if (mode.value !== 'login' && passwordPolicyError(password.value)) {
+    return fail(passwordPolicyError(password.value))
   }
   if (needsCode.value && !/^\d{6}$/.test(code.value.trim())) return fail('請輸入信中的 6 位數驗證碼')
   busy.value = true
@@ -181,12 +181,16 @@ const primaryLabel = computed(() => {
           label="密碼"
           :type="showPassword ? 'text' : 'password'"
           :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"
-          :placeholder="mode === 'login' ? '' : `至少 ${MIN_PASSWORD} 個字元`"
+          :placeholder="mode === 'login' ? '' : `至少 ${MIN_PASSWORD} 個字元，含大小寫、數字、符號`"
           :right-icon="showPassword ? 'eye-o' : 'closed-eye'"
           :disabled="busy"
           @click-right-icon="showPassword = !showPassword"
         />
-        <small v-if="passwordHint" :class="{ 'auth-sheet__ok': password.length >= MIN_PASSWORD }">{{ passwordHint }}</small>
+        <ul v-if="showChecks" class="auth-sheet__rules" aria-label="密碼規則">
+          <li v-for="check in checks" :key="check.key" :class="{ 'is-ok': check.ok }">
+            <van-icon :name="check.ok ? 'success' : 'circle'" />{{ check.label }}
+          </li>
+        </ul>
       </template>
 
       <template v-else>
@@ -215,11 +219,15 @@ const primaryLabel = computed(() => {
           label="新密碼"
           :type="showPassword ? 'text' : 'password'"
           autocomplete="new-password"
-          :placeholder="`至少 ${MIN_PASSWORD} 個字元`"
+          :placeholder="`至少 ${MIN_PASSWORD} 個字元，含大小寫、數字、符號`"
           :right-icon="showPassword ? 'eye-o' : 'closed-eye'"
           @click-right-icon="showPassword = !showPassword"
         />
-        <small v-if="mode === 'forgot' && passwordHint" :class="{ 'auth-sheet__ok': password.length >= MIN_PASSWORD }">{{ passwordHint }}</small>
+        <ul v-if="mode === 'forgot' && showChecks" class="auth-sheet__rules" aria-label="密碼規則">
+          <li v-for="check in checks" :key="check.key" :class="{ 'is-ok': check.ok }">
+            <van-icon :name="check.ok ? 'success' : 'circle'" />{{ check.label }}
+          </li>
+        </ul>
         <button type="button" class="auth-sheet__resend" :disabled="resendIn > 0 || busy" @click="sendCode">
           {{ resendIn > 0 ? `${resendIn} 秒後可重新寄送` : '重新寄送驗證碼' }}
         </button>
@@ -233,6 +241,10 @@ const primaryLabel = computed(() => {
         </span>
       </div>
 
+      <p v-if="mode === 'register'" class="auth-sheet__consent">
+        註冊即表示你已閱讀
+        <button type="button" class="auth-sheet__link" @click="emit('open-privacy')">隱私說明</button>
+      </p>
       <van-button block type="primary" native-type="submit" :disabled="!isApiAvailable || busy" :loading="busy">
         {{ primaryLabel }}
       </van-button>
@@ -286,9 +298,6 @@ const primaryLabel = computed(() => {
   color: #657588;
   font-size: 13px;
   line-height: 1.5;
-}
-.auth-sheet .auth-sheet__ok {
-  color: var(--color-income, #16845b);
 }
 .auth-sheet .auth-sheet__warning {
   color: #b45309;
@@ -388,6 +397,16 @@ const primaryLabel = computed(() => {
   justify-content: space-between;
   gap: 8px;
 }
+.auth-sheet__consent {
+  margin: 0;
+  color: #657588;
+  font-size: 13px;
+}
+.auth-sheet__consent .auth-sheet__link {
+  min-height: 32px;
+  padding: 0 2px;
+  font-size: 13px;
+}
 .auth-sheet__switch,
 .auth-sheet__link {
   min-height: 40px;
@@ -400,5 +419,23 @@ const primaryLabel = computed(() => {
 }
 .auth-sheet__link {
   color: #657588;
+}
+.auth-sheet__rules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: #8a97a6;
+  font-size: 13px;
+}
+.auth-sheet__rules li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.auth-sheet__rules li.is-ok {
+  color: #15803d;
 }
 </style>

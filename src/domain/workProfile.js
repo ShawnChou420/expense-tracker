@@ -23,25 +23,34 @@ export const LOADING_KEYS = RATE_FIELDS.filter(
 ).map((field) => field.key)
 
 /**
- * Baiada 實務參考時間，只是建議值：使用者可修改，也不套用到其他雇主。
- * 時間由使用者提供。
+ * Baiada 實務參考時間，只是建議值：使用者可修改，也不套用到其他雇主。時間由使用者提供。
+ * 清潔日不固定（通常週二、偶爾週三、不是每週都有），所以不放進每週排班；
+ * 改成每個班別記一組「清潔日時間」，當天在班表上標記清潔日時自動換成這組時間。
  */
 export const SHIFT_PRESETS = [
-  { preset: 'BAIADA_EARLY', name: '早班', startTime: '06:00', endTime: '15:00', isCleaning: false },
+  {
+    preset: 'BAIADA_EARLY',
+    name: '早班',
+    startTime: '06:00',
+    endTime: '15:00',
+    cleaningStartTime: '06:00',
+    cleaningEndTime: '12:15',
+  },
   {
     preset: 'BAIADA_MIDDLE',
     name: '中班',
     startTime: '15:00',
     endTime: '23:50',
-    isCleaning: false,
+    cleaningStartTime: '12:00',
+    cleaningEndTime: '17:45',
   },
-  { preset: 'BAIADA_NIGHT', name: '晚班', startTime: '23:50', endTime: '06:00', isCleaning: false },
   {
-    preset: 'BAIADA_CLEANING',
-    name: '晚班清潔班',
-    startTime: '17:45',
-    endTime: '00:00',
-    isCleaning: true,
+    preset: 'BAIADA_NIGHT',
+    name: '晚班',
+    startTime: '23:50',
+    endTime: '06:00',
+    cleaningStartTime: '17:45',
+    cleaningEndTime: '00:00',
   },
 ]
 
@@ -56,7 +65,7 @@ export const WEEKDAYS = [
 ]
 
 /**
- * @typedef {{ id: string, name: string, startTime: string, endTime: string, isCleaning: boolean, preset: string | null }} ShiftTemplate
+ * @typedef {{ id: string, name: string, startTime: string, endTime: string, cleaningStartTime: string | null, cleaningEndTime: string | null, preset: string | null }} ShiftTemplate
  * @typedef {{ mode: string, count: number, minutes: number, paid: boolean }} SmokoSetting
  * @typedef {{
  *   version: number,
@@ -97,6 +106,18 @@ export function createEmptyWorkProfile() {
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
 
+/** 清潔日時間：上下班都有效且不相同才保留，否則兩個都是 null */
+function validCleaningTimes(/** @type {any} */ item) {
+  const ok =
+    TIME.test(item?.cleaningStartTime) &&
+    TIME.test(item?.cleaningEndTime) &&
+    item.cleaningStartTime !== item.cleaningEndTime
+  return {
+    cleaningStartTime: ok ? item.cleaningStartTime : null,
+    cleaningEndTime: ok ? item.cleaningEndTime : null,
+  }
+}
+
 /**
  * 把儲存的資料（可能是舊版或不完整）整理成完整的工作設定，不信任任何欄位。
  * @param {any} raw
@@ -116,7 +137,8 @@ export function normalizeWorkProfile(raw) {
           name: String(item.name || '班別').slice(0, 20),
           startTime: item.startTime,
           endTime: item.endTime,
-          isCleaning: item.isCleaning === true,
+          // 清潔日時間要成對；舊資料的「清潔班」開關（isCleaning）不再沿用，避免整週都變清潔班
+          ...validCleaningTimes(item),
           preset: typeof item.preset === 'string' ? item.preset : null,
         }))
     : []
@@ -222,11 +244,12 @@ export function getPlannedShift(profile, dateText) {
         }
       : null
   }
+  // 每週排班一律是一般班；清潔日由使用者在當天標記
   return {
     shiftType: 'normal',
     startTime: template.startTime,
     endTime: template.endTime,
-    isCleaningDay: template.isCleaning,
+    isCleaningDay: false,
     name: template.name,
   }
 }
@@ -335,9 +358,85 @@ export function createShiftTemplate(
     name: source.name || '自訂班別',
     startTime: source.startTime || '09:00',
     endTime: source.endTime || '17:00',
-    isCleaning: source.isCleaning === true,
+    ...validCleaningTimes(source),
     preset: source.preset || null,
   }
+}
+
+const toMinutes = (/** @type {string} */ time) => {
+  const [h, m] = time.split(':').map(Number)
+  return h * 60 + m
+}
+const toTime = (/** @type {number} */ minutes) => {
+  const wrapped = ((minutes % 1440) + 1440) % 1440
+  return `${String(Math.floor(wrapped / 60)).padStart(2, '0')}:${String(wrapped % 60).padStart(2, '0')}`
+}
+
+/**
+ * 時間提早／延後幾分鐘，跨午夜自動繞回（23:50 +15 → 00:05）。
+ * @param {string} time HH:mm
+ * @param {number} deltaMinutes 負數＝提早
+ */
+export function shiftTimeBy(time, deltaMinutes) {
+  if (!TIME.test(time)) return time
+  return toTime(toMinutes(time) + deltaMinutes)
+}
+
+/**
+ * 某個班別在一般日或清潔日的上下班時間；沒設清潔日時間就沿用一般時間。
+ * @param {ShiftTemplate} template
+ * @param {boolean} cleaning
+ */
+export function getTemplateTimes(template, cleaning) {
+  if (cleaning && template.cleaningStartTime && template.cleaningEndTime) {
+    return { startTime: template.cleaningStartTime, endTime: template.cleaningEndTime }
+  }
+  return { startTime: template.startTime, endTime: template.endTime }
+}
+
+/** 兩個時間在 24 小時環上的差距（分鐘） */
+const circularGap = (/** @type {string} */ a, /** @type {string} */ b) => {
+  const diff = Math.abs(toMinutes(a) - toMinutes(b))
+  return Math.min(diff, 1440 - diff)
+}
+
+/**
+ * 依目前的上班時間判斷是哪個班別（允許主管公告的 ±60 分鐘內變動）。
+ * 先比對指定的一般日／清潔日時間，找不到再比對另一組；都不像就回傳 null。
+ * @param {ShiftTemplate[]} templates
+ * @param {string} startTime
+ * @param {boolean} cleaning
+ */
+export function matchShiftTemplate(templates, startTime, cleaning) {
+  if (!TIME.test(startTime)) return null
+  for (const useCleaning of [cleaning, !cleaning]) {
+    /** @type {ShiftTemplate | null} */
+    let best = null
+    let bestGap = 61
+    for (const template of templates) {
+      if (useCleaning && !template.cleaningStartTime) continue
+      const gap = circularGap(getTemplateTimes(template, useCleaning).startTime, startTime)
+      if (gap < bestGap) {
+        best = template
+        bestGap = gap
+      }
+    }
+    if (best) return best
+  }
+  return null
+}
+
+/**
+ * 切換這天是否為清潔日：認得出班別時，換成該班別另一組時間；
+ * 認不出（自訂時間）就保留目前時間，只改標記。
+ * @param {ShiftTemplate[]} templates
+ * @param {{ startTime: string, endTime: string }} current
+ * @param {boolean} toCleaning
+ */
+export function toggleCleaningTimes(templates, current, toCleaning) {
+  const template = matchShiftTemplate(templates, current.startTime, !toCleaning)
+  if (!template) return { ...current, template: null }
+  return { ...getTemplateTimes(template, toCleaning), template }
 }
 
 /** 下班時間早於或等於上班時間＝跨午夜 */

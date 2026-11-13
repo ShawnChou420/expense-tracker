@@ -7,6 +7,9 @@ import ShoppingList from './components/ShoppingList.vue'
 import DashboardPage from './components/DashboardPage.vue'
 import MorePage from './components/MorePage.vue'
 import AuthPanel from './components/AuthPanel.vue'
+import AccountPage from './components/AccountPage.vue'
+import PrivacyPage from './components/PrivacyPage.vue'
+import { accountRepository } from './repositories/accountRepository.js'
 import { authEmail, authToken, signOut, clearSession, apiRequest, restoreSavedSession } from './services/authSession.js'
 import { useWorkRecordsPersistence } from './composables/useWorkRecordsPersistence.js'
 import { getGuestLedgerSnapshot, notifyLedgerChanged, passengerRepository, tripRepository, expenseRepository, salaryDepositRepository } from './repositories/appRepositories.js'
@@ -35,6 +38,10 @@ import {
   inferLegacyWorkProfile,
   planFill,
   summarizeFillPreview,
+  getTemplateTimes,
+  matchShiftTemplate,
+  shiftTimeBy,
+  toggleCleaningTimes,
 } from './domain/workProfile.js'
 import { useShiftCalculator } from './composables/useShiftCalculator.js'
 import { applyPrepTime, PREP_MINUTES } from './domain/prepTime.js'
@@ -171,6 +178,7 @@ const blackoutReason = ref('')
 const blackoutSaving = ref(false)
 const authPanelOpen = ref(false)
 const accountSheetOpen = ref(false)
+const accountNickname = ref('')
 const payslipImportOpen = ref(false)
 const payslipDeposits = ref(null)
 
@@ -212,8 +220,10 @@ function openPayslipFromSetup() {
   payslipImportOpen.value = true
 }
 
+const privacyOpen = ref(false)
 function handlePageNavigate(target) {
   if (target === 'payslip') payslipImportOpen.value = true
+  else if (target === 'privacy') privacyOpen.value = true
   else if (target === 'work-setup') openWorkSetup()
   else activeTab.value = target
 }
@@ -362,6 +372,12 @@ async function handleSignedIn() {
     currentCurrency.value = memberSettings.displayCurrency || 'AUD'
     notifyLedgerChanged()
     notifyShoppingChanged()
+    // 顯示名稱只用於帳號卡，讀取失敗不影響登入
+    const signedInToken = authToken.value
+    accountRepository.get().then((account) => {
+      // 回應前已登出或換帳號就丟棄，避免名稱殘留在訪客畫面
+      if (authToken.value === signedInToken) accountNickname.value = account.nickname || ''
+    }).catch(() => {})
   } catch (error) {
     showToast(error.message)
     clearSession()
@@ -377,6 +393,7 @@ async function handleSignedIn() {
 
 async function handleSignOut() {
   switchingAccount = true
+  accountSheetOpen.value = false
   try {
     try { await workPersistence.flush() } catch { /* Errors are shown by the persistence handler. */ }
     try { await signOut() } catch { showToast('登出請求失敗；本機登入狀態已清除') }
@@ -390,7 +407,19 @@ async function handleSignOut() {
   }
 }
 
+// 帳號已在後端刪除（含所有 session）：不呼叫登出 API，直接清除登入狀態，
+// 由下方 watch 還原訪客資料並關閉會員頁
+function handleAccountDeleted() {
+  clearSession()
+  showToast('帳號與所有私人資料已刪除')
+}
+
 watch(authToken, async (token) => {
+  if (!token) {
+    // 登出或登入失效時關閉會員頁並清掉顯示名稱，避免殘留會員畫面
+    accountSheetOpen.value = false
+    accountNickname.value = ''
+  }
   if (!token && !switchingAccount) {
     await workPersistence.restoreGuestRecords()
     leaveBlackouts.value = getGuestLeaveBlackouts()
@@ -739,6 +768,34 @@ const withholdingTaxRate = ref(0)
 const confirmedLoadingRates = ref({})
 
 const workSetup = useWorkSetup({ baseRate, ppeAllowance, withholdingTaxRate, confirmedLoadingRates })
+
+// --- 當天快速調整：選班別、標記清潔日、提早／延後 ---
+// 主管每天在群組公布當天時間（常差 5–30 分鐘），清潔日也是前一天才知道，所以都在當天調整，不改每週排班
+const dayShiftTemplates = computed(() => workSetup.profile.value.shiftTemplates)
+const selectedShiftTemplate = computed(() =>
+  matchShiftTemplate(dayShiftTemplates.value, startTime.value, isCleaningDay.value),
+)
+const applyShiftTemplate = (template) => {
+  const times = getTemplateTimes(template, isCleaningDay.value)
+  startTime.value = times.startTime
+  endTime.value = times.endTime
+}
+const setCleaningDay = (value) => {
+  const next = toggleCleaningTimes(dayShiftTemplates.value, { startTime: startTime.value, endTime: endTime.value }, value)
+  isCleaningDay.value = value
+  startTime.value = next.startTime
+  endTime.value = next.endTime
+}
+const nudgeTime = (field, minutes) => {
+  const target = field === 'start' ? startTime : endTime
+  if (!isValidTime(target.value)) return
+  target.value = shiftTimeBy(target.value, minutes)
+}
+const TIME_NUDGES = [-15, -5, 5, 15]
+// 剛完成或修改工作設定時，選取中的日期若還沒有班表也還沒填時間，直接帶入排班時間
+watch(() => workSetup.profile.value, () => {
+  if (!selectedRecord.value && !startTime.value && !endTime.value) loadSelectedDate()
+})
 const setupState = workSetup.setup
 
 // 計算用的加成費率：已確認＝實際值；未確認＝使用者同意暫估時用預設倍率，否則不計入（並在畫面標示）。
@@ -1124,6 +1181,24 @@ const addTodayRecordToList = () => {
   showToast(wasExisting ? '已更新當天班表' : '成功加入排班列表')
 }
 
+// 日曆卡片上一鍵標記／取消清潔日：換成該班別的清潔日時間並直接儲存（主管前一天公布時用）
+const selectedDayIsCleaning = computed(() => selectedRecord.value?.isCleaningDay === true)
+const canToggleCleaning = computed(() =>
+  selectedRecord.value ? selectedRecord.value.shiftType !== 'leave' : Boolean(selectedPlannedShift.value),
+)
+const toggleSelectedDateCleaning = () => {
+  loadSelectedDate()
+  if (shiftType.value === 'leave' || !isValidTime(startTime.value) || !isValidTime(endTime.value)) {
+    showToast('這天沒有班，無法標記清潔日')
+    return
+  }
+  setCleaningDay(!isCleaningDay.value)
+  addTodayRecordToList()
+  const saved = selectedRecord.value
+  if (!saved) return
+  showToast(saved.isCleaningDay ? `已設為清潔日 ${saved.startTime}–${saved.endTime}` : `已取消清潔日 ${saved.startTime}–${saved.endTime}`)
+}
+
 const editRecord = (record) => {
   workDate.value = record.workDate
   loadSelectedDate()
@@ -1160,18 +1235,19 @@ const markDesignatedWorkDate = ({ date, marked }) => {
           <van-icon :name="authToken ? 'user-circle-o' : 'user-o'" />
         </span>
         <div class="account-card__identity">
-          <strong>{{ authToken ? '已登入' : activeTab === 'shopping' ? '訪客模式' : '訪客試算' }}</strong>
+          <strong>{{ authToken ? accountNickname || '已登入' : activeTab === 'shopping' ? '訪客模式' : '訪客試算' }}</strong>
           <span :title="authToken ? authEmail : undefined">
             {{ authToken ? authEmail : activeTab === 'shopping' ? '清單不會永久保存，重整後消失' : '登入後可保存私人紀錄' }}
           </span>
         </div>
         <van-button size="small" plain type="primary" class="account-card__action"
-          @click="authToken ? handleSignOut() : authPanelOpen = true">
-          {{ authToken ? '登出' : '登入／註冊' }}
+          @click="openAccount">
+          {{ authToken ? '帳號' : '登入／註冊' }}
         </van-button>
       </div>
     </div>
-    <AuthPanel v-model:show="authPanelOpen" @signed-in="handleSignedIn" />
+    <AuthPanel v-model:show="authPanelOpen" @signed-in="handleSignedIn" @open-privacy="privacyOpen = true" />
+    <PrivacyPage v-model:show="privacyOpen" />
     <DashboardPage
       v-show="activeTab === 'dashboard'"
       :work-records="records"
@@ -1227,14 +1303,14 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       @confirm="confirmFillPreview"
       @edit-setup="fillPreviewOpen = false; openWorkSetup(2)"
     />
-    <van-popup v-model:show="accountSheetOpen" position="bottom" round safe-area-inset-bottom>
-      <div class="account-sheet">
-        <h2>帳號</h2>
-        <p class="account-sheet__email">{{ authEmail }}</p>
-        <p class="account-sheet__note">已登入，紀錄會保存在你的會員帳號。</p>
-        <van-button class="app-page__action" block plain type="danger" @click="accountSheetOpen = false; handleSignOut()">登出</van-button>
-      </div>
-    </van-popup>
+    <AccountPage
+      v-if="authToken"
+      v-model:show="accountSheetOpen"
+      @sign-out="handleSignOut"
+      @account-deleted="handleAccountDeleted"
+      @open-privacy="privacyOpen = true"
+      @profile-updated="accountNickname = $event.nickname || ''"
+    />
     <section v-show="activeTab === 'payroll'" class="payroll-page app-page">
     <div class="header app-page__header">
       <div class="header-main">
@@ -1328,6 +1404,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
         <div class="calendar-day-actions__buttons">
           <van-button v-if="selectedRecord?.shiftType === 'leave'" block plain type="primary" @click="restoreSelectedDateShift">{{ selectedDateHasDefaultShift ? `恢復${selectedPlannedShift.name}` : '設定出勤時間' }}</van-button>
           <van-button v-else block plain type="danger" @click="markSelectedDateAsLeave">設為休假</van-button>
+          <van-button v-if="canToggleCleaning" block plain type="success" @click="toggleSelectedDateCleaning">{{ selectedDayIsCleaning ? '取消清潔日' : '設為清潔日' }}</van-button>
           <van-button block plain type="default" @click="openSelectedDateEditor">{{ selectedRecord ? '編輯當天工時' : '新增當天班表' }}</van-button>
           <van-button block plain type="warning" class="calendar-day-actions__blackout-button" @click="openBlackoutEditor">
             {{ selectedLeaveBlackout ? '編輯禁休公告' : '新增禁休' }}
@@ -1370,11 +1447,31 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       <van-cell-group inset>
         <van-cell title="當前選取日期" :value="`${workDate} (${getDayOfWeek(workDate)})`" size="large" title-style="font-weight: bold;" />
         <van-cell v-if="selectedHolidayLabel" title="🔥 澳洲國定假日" :value="selectedHolidayLabel" value-class="holiday-text" />
-        <van-cell v-if="isCleaningDay" title="班別" value="清潔班" value-class="cleaning-text" />
-        <van-cell v-else-if="!selectedRecord && selectedPlannedShift" title="依你的排班" :value="`${selectedPlannedShift.name} ${selectedPlannedShift.startTime}–${selectedPlannedShift.endTime}`" />
+        <van-cell v-if="!selectedRecord && selectedPlannedShift" title="依你的排班" :value="`${selectedPlannedShift.name} ${selectedPlannedShift.startTime}–${selectedPlannedShift.endTime}`" />
         
 <!-- 找到這個區塊，在 endTime 下方加入開關 -->
         <template v-if="shiftType !== 'leave'">
+          <div v-if="dayShiftTemplates.length" class="day-shift">
+            <span class="day-shift__label">班別</span>
+            <div class="day-shift__chips" role="group" aria-label="套用班別時間">
+              <button
+                v-for="template in dayShiftTemplates"
+                :key="template.id"
+                type="button"
+                class="day-shift__chip"
+                :class="{ 'is-selected': selectedShiftTemplate?.id === template.id }"
+                @click="applyShiftTemplate(template)"
+              >
+                {{ template.name }}
+                <small>{{ getTemplateTimes(template, isCleaningDay).startTime }}</small>
+              </button>
+            </div>
+          </div>
+          <van-cell center title="清潔日" :label="isCleaningDay ? '已換成清潔日時間' : '這天有清潔再打開'">
+            <template #right-icon>
+              <van-switch :model-value="isCleaningDay" size="20px" @update:model-value="setCleaningDay" />
+            </template>
+          </van-cell>
           <van-field
             v-model="startTime"
             is-link
@@ -1384,6 +1481,11 @@ const markDesignatedWorkDate = ({ date, marked }) => {
             input-align="right"
             @click="showStartTimePicker = true"
           />
+          <div v-if="startTime" class="time-nudge" role="group" aria-label="上班時間微調">
+            <button v-for="step in TIME_NUDGES" :key="step" type="button" @click="nudgeTime('start', step)">
+              {{ step > 0 ? `+${step} 分` : `−${-step} 分` }}
+            </button>
+          </div>
           <van-field
             v-model="endTime"
             is-link
@@ -1393,6 +1495,11 @@ const markDesignatedWorkDate = ({ date, marked }) => {
             input-align="right"
             @click="showEndTimePicker = true"
           />
+          <div v-if="endTime" class="time-nudge" role="group" aria-label="下班時間微調">
+            <button v-for="step in TIME_NUDGES" :key="step" type="button" @click="nudgeTime('end', step)">
+              {{ step > 0 ? `+${step} 分` : `−${-step} 分` }}
+            </button>
+          </div>
           <!-- 這裡放入新的換裝時間開關 -->
           <van-cell center title="提早 5 分鐘換裝打卡">
             <template #right-icon>
@@ -1401,7 +1508,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
           </van-cell>
           <van-cell center title="這天 Smoko 次數" :label="smokoCountOverride === null ? '依工作設定' : '只套用這一天，不改工作設定'">
             <template #right-icon>
-              <van-stepper :model-value="displayedSmokoCount" :min="0" :max="3" integer theme="round" button-size="28px" disable-input @change="(val) => { smokoCountOverride = Number(val) }" />
+              <van-stepper :model-value="displayedSmokoCount" :min="0" :max="3" integer theme="round" button-size="28px" disable-input @change="(val) => { if (Number(val) !== displayedSmokoCount) smokoCountOverride = Number(val) }" />
             </template>
           </van-cell>
         </template>
@@ -1425,10 +1532,10 @@ const markDesignatedWorkDate = ({ date, marked }) => {
     </div>
 
     <van-popup v-model:show="showStartTimePicker" position="bottom" round>
-      <van-time-picker title="預估上班時間" :filter="filterTime" @confirm="onStartTimeConfirm" @cancel="showStartTimePicker = false" />
+      <van-time-picker title="預估上班時間" :model-value="(startTime || '06:00').split(':')" :filter="filterTime" @confirm="onStartTimeConfirm" @cancel="showStartTimePicker = false" />
     </van-popup>
     <van-popup v-model:show="showEndTimePicker" position="bottom" round>
-      <van-time-picker title="預估下班時間" :filter="filterTime" @confirm="onEndTimeConfirm" @cancel="showEndTimePicker = false" />
+      <van-time-picker title="預估下班時間" :model-value="(endTime || '15:00').split(':')" :filter="filterTime" @confirm="onEndTimeConfirm" @cancel="showEndTimePicker = false" />
     </van-popup>
 
     <div class="workflow">
@@ -1753,6 +1860,17 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 }
 :deep(.holiday-day .van-calendar__top-info) { color: #ef4444 !important; font-weight: 700; }
 :deep(.cleaning-day .van-calendar__top-info) { color: #f97316 !important; font-weight: 700; }
+/* 當天快速調整：班別快選與時間微調 */
+.day-shift { display: grid; gap: 8px; padding: 12px 16px 4px; }
+.day-shift__label { color: #646566; font-size: 14px; }
+.day-shift__chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.day-shift__chip { display: grid; justify-items: center; min-width: 72px; min-height: 44px; padding: 4px 12px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-surface); color: var(--color-heading); font: inherit; font-size: 14px; font-weight: 700; }
+.day-shift__chip small { color: var(--color-muted); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.day-shift__chip.is-selected { border-color: #166dd1; background: #eaf3fe; color: #166dd1; }
+.day-shift__chip.is-selected small { color: #166dd1; }
+.time-nudge { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 0 16px 10px; }
+.time-nudge button { min-height: 36px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-surface); color: #166dd1; font: inherit; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.time-nudge button:active { background: #eaf3fe; }
 :deep(.leave-blackout-day) { box-shadow: inset 0 0 0 2px #f7b060; border-radius: 8px; }
 :deep(.leave-blackout-day .van-calendar__top-info) { color: #a95a0c !important; font-weight: 800; }
 :deep(.van-calendar__bottom-info) {
@@ -1864,10 +1982,6 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 .payslip-entry__text strong { font-size: 15px; }
 .payslip-entry__text small { color: var(--color-muted); font-size: 12px; }
 .rate-reset-btn { margin-top: 8px; }
-.account-sheet { padding: 20px 20px 16px; }
-.account-sheet h2 { margin: 0; color: var(--color-heading); font-size: 18px; font-weight: 800; }
-.account-sheet__email { margin: 8px 0 0; color: var(--color-heading); font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
-.account-sheet__note { margin: 4px 0 16px; color: var(--color-muted); font-size: 13px; }
 .weekly-summary__range { margin-left: 4px; font-size: 14px; font-weight: 500; color: #646566; }
 .weekly-summary__value { margin-left: auto; font-size: 14px; font-weight: 600; color: #1f2937; overflow-wrap: anywhere; }
 .weekly-summary__row--tax { padding-top: 12px; margin-top: 8px; border-top: 1px dashed #e5e7eb; }

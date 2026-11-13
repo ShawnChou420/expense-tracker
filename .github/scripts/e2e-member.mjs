@@ -12,7 +12,7 @@ const url = 'http://127.0.0.1:4174'
 mkdirSync(outDir, { recursive: true })
 
 const email = `e2e-${Date.now()}@example.com`
-let password = 'e2e-pass' // 8 個字元：最短允許長度
+let password = 'E2e-pas1' // 8 個字元：最短長度，含大小寫、數字、符號
 const mailApi = process.env.MAILPIT_URL || 'http://127.0.0.1:8025'
 
 // 從測試用的 Mailpit 取得最新一封寄給 email 的驗證碼
@@ -162,7 +162,7 @@ try {
   await clearMailbox()
   await page.getByRole('button', { name: '寄送驗證碼' }).click()
   await page.getByText('驗證碼已寄到').waitFor({ timeout: 15000 })
-  password = 'new-pass-9'
+  password = 'New-pass9'
   await page.getByLabel('6 位數驗證碼').fill(await latestCode('你的重設密碼驗證碼'))
   await page.locator('.auth-sheet input[type=password]').fill(password)
   await shot('reset-password')

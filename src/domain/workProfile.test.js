@@ -10,6 +10,10 @@ import {
   describeWeekPlan,
   getEffectiveRates,
   getPlannedShift,
+  getTemplateTimes,
+  matchShiftTemplate,
+  shiftTimeBy,
+  toggleCleaningTimes,
   getRateFlags,
   getSetupCompleteness,
   getSmokoInputs,
@@ -24,14 +28,14 @@ const baiada = (/** @type {string} */ preset) =>
 
 function configuredProfile() {
   const night = createShiftTemplate('night', baiada('BAIADA_NIGHT'))
-  const cleaning = createShiftTemplate('clean', baiada('BAIADA_CLEANING'))
+  const early = createShiftTemplate('early', baiada('BAIADA_EARLY'))
   return {
     ...createEmptyWorkProfile(),
     payStatus: PAY_STATUS.PAYSLIP_CONFIRMED,
     scheduleStatus: SCHEDULE_STATUS.CONFIGURED,
-    shiftTemplates: [night, cleaning],
-    // 週一、三、四、五晚班；週二清潔班；週六、日休息
-    weekPlan: { 0: null, 1: 'night', 2: 'clean', 3: 'night', 4: 'night', 5: 'night', 6: null },
+    shiftTemplates: [night, early],
+    // 週一、三、四、五晚班；週二早班；週六、日休息
+    weekPlan: { 0: null, 1: 'night', 2: 'early', 3: 'night', 4: 'night', 5: 'night', 6: null },
   }
 }
 
@@ -83,14 +87,15 @@ describe('shift templates', () => {
       '早班 06:00-15:00',
       '中班 15:00-23:50',
       '晚班 23:50-06:00',
-      '晚班清潔班 17:45-00:00',
     ])
+    expect(
+      SHIFT_PRESETS.map((item) => `${item.name} ${item.cleaningStartTime}-${item.cleaningEndTime}`),
+    ).toEqual(['早班 06:00-12:15', '中班 12:00-17:45', '晚班 17:45-00:00'])
     expect(crossesMidnight(baiada('BAIADA_EARLY'))).toBe(false)
     expect(crossesMidnight(baiada('BAIADA_NIGHT'))).toBe(true)
-    expect(crossesMidnight(baiada('BAIADA_CLEANING'))).toBe(true)
   })
 
-  it('follows the weekly plan, including a cleaning shift on the chosen weekday', () => {
+  it('follows the weekly plan and never marks a weekday as a cleaning day by itself', () => {
     const profile = configuredProfile()
     expect(getPlannedShift(profile, '2026-11-09')).toMatchObject({
       startTime: '23:50',
@@ -98,8 +103,9 @@ describe('shift templates', () => {
       isCleaningDay: false,
     })
     expect(getPlannedShift(profile, '2026-11-10')).toMatchObject({
-      name: '晚班清潔班',
-      isCleaningDay: true,
+      name: '早班',
+      startTime: '06:00',
+      isCleaningDay: false,
     })
     expect(getPlannedShift(profile, '2026-11-14')).toBeNull()
   })
@@ -250,10 +256,78 @@ describe('fill preview summary', () => {
   it('describes the week plan and smoko rule in plain words', () => {
     expect(describeWeekPlan(configuredProfile())).toEqual([
       '晚班 23:50–06:00（隔天） · 週一三四五',
-      '晚班清潔班 17:45–00:00（隔天） · 週二',
+      '早班 06:00–15:00 · 週二',
     ])
     expect(describeSmoko({ mode: 'FIXED', count: 1, minutes: 20, paid: true })).toBe(
       '每班固定 1 次 · 每次 20 分鐘 · 照常計薪',
     )
+  })
+})
+
+describe('當天快速調整', () => {
+  const templates = SHIFT_PRESETS.map((preset, index) => createShiftTemplate(`t${index}`, preset))
+  const [early, middle, night] = templates
+
+  it('提早／延後時間，跨午夜自動繞回', () => {
+    expect(shiftTimeBy('06:00', -15)).toBe('05:45')
+    expect(shiftTimeBy('23:50', 15)).toBe('00:05')
+    expect(shiftTimeBy('00:05', -10)).toBe('23:55')
+    expect(shiftTimeBy('', 5)).toBe('')
+  })
+
+  it('清潔日用班別自己的清潔時間，沒設就沿用一般時間', () => {
+    expect(getTemplateTimes(middle, true)).toEqual({ startTime: '12:00', endTime: '17:45' })
+    const custom = createShiftTemplate('c', { name: '自訂', startTime: '08:00', endTime: '16:00' })
+    expect(getTemplateTimes(custom, true)).toEqual({ startTime: '08:00', endTime: '16:00' })
+  })
+
+  it('主管調整過的時間仍認得是哪個班別', () => {
+    expect(matchShiftTemplate(templates, '23:30', false)).toBe(night) // 晚班提早 20 分
+    expect(matchShiftTemplate(templates, '00:10', false)).toBe(night) // 跨午夜延後
+    expect(matchShiftTemplate(templates, '06:20', false)).toBe(early)
+    expect(matchShiftTemplate(templates, '17:45', true)).toBe(night) // 清潔日晚班
+    expect(matchShiftTemplate(templates, '10:00', false)).toBeNull()
+  })
+
+  it('打開清潔日只換這一天的時間，關掉換回一般時間', () => {
+    expect(
+      toggleCleaningTimes(templates, { startTime: '23:50', endTime: '06:00' }, true),
+    ).toMatchObject({
+      startTime: '17:45',
+      endTime: '00:00',
+      template: night,
+    })
+    expect(
+      toggleCleaningTimes(templates, { startTime: '12:00', endTime: '17:45' }, false),
+    ).toMatchObject({
+      startTime: '15:00',
+      endTime: '23:50',
+      template: middle,
+    })
+    // 認不出的自訂時間：保留原本時間
+    expect(
+      toggleCleaningTimes(templates, { startTime: '10:00', endTime: '14:00' }, true),
+    ).toMatchObject({
+      startTime: '10:00',
+      endTime: '14:00',
+      template: null,
+    })
+  })
+
+  it('舊資料的「清潔班」開關不再讓整週變清潔班，清潔時間要成對才保留', () => {
+    const profile = normalizeWorkProfile({
+      scheduleStatus: 'CONFIGURED',
+      shiftTemplates: [
+        { id: 'a', name: '晚班清潔班', startTime: '17:45', endTime: '00:00', isCleaning: true },
+        { id: 'b', name: '早班', startTime: '06:00', endTime: '15:00', cleaningStartTime: '06:00' },
+      ],
+      weekPlan: { 2: 'a' },
+    })
+    expect(profile.shiftTemplates[0]).not.toHaveProperty('isCleaning')
+    expect(profile.shiftTemplates[1]).toMatchObject({
+      cleaningStartTime: null,
+      cleaningEndTime: null,
+    })
+    expect(getPlannedShift(profile, '2026-11-10')).toMatchObject({ isCleaningDay: false })
   })
 })

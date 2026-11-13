@@ -27,7 +27,6 @@ const emit = defineEmits(['update:show', 'apply', 'manual'])
 
 const step = ref('choose') // choose | password | reading | review | noText | error
 const errorMessage = ref('')
-const imageNotice = ref(false)
 const password = ref('')
 const passwordError = ref('')
 const activeTab = ref('summary')
@@ -44,7 +43,6 @@ const recordDeposit = ref(true)
 function reset() {
   step.value = 'choose'
   errorMessage.value = ''
-  imageNotice.value = false
   password.value = ''
   passwordError.value = ''
   activeTab.value = 'summary'
@@ -70,7 +68,6 @@ async function onPdfSelected(event) {
   const file = event.target.files?.[0]
   event.target.value = ''
   if (!file) return
-  imageNotice.value = false
   if (file.size > MAX_PAYSLIP_BYTES) {
     errorMessage.value = '檔案超過 5MB，請確認是單一薪資單 PDF'
     step.value = 'error'
@@ -84,11 +81,6 @@ async function onPdfSelected(event) {
   fileBuffer = await file.arrayBuffer()
   fileHash = await fingerprintFile(fileBuffer)
   await readFile()
-}
-
-function onImageSelected(event) {
-  event.target.value = ''
-  imageNotice.value = true
 }
 
 async function readFile(withPassword) {
@@ -321,19 +313,11 @@ function confirmImport() {
             <van-icon name="description-o" aria-hidden="true" />
             <span><strong>上傳 PDF</strong><small>支援有密碼的 PDF</small></span>
           </label>
-          <label class="payslip__option">
-            <input type="file" accept="image/*" @change="onImageSelected" />
-            <van-icon name="photo-o" aria-hidden="true" />
-            <span><strong>上傳圖片</strong><small>照片或截圖</small></span>
-          </label>
           <button type="button" class="payslip__option" @click="emit('manual')">
             <van-icon name="edit" aria-hidden="true" />
             <span><strong>手動設定</strong><small>自己輸入時薪與加給</small></span>
           </button>
         </div>
-        <p v-if="imageNotice" class="payslip__notice">
-          目前只支援 PDF，圖片版之後推出。
-        </p>
         <p class="payslip__privacy">
           <van-icon name="shield-o" aria-hidden="true" />
           PDF 與密碼只在你的手機上讀取，不會上傳到伺服器，也不會被保存。
@@ -609,15 +593,6 @@ function confirmImport() {
 .payslip__option small {
   color: var(--color-muted);
   font-size: 12px;
-}
-.payslip__notice {
-  margin: 12px 0 0;
-  padding: 10px 12px;
-  border-radius: var(--radius-medium);
-  background: var(--color-pending-soft);
-  color: var(--color-pending);
-  font-size: 13px;
-  line-height: 1.5;
 }
 .payslip__privacy {
   display: flex;

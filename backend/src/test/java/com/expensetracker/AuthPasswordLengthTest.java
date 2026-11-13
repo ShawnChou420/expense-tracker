@@ -16,6 +16,13 @@ class AuthPasswordLengthTest {
         assertDoesNotThrow(() -> AuthController.validate(credentials("abcd1234")));
     }
 
+    /** 登入的基本檢查只看長度；設定新密碼（註冊、重設）另外要求大小寫、數字、符號。 */
+    @Test
+    void newPasswordsAlsoNeedAllCharacterTypes() {
+        assertThrows(ResponseStatusException.class, () -> AuthController.validateNewPassword(credentials("abcd1234")));
+        assertDoesNotThrow(() -> AuthController.validateNewPassword(credentials("Abcd123!")));
+    }
+
     @Test
     void rejectsShortOrTooLongPasswords() {
         assertThrows(ResponseStatusException.class, () -> AuthController.validate(credentials("abc1234")));

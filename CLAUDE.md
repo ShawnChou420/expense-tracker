@@ -11,6 +11,7 @@
 - 後端：`backend/`，Spring Boot 4 + Java 21 + JdbcTemplate + Flyway。`backend/gradlew` 會轉呼叫 `android/gradlew`。
 - 資料庫：正式環境是 Neon PostgreSQL；migration 在 `backend/src/main/resources/db/migration/`。
 - Android：Capacitor（`android/`）。
+- 會員資料頁：`src/components/AccountPage.vue`（顯示名稱、修改密碼、登出、刪除帳號），後端 `AccountController.java`，邏輯在 `AuthService`。**新增任何會員私人資料表（含 `user_seq` 或以 Email 為鍵）時，必須加進 `AuthService.ACCOUNT_DELETE_STATEMENTS`**，`AccountDeletionTest` 會掃描 migration 檢查。
 - 部署：`render.yaml`。**merge 到 `main` 會自動部署到 Render 正式環境**，後端啟動時 Flyway 會自動對正式資料庫套用新的 migration。
 
 ## 必須遵守

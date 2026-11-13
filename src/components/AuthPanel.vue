@@ -6,7 +6,7 @@ import { getAuthConfig, isApiAvailable, requestEmailCode, signIn } from '../serv
 import { passwordChecks, passwordPolicyError } from '../domain/password.js'
 
 const props = defineProps({ show: Boolean })
-const emit = defineEmits(['update:show', 'signed-in'])
+const emit = defineEmits(['update:show', 'signed-in', 'open-privacy'])
 
 const MIN_PASSWORD = 8
 const mode = ref('login') // login | register | forgot
@@ -241,6 +241,10 @@ const primaryLabel = computed(() => {
         </span>
       </div>
 
+      <p v-if="mode === 'register'" class="auth-sheet__consent">
+        註冊即表示你已閱讀
+        <button type="button" class="auth-sheet__link" @click="emit('open-privacy')">隱私說明</button>
+      </p>
       <van-button block type="primary" native-type="submit" :disabled="!isApiAvailable || busy" :loading="busy">
         {{ primaryLabel }}
       </van-button>
@@ -392,6 +396,16 @@ const primaryLabel = computed(() => {
   display: flex;
   justify-content: space-between;
   gap: 8px;
+}
+.auth-sheet__consent {
+  margin: 0;
+  color: #657588;
+  font-size: 13px;
+}
+.auth-sheet__consent .auth-sheet__link {
+  min-height: 32px;
+  padding: 0 2px;
+  font-size: 13px;
 }
 .auth-sheet__switch,
 .auth-sheet__link {

@@ -8,6 +8,7 @@ import DashboardPage from './components/DashboardPage.vue'
 import MorePage from './components/MorePage.vue'
 import AuthPanel from './components/AuthPanel.vue'
 import AccountPage from './components/AccountPage.vue'
+import PrivacyPage from './components/PrivacyPage.vue'
 import { accountRepository } from './repositories/accountRepository.js'
 import { authEmail, authToken, signOut, clearSession, apiRequest, restoreSavedSession } from './services/authSession.js'
 import { useWorkRecordsPersistence } from './composables/useWorkRecordsPersistence.js'
@@ -219,8 +220,10 @@ function openPayslipFromSetup() {
   payslipImportOpen.value = true
 }
 
+const privacyOpen = ref(false)
 function handlePageNavigate(target) {
   if (target === 'payslip') payslipImportOpen.value = true
+  else if (target === 'privacy') privacyOpen.value = true
   else if (target === 'work-setup') openWorkSetup()
   else activeTab.value = target
 }
@@ -1178,6 +1181,24 @@ const addTodayRecordToList = () => {
   showToast(wasExisting ? '已更新當天班表' : '成功加入排班列表')
 }
 
+// 日曆卡片上一鍵標記／取消清潔日：換成該班別的清潔日時間並直接儲存（主管前一天公布時用）
+const selectedDayIsCleaning = computed(() => selectedRecord.value?.isCleaningDay === true)
+const canToggleCleaning = computed(() =>
+  selectedRecord.value ? selectedRecord.value.shiftType !== 'leave' : Boolean(selectedPlannedShift.value),
+)
+const toggleSelectedDateCleaning = () => {
+  loadSelectedDate()
+  if (shiftType.value === 'leave' || !isValidTime(startTime.value) || !isValidTime(endTime.value)) {
+    showToast('這天沒有班，無法標記清潔日')
+    return
+  }
+  setCleaningDay(!isCleaningDay.value)
+  addTodayRecordToList()
+  const saved = selectedRecord.value
+  if (!saved) return
+  showToast(saved.isCleaningDay ? `已設為清潔日 ${saved.startTime}–${saved.endTime}` : `已取消清潔日 ${saved.startTime}–${saved.endTime}`)
+}
+
 const editRecord = (record) => {
   workDate.value = record.workDate
   loadSelectedDate()
@@ -1225,7 +1246,8 @@ const markDesignatedWorkDate = ({ date, marked }) => {
         </van-button>
       </div>
     </div>
-    <AuthPanel v-model:show="authPanelOpen" @signed-in="handleSignedIn" />
+    <AuthPanel v-model:show="authPanelOpen" @signed-in="handleSignedIn" @open-privacy="privacyOpen = true" />
+    <PrivacyPage v-model:show="privacyOpen" />
     <DashboardPage
       v-show="activeTab === 'dashboard'"
       :work-records="records"
@@ -1286,6 +1308,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       v-model:show="accountSheetOpen"
       @sign-out="handleSignOut"
       @account-deleted="handleAccountDeleted"
+      @open-privacy="privacyOpen = true"
       @profile-updated="accountNickname = $event.nickname || ''"
     />
     <section v-show="activeTab === 'payroll'" class="payroll-page app-page">
@@ -1381,6 +1404,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
         <div class="calendar-day-actions__buttons">
           <van-button v-if="selectedRecord?.shiftType === 'leave'" block plain type="primary" @click="restoreSelectedDateShift">{{ selectedDateHasDefaultShift ? `恢復${selectedPlannedShift.name}` : '設定出勤時間' }}</van-button>
           <van-button v-else block plain type="danger" @click="markSelectedDateAsLeave">設為休假</van-button>
+          <van-button v-if="canToggleCleaning" block plain type="success" @click="toggleSelectedDateCleaning">{{ selectedDayIsCleaning ? '取消清潔日' : '設為清潔日' }}</van-button>
           <van-button block plain type="default" @click="openSelectedDateEditor">{{ selectedRecord ? '編輯當天工時' : '新增當天班表' }}</van-button>
           <van-button block plain type="warning" class="calendar-day-actions__blackout-button" @click="openBlackoutEditor">
             {{ selectedLeaveBlackout ? '編輯禁休公告' : '新增禁休' }}

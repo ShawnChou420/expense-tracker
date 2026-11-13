@@ -1,5 +1,7 @@
 <script setup>
-// 「更多」：放採買清單等延伸功能，以及規劃中的模組，讓底部分頁專注在收支。
+// 「更多」：放採買清單等延伸功能，讓底部分頁專注在收支。只列出已經能用的功能。
+import { CONTACT_EMAIL, FEEDBACK_URL } from '../config/beta.js'
+
 const emit = defineEmits(['navigate'])
 
 const tools = [
@@ -19,15 +21,16 @@ const tools = [
     name: 'shopping',
     icon: 'cart-o',
     title: '採買清單',
-    description: '和室友共用，買完直接記成支出',
+    description: '這次／下次要買的東西，買完打勾',
+  },
+  {
+    name: 'privacy',
+    icon: 'shield-o',
+    title: '隱私說明',
+    description: '保存哪些資料、怎麼刪除',
   },
 ]
 
-const upcoming = [
-  { icon: 'balance-list-o', title: '稅務追蹤', description: '年度級距與預估稅額' },
-  { icon: 'description-o', title: '薪資單核對', description: '比對薪資單與班表預估的差額' },
-  { icon: 'medal-o', title: '儲蓄成就', description: '每週存款目標、連續達標與徽章' },
-]
 </script>
 
 <template>
@@ -35,7 +38,7 @@ const upcoming = [
     <header class="app-page__header">
       <div>
         <h1>更多</h1>
-        <p>延伸工具與即將推出的功能</p>
+        <p>工作設定、薪資單與採買清單</p>
       </div>
     </header>
 
@@ -55,23 +58,31 @@ const upcoming = [
         </span>
         <van-icon name="arrow" class="more-item__arrow" aria-hidden="true" />
       </button>
+      <!-- 回饋與聯絡：src/config/beta.js 有填才顯示 -->
+      <a
+        v-if="FEEDBACK_URL"
+        :href="FEEDBACK_URL"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="more-item app-page__card"
+      >
+        <span class="more-item__icon" aria-hidden="true"><van-icon name="chat-o" /></span>
+        <span class="more-item__text">
+          <strong>意見回饋</strong>
+          <small>遇到問題或有想法，告訴我們</small>
+        </span>
+        <van-icon name="arrow" class="more-item__arrow" aria-hidden="true" />
+      </a>
+      <a v-if="CONTACT_EMAIL" :href="`mailto:${CONTACT_EMAIL}`" class="more-item app-page__card">
+        <span class="more-item__icon" aria-hidden="true"><van-icon name="envelop-o" /></span>
+        <span class="more-item__text">
+          <strong>聯絡我們</strong>
+          <small>{{ CONTACT_EMAIL }}</small>
+        </span>
+        <van-icon name="arrow" class="more-item__arrow" aria-hidden="true" />
+      </a>
     </section>
 
-    <section class="more-group">
-      <h2>規劃中</h2>
-      <div
-        v-for="item in upcoming"
-        :key="item.title"
-        class="more-item more-item--disabled app-page__card"
-      >
-        <span class="more-item__icon" aria-hidden="true"><van-icon :name="item.icon" /></span>
-        <span class="more-item__text">
-          <strong>{{ item.title }}</strong>
-          <small>{{ item.description }}</small>
-        </span>
-        <span class="more-item__badge">規劃中</span>
-      </div>
-    </section>
   </main>
 </template>
 
@@ -97,7 +108,12 @@ const upcoming = [
   font: inherit;
   text-align: left;
 }
-button.more-item {
+a.more-item {
+  color: inherit;
+  text-decoration: none;
+}
+button.more-item,
+a.more-item {
   cursor: pointer;
 }
 .more-item__icon {
@@ -129,21 +145,5 @@ button.more-item {
 .more-item__arrow {
   flex: none;
   color: #a7b4c2;
-}
-.more-item--disabled {
-  opacity: 0.7;
-}
-.more-item--disabled .more-item__icon {
-  background: #f1f5f9;
-  color: #7b8a9a;
-}
-.more-item__badge {
-  flex: none;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: #f1f5f9;
-  color: #657588;
-  font-size: 11px;
-  font-weight: 700;
 }
 </style>

@@ -13,7 +13,7 @@ import {
 } from '../domain/account.js'
 
 const props = defineProps({ show: Boolean })
-const emit = defineEmits(['update:show', 'sign-out', 'profile-updated', 'account-deleted'])
+const emit = defineEmits(['update:show', 'sign-out', 'profile-updated', 'account-deleted', 'open-privacy'])
 
 const account = ref(null)
 const loading = ref(false)
@@ -257,7 +257,7 @@ async function deleteAccount() {
           >
         </form>
       </section>
-      <small class="account-page__note">本版尚無 Email 驗證與忘記密碼。</small>
+      <button type="button" class="account-page__privacy" @click="emit('open-privacy')">隱私說明</button>
     </div>
   </van-popup>
 </template>
@@ -385,6 +385,16 @@ async function deleteAccount() {
 .account-page :deep(.van-button) {
   min-height: 44px;
   border-radius: 12px;
+}
+.account-page__privacy {
+  justify-self: center;
+  min-height: 40px;
+  border: 0;
+  background: transparent;
+  color: #166dd1;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
 }
 .account-page__note {
   text-align: center;

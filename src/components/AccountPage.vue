@@ -13,7 +13,13 @@ import {
 } from '../domain/account.js'
 
 const props = defineProps({ show: Boolean })
-const emit = defineEmits(['update:show', 'sign-out', 'profile-updated', 'account-deleted', 'open-privacy'])
+const emit = defineEmits([
+  'update:show',
+  'sign-out',
+  'profile-updated',
+  'account-deleted',
+  'open-privacy',
+])
 
 const account = ref(null)
 const loading = ref(false)
@@ -257,7 +263,9 @@ async function deleteAccount() {
           >
         </form>
       </section>
-      <button type="button" class="account-page__privacy" @click="emit('open-privacy')">隱私說明</button>
+      <button type="button" class="account-page__privacy" @click="emit('open-privacy')">
+        隱私說明
+      </button>
     </div>
   </van-popup>
 </template>

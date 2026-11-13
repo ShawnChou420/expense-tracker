@@ -282,9 +282,7 @@ defineExpose({ openForm })
           >預計支付 <strong>{{ formatAud(summary.plannedCents) }}</strong></span
         ><span>{{ summary.count }} 筆紀錄</span>
       </div>
-      <p v-if="summary.count" class="overview-note">
-        固定支出標記已付後才計入首頁。
-      </p>
+      <p v-if="summary.count" class="overview-note">固定支出標記已付後才計入首頁。</p>
       <p v-else class="overview-empty">本週還沒有支出。</p>
     </section>
 

@@ -439,9 +439,7 @@ defineExpose({ openTripForm })
 
     <section class="trip-section quick-people" aria-labelledby="quick-people-title">
       <div class="section-heading"><h2 id="quick-people-title">常用乘客</h2></div>
-      <p v-if="!activePassengers.length" class="overview__empty">
-        先新增乘客，再記錄行程。
-      </p>
+      <p v-if="!activePassengers.length" class="overview__empty">先新增乘客，再記錄行程。</p>
       <div v-else class="quick-people__list">
         <div
           v-for="passenger in activePassengers"
@@ -595,9 +593,7 @@ defineExpose({ openTripForm })
           @click="openPassengerForm()"
           >新增乘客</van-button
         >
-        <div v-if="passengers.length === 0" class="people-empty">
-          新增乘客後就能記錄車資。
-        </div>
+        <div v-if="passengers.length === 0" class="people-empty">新增乘客後就能記錄車資。</div>
         <button
           v-for="passenger in passengers"
           :key="passenger.id"

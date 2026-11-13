@@ -159,7 +159,7 @@ const unconfirmedLoadingLabels = computed(() =>
 )
 
 // ---------- Step 2：班別 ----------
-const presetChoices = [...SHIFT_PRESETS.map((preset) => ({ ...preset })), { preset: 'CUSTOM', name: '自訂班別', startTime: '', endTime: '', isCleaning: false }]
+const presetChoices = [...SHIFT_PRESETS.map((preset) => ({ ...preset })), { preset: 'CUSTOM', name: '自訂班別', startTime: '', endTime: '', cleaningStartTime: null, cleaningEndTime: null }]
 const hasPreset = (preset) => draft.value.shiftTemplates.some((item) => item.preset === preset)
 function togglePreset(choice) {
   if (choice.preset !== 'CUSTOM' && hasPreset(choice.preset)) {
@@ -192,7 +192,11 @@ const templateErrors = computed(() =>
           ? '請選擇上下班時間'
           : item.startTime === item.endTime
             ? '上下班時間不能相同'
-            : '',
+            : Boolean(item.cleaningStartTime) !== Boolean(item.cleaningEndTime)
+              ? '清潔日的上下班時間要一起填，或都留空'
+              : item.cleaningStartTime && item.cleaningStartTime === item.cleaningEndTime
+                ? '清潔日上下班時間不能相同'
+                : '',
     ]),
   ),
 )
@@ -490,9 +494,17 @@ function goTo(step) {
                 <van-icon name="moon-o" />跨午夜
               </span>
               <span v-if="shiftHours(template)" class="template__hours">{{ shiftHours(template) }}</span>
-              <label class="template__cleaning">
-                <van-switch v-model="template.isCleaning" size="18px" />
-                清潔班
+            </div>
+            <!-- 清潔日不固定，不放進每週排班；當天在班表上標記清潔日時，自動換成這組時間 -->
+            <div class="template__times template__times--cleaning">
+              <label>
+                <small>清潔日上班</small>
+                <input v-model="template.cleaningStartTime" type="time" step="300" />
+              </label>
+              <van-icon name="arrow" aria-hidden="true" />
+              <label>
+                <small>清潔日下班</small>
+                <input v-model="template.cleaningEndTime" type="time" step="300" />
               </label>
             </div>
             <p v-if="templateErrors[template.id]" class="template__error">{{ templateErrors[template.id] }}</p>
@@ -1087,14 +1099,12 @@ function goTo(step) {
   color: var(--color-muted);
   font-size: 12px;
 }
-.template__cleaning {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-  color: var(--color-heading);
-  font-size: 13px;
-  font-weight: 700;
+.template__times--cleaning {
+  padding-top: 10px;
+  border-top: 1px dashed var(--color-border);
+}
+.template__times--cleaning input {
+  font-weight: 600;
 }
 .template__error {
   margin: 8px 0 0;

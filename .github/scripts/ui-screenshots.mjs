@@ -147,14 +147,14 @@ async function guestSetupFlow(page, shot) {
   await capture('wizard-1-manual')
   await page.getByRole('button', { name: '儲存，下一步' }).click()
 
-  // 4. 班別：晚班＋清潔班，週一三四五晚班、週二清潔班
+  // 4. 班別：晚班＋早班，週一三四五晚班、週二早班（清潔日改在當天標記，不放進每週排班）
   await page.getByText('點選常見班別加入').waitFor({ timeout: 5000 })
   await page.getByRole('button', { name: /^晚班 23:50/ }).click()
-  await page.getByRole('button', { name: /^晚班清潔班/ }).click()
+  await page.getByRole('button', { name: /^早班 06:00/ }).click()
   const rows = page.locator('.week__row')
   for (const [index, name] of [
     [0, '晚班'],
-    [1, '晚班清潔班'],
+    [1, '早班'],
     [2, '晚班'],
     [3, '晚班'],
     [4, '晚班'],

@@ -235,6 +235,9 @@ watch(authToken, () => {
   expenses.value = []
   refreshExpenses().catch((error) => showToast(error.message))
 })
+
+// 讓首頁快捷操作可以直接打開新增表單
+defineExpose({ openForm })
 </script>
 
 <template>
@@ -279,10 +282,8 @@ watch(authToken, () => {
           >預計支付 <strong>{{ formatAud(summary.plannedCents) }}</strong></span
         ><span>{{ summary.count }} 筆紀錄</span>
       </div>
-      <p v-if="summary.count" class="overview-note">
-        固定支出未標記已付前，只列入預計支付；首頁按實際付款日統計。
-      </p>
-      <p v-else class="overview-empty">本週尚無支出，記錄後會區分已支付與預計支付。</p>
+      <p v-if="summary.count" class="overview-note">固定支出標記已付後才計入首頁。</p>
+      <p v-else class="overview-empty">本週還沒有支出。</p>
     </section>
 
     <section class="records-section" aria-labelledby="records-title">
@@ -415,7 +416,7 @@ watch(authToken, () => {
             </button>
           </div>
           <p v-if="form.category === 'INVESTMENT_LOSS'" class="form-hint">
-            只記錄已實現虧損，這筆不計入生活支出現金流；正收益留待收入／投資功能處理。
+            只記錄已實現虧損，不算生活支出。
           </p>
           <van-cell-group inset class="form-fields">
             <van-field
@@ -481,7 +482,7 @@ watch(authToken, () => {
             />
           </van-cell-group>
           <p v-if="form.frequency !== 'NONE'" class="form-hint">
-            從所選日期開始自動排程。未來每次扣款預設待付；列表可逐次標記已付。有已付紀錄後，若要改價請先設定結束日期，再建立新排程。
+            從這天開始自動排程，每期付款後再標記已付。
           </p>
           <p v-if="form.category !== 'INVESTMENT_LOSS'" class="field-label">付款狀態</p>
           <div v-if="form.category !== 'INVESTMENT_LOSS'" class="status-picker">
@@ -503,7 +504,7 @@ watch(authToken, () => {
             {{
               form.frequency === 'NONE'
                 ? '預計支付不會算入本週已支付金額。'
-                : '這裡只設定起始那筆；後續每次預設待付。'
+                : '只設定第一筆，之後每期預設待付。'
             }}
           </p>
         </div>

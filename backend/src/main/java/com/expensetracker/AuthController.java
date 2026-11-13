@@ -17,13 +17,20 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(AuthController.class);
     private final AuthService auth;
+    private final EmailCodeService codes;
+    private final MailService mail;
 
-    AuthController(AuthService auth) {
+    AuthController(AuthService auth, EmailCodeService codes, MailService mail) {
         this.auth = auth;
+        this.codes = codes;
+        this.mail = mail;
     }
 
     record Credentials(String email, String password) {}
+    record RegisterRequest(String email, String password, String code) {}
+    record CodeRequest(String email, String purpose) {}
     record TokenResponse(String token, Instant expiresAt, String email) {}
 
     @ExceptionHandler(ResponseStatusException.class)
@@ -32,12 +39,13 @@ public class AuthController {
             .body(Map.of("detail", exception.getReason() == null ? "請檢查輸入資料" : exception.getReason()));
     }
 
+    static final int MIN_PASSWORD_LENGTH = 8;
     static final String PASSWORD_RULE = "密碼須為 8 至 128 個字元，且包含大寫字母、小寫字母、數字與特殊符號";
 
-    /** 註冊用的密碼規則：8–128 字元，大寫、小寫、數字、特殊符號（非英數、非空白）各至少一個。 */
+    /** 註冊／重設／修改密碼的規則：8–128 字元，大寫、小寫、數字、特殊符號（非英數、非空白）各至少一個。 */
     static boolean meetsPasswordPolicy(String password) {
         return password != null
-            && password.length() >= 8 && password.length() <= 128
+            && password.length() >= MIN_PASSWORD_LENGTH && password.length() <= 128
             && password.chars().anyMatch(c -> c >= 'A' && c <= 'Z')
             && password.chars().anyMatch(c -> c >= 'a' && c <= 'z')
             && password.chars().anyMatch(c -> c >= '0' && c <= '9')
@@ -45,42 +53,85 @@ public class AuthController {
                 && !(c >= '0' && c <= '9') && !Character.isWhitespace(c));
     }
 
-    private static void validateEmail(Credentials credentials) {
+    /** 設定新密碼時（註冊、忘記密碼重設）：先做基本檢查，再套用完整密碼規則。登入不套用，舊帳號才能繼續登入。 */
+    static void validateNewPassword(Credentials credentials) {
+        validate(credentials);
+        if (!meetsPasswordPolicy(credentials.password()))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, PASSWORD_RULE);
+    }
+
+    static void validate(Credentials credentials) {
         if (credentials == null || credentials.email() == null ||
             credentials.email().length() > 100 ||
             !credentials.email().trim().matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "請輸入有效的 Email");
         }
+        if (credentials.password() == null || credentials.password().isBlank() || credentials.password().length() < MIN_PASSWORD_LENGTH ||
+            credentials.password().length() > 128) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "密碼須為 8 至 128 個字元");
+        }
     }
 
-    /** 註冊：套用完整密碼規則。 */
-    private static void validateRegistration(Credentials credentials) {
-        validateEmail(credentials);
-        if (!meetsPasswordPolicy(credentials.password()))
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, PASSWORD_RULE);
+    static void validateEmail(String email) {
+        validate(new Credentials(email, "x".repeat(MIN_PASSWORD_LENGTH)));
     }
 
-    /**
-     * 登入：只檢查有輸入、長度上限，不套用註冊規則。
-     * 規則變更前註冊的帳號（例如 12 字元但沒有特殊符號）才能繼續登入。
-     */
-    private static void validateLogin(Credentials credentials) {
-        validateEmail(credentials);
-        if (credentials.password() == null || credentials.password().isEmpty() || credentials.password().length() > 128)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "請輸入密碼");
+    /** 前端用來決定註冊是否需要驗證碼、是否提供忘記密碼 */
+    @GetMapping("/config")
+    Map<String, Object> config() {
+        return Map.of("emailVerification", codes.enabled());
+    }
+
+    @PostMapping("/email-code")
+    ResponseEntity<Map<String, Object>> emailCode(@RequestBody CodeRequest request) {
+        if (request == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "請輸入有效的 Email");
+        validateEmail(request.email());
+        EmailCodeService.Purpose purpose;
+        try {
+            purpose = EmailCodeService.Purpose.valueOf(String.valueOf(request.purpose()));
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "不支援的驗證類型");
+        }
+        codes.request(AuthService.normalizeEmail(request.email()), purpose);
+        return ResponseEntity.accepted().body(Map.of(
+            "resendAfterSeconds", EmailCodeService.RESEND_SECONDS,
+            "expiresInMinutes", EmailCodeService.CODE_TTL_MINUTES));
     }
 
     @PostMapping("/register")
-    TokenResponse register(@RequestBody Credentials credentials) {
-        validateRegistration(credentials);
-        var result = auth.register(credentials.email(), credentials.password());
+    TokenResponse register(@RequestBody RegisterRequest request) {
+        if (request == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "請輸入有效的 Email");
+        validateNewPassword(new Credentials(request.email(), request.password()));
+        boolean verify = codes.enabled();
+        if (verify) {
+            codes.verify(AuthService.normalizeEmail(request.email()), EmailCodeService.Purpose.REGISTER, request.code());
+        }
+        var result = auth.register(request.email(), request.password(), verify);
+        if (verify) {
+            try {
+                mail.send(result.email(), "歡迎使用 WORK & SAVE",
+                    "你的帳號 " + result.email() + " 已經建立完成。", MailService.welcomeHtml(result.email()));
+            } catch (RuntimeException exception) {
+                log.warn("歡迎信寄送失敗");
+            }
+        }
+        return new TokenResponse(result.token(), result.expiresAt(), result.email());
+    }
+
+    @PostMapping("/reset-password")
+    TokenResponse resetPassword(@RequestBody RegisterRequest request) {
+        if (request == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "請輸入有效的 Email");
+        if (!codes.enabled()) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Email 驗證尚未啟用");
+        validateNewPassword(new Credentials(request.email(), request.password()));
+        codes.verify(AuthService.normalizeEmail(request.email()), EmailCodeService.Purpose.RESET_PASSWORD, request.code());
+        var result = auth.resetPassword(request.email(), request.password());
         return new TokenResponse(result.token(), result.expiresAt(), result.email());
     }
 
     @PostMapping("/login")
     TokenResponse login(@RequestBody Credentials credentials,
                         jakarta.servlet.http.HttpServletRequest request) {
-        validateLogin(credentials);
+        validate(credentials);
         var result = auth.login(credentials.email(), credentials.password(), request.getRemoteAddr());
         return new TokenResponse(result.token(), result.expiresAt(), result.email());
     }

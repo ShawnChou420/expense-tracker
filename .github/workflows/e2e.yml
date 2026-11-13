@@ -1,0 +1,123 @@
+# 全端端對端測試：真的啟動 PostgreSQL、Spring Boot 後端（含 Flyway migration）與前端，
+# 用 Playwright 走一遍會員流程：註冊 → 匯入薪資單（同時記錄入帳）→ 工作設定 → 填滿本月 →
+# 登出再登入，確認設定、薪資單與班表都還在。只用合成的測試薪資單，不碰正式資料庫。
+name: E2E
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'backend/**'
+      - '.github/scripts/e2e-member.mjs'
+      - '.github/fixtures/**'
+      - '.github/workflows/e2e.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  member-flow:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: write # 把截圖推到 ui-screenshots/e2e-pr-<編號> 分支，方便在 PR 中檢視
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: e2e
+          POSTGRES_PASSWORD: e2e-password
+          POSTGRES_DB: expense_e2e
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U e2e" --health-interval 5s --health-timeout 5s --health-retries 10
+      # 測試用的寄信伺服器：接收驗證信，Playwright 從它的 API 讀出驗證碼
+      mailpit:
+        image: axllent/mailpit:latest
+        ports: ['1025:1025', '8025:8025']
+    env:
+      DB_URL: jdbc:postgresql://127.0.0.1:5432/expense_e2e
+      DB_USER: e2e
+      DB_PASSWORD: e2e-password
+      CORS_ORIGINS: http://127.0.0.1:4174
+      SMTP_HOST: 127.0.0.1
+      SMTP_PORT: 1025
+      MAIL_FROM: noreply@example.com
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Build backend
+        run: bash backend/gradlew bootJar --no-daemon
+      - name: Start backend
+        run: |
+          jar=$(ls backend/build/libs/*.jar | grep -v plain | head -1)
+          nohup java -jar "$jar" > backend.log 2>&1 &
+          for i in $(seq 1 90); do
+            curl -sf http://127.0.0.1:8080/api/health > /dev/null && break
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:8080/api/health || { cat backend.log; exit 1; }
+      - name: Build and start frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          nohup npx vite preview --host 127.0.0.1 --port 4174 --strictPort > frontend.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:4174 > /dev/null && break; sleep 1; done
+      - name: Install Playwright
+        run: |
+          mkdir -p e2e && cd e2e && npm init -y > /dev/null
+          npm i --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Member flow
+        working-directory: e2e
+        run: node ../.github/scripts/e2e-member.mjs
+        env:
+          OUT_DIR: ${{ github.workspace }}/e2e-screenshots
+          FIXTURE_DIR: ${{ github.workspace }}/.github/fixtures
+      - name: Check database
+        if: always()
+        run: |
+          PGPASSWORD=e2e-password psql -h 127.0.0.1 -U e2e -d expense_e2e -c \
+            "SELECT version, success FROM flyway_schema_history ORDER BY installed_rank;" -c \
+            "SELECT count(*) AS work_profiles FROM work_profile;" -c \
+            "SELECT pay_date, net_cents, deposit_id IS NOT NULL AS has_deposit FROM payslip_import;" -c \
+            "SELECT count(*) AS shifts FROM work_shift_info;" -c \
+            "SELECT email_verified_at IS NOT NULL AS verified FROM user_info WHERE email_normalized LIKE 'e2e-%';" -c \
+            "SELECT purpose, attempts, consumed_at IS NOT NULL AS used FROM email_verification_code ORDER BY id;"
+      - name: Logs
+        if: failure()
+        run: tail -100 backend.log; tail -30 frontend.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-screenshots
+          path: e2e-screenshots
+          retention-days: 14
+      - name: Publish screenshots branch
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        working-directory: e2e-screenshots
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          TOKEN: ${{ github.token }}
+        run: |
+          echo '{ "git": { "deploymentEnabled": false } }' > vercel.json
+          git init -q -b screenshots
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "E2E screenshots for PR #${PR_NUMBER} (${HEAD_SHA})"
+          git push -q -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/ui-screenshots/e2e-pr-${PR_NUMBER}"

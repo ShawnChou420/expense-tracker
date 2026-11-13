@@ -71,6 +71,8 @@ for (const target of targets) {
       await tab(page, '薪資')
       await page.getByRole('button', { name: '填滿本週' }).click()
       await page.waitForTimeout(500)
+      // 基準版本若已有工作設定閘門，關掉彈窗再截首頁
+      if (await page.locator('.van-popup:visible').count()) await page.reload({ waitUntil: 'networkidle' })
     } else {
       try {
         Object.assign(checks, await guestSetupFlow(page, is390 || size.name === '320' ? shot : null))

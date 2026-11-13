@@ -140,12 +140,12 @@ const incomeYearProgress = computed(() =>
 const taxProgressHint = computed(() => {
   const progress = incomeYearProgress.value
   if (!progress) return ''
-  if (progress.crossed) return '已超過第一級距上限，之後的收入適用較高稅率。'
+  if (progress.crossed) return '已超過第一級距，之後稅率較高。'
   if (progress.projectedWithinYear && progress.projectedCrossDate) {
     return `照最近 4 週平均 ${formatAud(progress.recentWeeklyAverageCents)}／週，預計 ${progress.projectedCrossDate} 左右超過。`
   }
-  if (progress.recentWeeklyAverageCents > 0) return '依最近 4 週平均推算，本財年內預計不會超過。'
-  return '最近 4 週沒有班表，暫時無法預估何時超過。'
+  if (progress.recentWeeklyAverageCents > 0) return '照最近 4 週推算，今年不會超過。'
+  return '最近 4 週沒有班表，無法預估。'
 })
 const summary = computed(() =>
   getDashboardSummary({
@@ -202,7 +202,7 @@ const heroEmpty = computed(() => {
   if (!props.setup.payReady && weeklyPay.value.shiftCount === 0) {
     return {
       title: '先完成工作設定',
-      description: '設定你的薪資費率與班別後，這裡會自動試算本週稅前、預扣與實領。',
+      description: '設定時薪和班別後，這裡會顯示本週可以拿多少。',
       action: '開始設定',
       icon: 'setting-o',
     }
@@ -211,13 +211,13 @@ const heroEmpty = computed(() => {
     return props.setup.scheduleReady
       ? {
           title: '這週還沒有班表',
-          description: '按一下就依你的班別排好這週，確認後才會加入。',
+          description: '依你的班別排好這週，確認後才加入。',
           action: '排這週的班',
           icon: 'plus',
         }
       : {
           title: '這週還沒有班表',
-          description: '設定你的班別與工作日，就能一鍵排好整週並試算薪資。',
+          description: '設定班別後可以一鍵排好整週。',
           action: '設定班別',
           icon: 'clock-o',
         }
@@ -517,7 +517,7 @@ async function saveTarget() {
       <span class="payslip-cta__icon" aria-hidden="true"><van-icon name="description-o" /></span>
       <span class="payslip-cta__text">
         <strong>讓第一張薪資單，幫你開始記帳。</strong>
-        <small>上傳 PDF，自動設定時薪、加給與預扣比例，並保存這一期的薪資</small>
+        <small>自動設定時薪，並記下這期薪水</small>
       </span>
       <van-icon name="arrow" aria-hidden="true" class="payslip-cta__arrow" />
     </button>
@@ -603,13 +603,13 @@ async function saveTarget() {
           stacked
           icon="gold-coin-o"
           title="設定你的第一個儲蓄目標。"
-          description="填目標金額與開始前已有的存款，之後依實際收支自動累計。"
+          description="設定目標金額，之後依收支自動累計。"
           action-label="建立目標"
           @action="openGoalEditor"
         />
       </template>
       <p v-if="savingGoal && saving && !saving.hasActualTransactions" class="home-card-note">
-        尚無目標期間的實際收支，目前只反映起始存款。
+        還沒有收支紀錄。
       </p>
     </ProgressCard>
 
@@ -641,7 +641,7 @@ async function saveTarget() {
           stacked
           icon="flag-o"
           :title="workProgress.count > 0 ? `已標記 ${workProgress.count} 天指定工作` : '設定你想追蹤的工作天數'"
-          description="自行設定目標天數，這裡會顯示進度與還差幾天。"
+          description="設定目標天數，追蹤還差幾天。"
           action-label="設定目標"
           @action="openTargetEditor"
         />
@@ -669,11 +669,11 @@ async function saveTarget() {
       <p class="home-card-fine">
         {{
           {
-            payslip: `依 ${employerYtd?.payDate ?? ''} 薪資單上的雇主財年累計（不與其他入帳重複相加）。`,
+            payslip: `依 ${employerYtd?.payDate ?? ''} 依薪資單的年度累計。`,
             actual: '依已記錄的薪資入帳稅前金額。',
-            estimated: '依班表預估（不含 PPE），匯入薪資單後改用雇主財年累計。',
+            estimated: '依班表預估，匯入薪資單後會更準。',
           }[incomeYearProgress.basis]
-        }}級距需以 ATO 公告為準，此為個人估算。
+        }}個人估算，以 ATO 為準。
       </p>
     </ProgressCard>
 
@@ -725,9 +725,9 @@ async function saveTarget() {
       <p class="source-note">
         {{
           hasSalaryDeposits
-            ? '薪資按實際入帳日計入，與班表預估分開。'
+            ? '薪資依入帳日計算。'
             : authToken
-              ? '尚未記錄實際薪資；目前收入不含預估薪資。'
+              ? '還沒有記錄薪資入帳。'
               : '訪客模式尚無實際薪資入帳資料。'
         }}{{ summary.pendingFareCents > 0 ? `另有 ${formatAud(summary.pendingFareCents)} 車資待收，未計入收入。` : '' }}
       </p>
@@ -745,7 +745,7 @@ async function saveTarget() {
           <span class="salary-card__empty-icon" aria-hidden="true"><van-icon name="balance-pay" /></span>
           <div>
             <strong>還沒有實際薪資紀錄</strong>
-            <p>收到薪資單後，可在這裡記下稅後入帳金額。</p>
+            <p>收到薪水後在這裡記一筆。</p>
           </div>
         </div>
         <div v-else class="salary-list">
@@ -801,9 +801,9 @@ async function saveTarget() {
             {{
               incomeMode === 'actual'
                 ? hasSalaryDeposits
-                  ? '按收款日：已收車資與已記錄薪資入帳。'
-                  : '按收款日：已收車資；尚未記錄薪資入帳。'
-                : '按工作紀錄日期：稅前預估薪資，不代表已入帳。'
+                  ? '依收款日：車資與薪資入帳。'
+                  : '依收款日：車資（尚未記錄薪資）。'
+                : '依工作日：稅前預估，非實際入帳。'
             }}
           </p>
           <IncomeTrendChart
@@ -813,7 +813,7 @@ async function saveTarget() {
             :active="active"
             @select="selectedIncomePoint = $event"
           />
-          <p v-else class="empty-copy">尚無可繪製的收入紀錄；預估薪資與實際入帳不會混算。</p>
+          <p v-else class="empty-copy">還沒有收入紀錄。</p>
           <p v-if="selectedIncomePoint" class="chart-selection">
             {{ selectedIncomePoint.date }} ·
             {{
@@ -850,14 +850,14 @@ async function saveTarget() {
             v-if="summary.hasActualIncomeRecords || summary.hasEstimatedWorkRecords"
             class="chart-hint"
           >
-            點擊折線上的日期可查看金額與來源；無交易日期顯示 0。
+            點折線查看當天金額。
           </p>
         </section>
 
         <section class="dashboard-section chart-card app-page__card" aria-labelledby="expense-title">
           <div class="section-head"><h2 id="expense-title">支出分布</h2></div>
           <p class="scope-note">
-            所選期間已支付金額；房租按實付計，不加週平均分攤。現有單次支出以紀錄日期、固定支出以標記已付的該期日期作為付款日。
+            所選期間已付的支出。
           </p>
           <ExpenseDonutChart
             v-if="summary.distribution.totalCents > 0"
@@ -892,7 +892,7 @@ async function saveTarget() {
             workDayTarget === null ? '設定追蹤目標' : '修改目標'
           }}</van-button>
         </div>
-        <p class="scope-note">所有已標記工作紀錄累計，不隨上方期間篩選重設。</p>
+        <p class="scope-note">累計所有已標記的工作日。</p>
         <div class="work-count">
           <strong>{{ workProgress.count }}</strong
           ><span>已標記工作日{{ workDayTarget === null ? '' : `／目標 ${workDayTarget} 日` }}</span>
@@ -906,7 +906,7 @@ async function saveTarget() {
           />
           <p class="goal-result">尚差 {{ workProgress.remaining }} 日</p></template
         >
-        <p v-else class="empty-copy">尚未設定追蹤目標，可自行設定，不預設官方門檻。</p>
+        <p v-else class="empty-copy">還沒設定目標。</p>
         <van-collapse v-if="eligibleDates.length" v-model="workDetailsOpen" class="work-collapse"
           ><van-collapse-item name="dates" title="管理工作日標記"
             ><div v-for="date in eligibleDates" :key="date" class="work-date">
@@ -921,7 +921,7 @@ async function saveTarget() {
         <van-button v-else size="small" plain type="primary" @click="emit('navigate', 'payroll')"
           >前往薪資頁新增工作紀錄</van-button
         >
-        <p class="disclaimer">此為個人工作紀錄，非官方簽證資格判定。</p>
+        <p class="disclaimer">個人紀錄，非官方資格判定。</p>
       </section>
       </div>
     </section>
@@ -944,7 +944,7 @@ async function saveTarget() {
         />
         <van-field v-model="goalForm.startDate" label="開始日期" type="date" />
         <van-field v-model="goalForm.endDate" label="截止日期" type="date" />
-        <p class="scope-note">起始存款是開始日前的餘額；{{ authToken ? '目標會儲存到會員帳號。' : '訪客目標只在本次 App 執行期間暫存。' }}</p>
+        <p class="scope-note">起始存款是開始日前的餘額；{{ authToken ? '目標會儲存到會員帳號。' : '訪客模式關閉 App 後不保留。' }}</p>
         <van-button class="app-page__action" block type="primary" native-type="submit"
           >儲存目標</van-button
         >
@@ -953,7 +953,7 @@ async function saveTarget() {
     <van-popup v-model:show="showSalaryForm" position="bottom" round safe-area-inset-bottom>
       <form class="edit-sheet salary-sheet" @submit.prevent="saveSalary">
         <h2>{{ editingSalaryId ? '編輯薪資入帳' : '新增薪資入帳' }}</h2>
-        <p class="scope-note">填寫銀行實際收到的稅後金額；不會改動班表薪資預估。</p>
+        <p class="scope-note">填銀行實際收到的金額。</p>
         <van-field v-model="salaryForm.paidAt" label="入帳日期" type="date" required />
         <van-field v-model="salaryForm.amount" label="稅後入帳 AUD" type="number" required />
         <van-field v-model="salaryForm.gross" label="稅前 AUD（選填）" type="number" />

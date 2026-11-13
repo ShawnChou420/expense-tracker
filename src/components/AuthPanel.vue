@@ -158,11 +158,11 @@ const primaryLabel = computed(() => {
         </button>
       </div>
 
-      <p v-if="mode === 'login'">訪客試算仍可使用；登入後才能將私人紀錄存到資料庫。</p>
+      <p v-if="mode === 'login'">登入後資料會存到雲端，換手機也不會不見。</p>
       <p v-else-if="mode === 'register' && step === 'form'">
-        {{ emailVerification ? '輸入 Email 與密碼，我們會寄一組驗證碼到你的信箱。' : '建立帳號後，紀錄會保存到資料庫，換手機也找得回來。' }}
+        {{ emailVerification ? '我們會寄驗證碼到你的信箱。' : '登入後資料會存到雲端，換手機也不會不見。' }}
       </p>
-      <p v-else-if="mode === 'forgot' && step === 'form'">輸入註冊時的 Email，我們會寄一組驗證碼給你重設密碼。</p>
+      <p v-else-if="mode === 'forgot' && step === 'form'">輸入註冊的 Email，我們會寄驗證碼給你。</p>
       <p v-if="!isApiAvailable" class="auth-sheet__warning">此原生版本尚未設定 HTTPS API 位址，暫時無法登入。</p>
 
       <template v-if="step === 'form'">
@@ -194,7 +194,7 @@ const primaryLabel = computed(() => {
           <van-icon name="envelop-o" aria-hidden="true" />
           <span>
             驗證碼已寄到 <strong>{{ trimmedEmail }}</strong>
-            <small>10 分鐘內有效。沒收到的話，看看垃圾郵件匣。</small>
+            <small>10 分鐘內有效，沒收到請看垃圾郵件。</small>
           </span>
         </div>
         <label class="auth-sheet__code">

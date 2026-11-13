@@ -308,7 +308,7 @@ function goTo(step) {
       <section v-if="current === 1" class="setup__body">
         <template v-if="manualMode">
           <p class="setup__lead">輸入合約或薪資單上的費率</p>
-          <p class="setup__sub">只有你填寫的加給會被當成「已確認」。不確定的可以留白。</p>
+          <p class="setup__sub">不確定的加給可以留白。</p>
           <van-cell-group inset class="setup__group">
             <van-field
               v-model="manual.baseRate"
@@ -345,7 +345,7 @@ function goTo(step) {
               <template #extra><span class="setup__unit">%</span></template>
             </van-field>
           </van-cell-group>
-          <p class="setup__note">預扣比例＝薪資單上 Tax ÷ Gross，只用來估算每期實領；年度應繳稅額另計，需以 ATO 公告確認。</p>
+          <p class="setup__note">薪資單上 Tax ÷ Gross，用來估算每期實領。</p>
 
           <h3 class="setup__title">加給費率（選填）</h3>
           <van-cell-group inset class="setup__group">
@@ -368,7 +368,7 @@ function goTo(step) {
               未填寫的加給先用預設倍率暫估
             </van-checkbox>
             <p>
-              {{ manual.allowProvisional ? '試算會標示「含未確認費率，僅供參考」。' : '不暫估時，這些加給不會計入試算，畫面會標示「未含」。' }}
+              {{ manual.allowProvisional ? '會標示「含未確認費率，僅供參考」。' : '不暫估就不計入。' }}
               未填：{{ unfilledLoadings.map((field) => field.label).join('、') }}
             </p>
           </div>
@@ -417,12 +417,12 @@ function goTo(step) {
 
         <template v-else>
           <p class="setup__lead">先告訴我你的時薪</p>
-          <p class="setup__sub">每個人的費率、加給和扣稅都不一樣，設定後試算才會準。</p>
+          <p class="setup__sub">設定後薪資預估才會準。</p>
           <button type="button" class="choice choice--primary" @click="emit('upload-payslip')">
             <span class="choice__icon"><van-icon name="description-o" /></span>
             <span class="choice__text">
               <strong>上傳 Payslip 自動設定費率</strong>
-              <small>讀出時薪、加給與本期預扣比例。PDF 只在手機上讀取。</small>
+              <small>自動讀出時薪、加給和扣稅</small>
             </span>
             <van-icon name="arrow" />
           </button>
@@ -430,7 +430,7 @@ function goTo(step) {
             <span class="choice__icon"><van-icon name="edit" /></span>
             <span class="choice__text">
               <strong>手動設定費率</strong>
-              <small>自己輸入基本時薪，加給可以之後再補。</small>
+              <small>輸入時薪，加給之後再補</small>
             </span>
             <van-icon name="arrow" />
           </button>
@@ -440,7 +440,7 @@ function goTo(step) {
       <!-- Step 2 -->
       <section v-else-if="current === 2" class="setup__body">
         <p class="setup__sub">
-          點選常見班別加入，時間都可以修改。Baiada 的時間只是參考，其他雇主請用「自訂班別」。
+          點選常見班別加入，時間都可以改。
         </p>
         <div class="presets" role="group" aria-label="班別範本">
           <button
@@ -499,7 +499,7 @@ function goTo(step) {
           </article>
 
           <h3 class="setup__title">每週哪幾天上班？</h3>
-          <p class="setup__note">沒有選的日子當作休息，不會自動排班。</p>
+          <p class="setup__note">沒選的日子當休息。</p>
           <div class="week">
             <div v-for="weekday in WEEKDAYS" :key="weekday.day" class="week__row">
               <span class="week__day" :class="{ 'is-on': draft.weekPlan[weekday.day] }">{{ weekday.label }}</span>
@@ -560,8 +560,8 @@ function goTo(step) {
         <p class="setup__note">
           {{
             smokoChoice === 'AUTO'
-              ? '依工時判定：滿 4 小時 1 次、滿 8 小時 2 次。這是 App 的估算規則，請以雇主規定為準。'
-              : '每班固定使用這個次數。個別日子可以在當天的班表另外調整，不會改到這裡的設定。'
+              ? '滿 4 小時 1 次、滿 8 小時 2 次。'
+              : '個別日子可以在當天另外調整。'
           }}
         </p>
         <van-cell-group inset class="setup__group">
@@ -575,7 +575,7 @@ function goTo(step) {
               <van-stepper v-model="draft.smoko.minutes" :min="5" :max="60" :step="5" integer button-size="30px" />
             </template>
           </van-cell>
-          <van-cell center title="Smoko 照常計薪" label="開啟＝休息時間也算工時；關閉＝從工時扣除">
+          <van-cell center title="Smoko 照常計薪" label="關閉＝從工時扣除">
             <template #right-icon>
               <van-switch v-model="draft.smoko.paid" size="22px" />
             </template>
@@ -622,7 +622,7 @@ function goTo(step) {
         <ul class="setup__done-list">
           <li v-for="line in doneSummary" :key="line">{{ line }}</li>
         </ul>
-        <p class="setup__note">之後可以在「薪資」頁的工作設定卡片隨時修改。</p>
+        <p class="setup__note">之後可以在「薪資」頁修改。</p>
         <van-button v-if="pendingAction" type="primary" block class="setup__primary" @click="emit('continue', pendingAction)">
           繼續{{ pendingAction.label }}
         </van-button>

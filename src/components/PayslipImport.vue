@@ -310,10 +310,10 @@ function confirmImport() {
       <!-- 選擇檔案 -->
       <section v-if="step === 'choose'" class="payslip__body">
         <p class="payslip__lead">
-          {{ firstTime ? '讓第一張薪資單，幫你開始記帳。' : '上傳新的薪資單，更新費率與收入紀錄。' }}
+          {{ firstTime ? '讓第一張薪資單，幫你開始記帳。' : '更新費率與收入紀錄。' }}
         </p>
         <p class="payslip__sub">
-          自動讀出時薪、各項加給、本期預扣比例與年度累計。你確認後才會保存與套用。
+          自動讀出時薪、加給和扣稅，確認後才保存。
         </p>
         <div class="payslip__options">
           <label class="payslip__option payslip__option--primary">
@@ -332,7 +332,7 @@ function confirmImport() {
           </button>
         </div>
         <p v-if="imageNotice" class="payslip__notice">
-          圖片辨識（OCR）會在下一版推出。請先用雇主寄來的 PDF，或改用手動設定。
+          目前只支援 PDF，圖片版之後推出。
         </p>
         <p class="payslip__privacy">
           <van-icon name="shield-o" aria-hidden="true" />
@@ -343,7 +343,7 @@ function confirmImport() {
       <!-- 密碼 -->
       <section v-else-if="step === 'password'" class="payslip__body">
         <p class="payslip__lead">這份 PDF 有密碼保護</p>
-        <p class="payslip__sub">輸入雇主提供的 PDF 開啟密碼。密碼只用來在手機上解鎖，不會被保存。</p>
+        <p class="payslip__sub">輸入 PDF 的開啟密碼（不會被保存）。</p>
         <form @submit.prevent="submitPassword">
           <van-field
             v-model="password"
@@ -372,7 +372,7 @@ function confirmImport() {
         <p class="payslip__sub">
           {{
             step === 'noText'
-              ? '這份 PDF 沒有文字層（可能是掃描檔或照片），需要等下一版的圖片辨識。可以先手動設定費率。'
+              ? '這份 PDF 是掃描檔，目前讀不到內容，請先手動設定費率。'
               : errorMessage
           }}
         </p>
@@ -416,12 +416,12 @@ function confirmImport() {
                 <template v-if="reviewed.ytd.taxCents !== null"> · 扣稅 <b>{{ formatAud(reviewed.ytd.taxCents) }}</b></template>
                 <template v-if="reviewed.ytd.superCents !== null"> · Super <b>{{ formatAud(reviewed.ytd.superCents) }}</b></template>
               </p>
-              <small>會用來更新首頁的年度稅務進度；不會和其他入帳重複相加。Super 存入退休金帳戶，不計入實領。</small>
+              <small>用來更新年度稅務進度。Super 不計入實領。</small>
             </div>
           </van-tab>
 
           <van-tab name="rates" title="工作費率">
-            <p class="payslip__hint">勾選的費率會設為「已確認」並用於之後的試算。已存的班表金額不會改變。</p>
+            <p class="payslip__hint">勾選的費率會用於之後的試算，已存的班表不受影響。</p>
             <ul class="rate-list">
               <li v-for="row in proposals" :key="row.key" class="rate-row" :class="`rate-row--${row.status}`">
                 <div class="rate-row__top">
@@ -459,7 +459,7 @@ function confirmImport() {
               </li>
             </ul>
             <p class="payslip__hint">
-              本期實際預扣比例＝本次 Tax ÷ Gross，只用來估算之後每期的預扣金額；年度實際應繳稅額另計，需以 ATO 公告確認。
+              Tax ÷ Gross，用來估算每期扣稅；年度稅額以 ATO 為準。
             </p>
           </van-tab>
 
@@ -496,7 +496,7 @@ function confirmImport() {
           <van-checkbox v-if="isMember" v-model="recordDeposit" shape="square" icon-size="18px">
             同時記錄這筆薪資入帳（實領 {{ reviewed.netCents === null ? '—' : formatAud(reviewed.netCents) }}）
           </van-checkbox>
-          <p v-else class="payslip__guest">訪客模式：薪資單只保留到關閉 App；登入後會永久保存並可記錄入帳。</p>
+          <p v-else class="payslip__guest">訪客模式關閉 App 後不保留，登入可永久保存。</p>
           <p v-if="missingRequired" class="payslip__required">{{ missingRequired }}</p>
           <van-button type="primary" block class="app-page__action" :disabled="!canConfirm" @click="confirmImport">
             {{ duplicateFile ? '這份薪資單已經匯入過' : '確認並保存' }}

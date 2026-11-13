@@ -434,14 +434,12 @@ defineExpose({ openTripForm })
           </div>
         </div>
       </div>
-      <p v-else class="overview__empty">本週尚無行程，新增後會顯示應收、已收與待收。</p>
+      <p v-else class="overview__empty">本週還沒有行程。</p>
     </section>
 
     <section class="trip-section quick-people" aria-labelledby="quick-people-title">
       <div class="section-heading"><h2 id="quick-people-title">常用乘客</h2></div>
-      <p v-if="!activePassengers.length" class="overview__empty">
-        尚無常用乘客。先新增乘客，再記錄本趟行程。
-      </p>
+      <p v-if="!activePassengers.length" class="overview__empty">先新增乘客，再記錄行程。</p>
       <div v-else class="quick-people__list">
         <div
           v-for="passenger in activePassengers"
@@ -595,9 +593,7 @@ defineExpose({ openTripForm })
           @click="openPassengerForm()"
           >新增乘客</van-button
         >
-        <div v-if="passengers.length === 0" class="people-empty">
-          新增第一位乘客後，就能記錄車資行程。
-        </div>
+        <div v-if="passengers.length === 0" class="people-empty">新增乘客後就能記錄車資。</div>
         <button
           v-for="passenger in passengers"
           :key="passenger.id"
@@ -655,7 +651,7 @@ defineExpose({ openTripForm })
           </button>
         </div>
         <div class="sheet-scroll">
-          <p class="sheet-note">設定常用車資後，新增行程時會自動帶入，仍可逐筆調整。</p>
+          <p class="sheet-note">新增行程時自動帶入，可再調整。</p>
           <van-cell-group inset>
             <van-field
               v-model="passengerForm.name"
@@ -725,7 +721,7 @@ defineExpose({ openTripForm })
             <small>{{ selectedPassengerIds.length }} 位已選</small>
           </div>
           <div v-if="activePassengers.length === 0" class="form-hint">
-            還沒有使用中的乘客。請先到「常用乘客」新增。
+            請先到「常用乘客」新增乘客。
           </div>
           <van-checkbox-group v-else v-model="selectedPassengerIds" class="person-choices"
             ><van-checkbox

@@ -22,6 +22,8 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class AuthService {
     private static final SecureRandom RANDOM = new SecureRandom();
+    /** 沒有主動登出就保持登入；使用中會自動延長，30 天完全沒用才需要重新登入 */
+    static final int SESSION_DAYS = 30;
     private final JdbcTemplate db;
     private final PasswordEncoder passwords;
     private final Map<String, Attempt> attempts = new ConcurrentHashMap<>();
@@ -93,7 +95,8 @@ public class AuthService {
         byte[] bytes = new byte[32];
         RANDOM.nextBytes(bytes);
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-        Instant expires = Instant.now().plus(12, ChronoUnit.HOURS);
+        Instant expires = Instant.now().plus(SESSION_DAYS, ChronoUnit.DAYS);
+        db.update("UPDATE user_info SET last_login_at = now() WHERE seq = ?", userSeq);
         db.update("INSERT INTO auth_session(token_hash, user_seq, expires_at) VALUES (?, ?, ?)",
             hash(token), userSeq, java.sql.Timestamp.from(expires));
         return new IssuedToken(token, expires, email);
@@ -101,10 +104,16 @@ public class AuthService {
 
     Long findUserForToken(String token) {
         if (token.length() < 40 || token.length() > 100) return null;
+        String tokenHash = hash(token);
         var users = db.query(
             "SELECT user_seq FROM auth_session WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > now()",
-            (rs, row) -> rs.getLong(1), hash(token));
-        return users.isEmpty() ? null : users.get(0);
+            (rs, row) -> rs.getLong(1), tokenHash);
+        if (users.isEmpty()) return null;
+        // 滑動期限：最多一天延長一次，避免每個請求都寫資料庫
+        db.update("UPDATE auth_session SET expires_at = now() + (? * interval '1 day') "
+            + "WHERE token_hash = ? AND expires_at < now() + (? * interval '1 day')",
+            SESSION_DAYS, tokenHash, SESSION_DAYS - 1);
+        return users.get(0);
     }
 
     void logout(Long userSeq, String token) {

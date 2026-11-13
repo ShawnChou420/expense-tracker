@@ -7,7 +7,7 @@ import ShoppingList from './components/ShoppingList.vue'
 import DashboardPage from './components/DashboardPage.vue'
 import MorePage from './components/MorePage.vue'
 import AuthPanel from './components/AuthPanel.vue'
-import { authEmail, authToken, signOut, clearSession, apiRequest } from './services/authSession.js'
+import { authEmail, authToken, signOut, clearSession, apiRequest, restoreSavedSession } from './services/authSession.js'
 import { useWorkRecordsPersistence } from './composables/useWorkRecordsPersistence.js'
 import { getGuestLedgerSnapshot, notifyLedgerChanged, passengerRepository, tripRepository, expenseRepository, salaryDepositRepository } from './repositories/appRepositories.js'
 import { dashboardSettingsRepository, getGuestDashboardSettings } from './repositories/inMemoryDashboardSettingsRepository.js'
@@ -144,8 +144,10 @@ const fetchExchangeRates = async () => {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   fetchExchangeRates()
+  // 恢復上次的登入（重新整理不會登出）
+  if (await restoreSavedSession()) await handleSignedIn()
 })
 
 const onCurrencyConfirm = ({ selectedOptions }) => {

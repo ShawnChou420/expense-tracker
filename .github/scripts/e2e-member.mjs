@@ -129,6 +129,11 @@ try {
   check('latestNetPay', await page.locator('.latest-pay').getByText('$1,653.00').isVisible())
   await shot('member-home-payslip')
 
+  // 重新整理不會登出：仍是會員，薪資單還在
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.getByText('最近一期薪資').waitFor({ timeout: 15000 })
+  check('staysSignedInAfterReload', true)
+
   // 5. 填滿此月：預覽 → 確認
   await tab('薪資')
   await page.getByRole('button', { name: '填滿此月' }).click()

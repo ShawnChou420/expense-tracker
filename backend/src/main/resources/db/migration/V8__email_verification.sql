@@ -1,5 +1,7 @@
 -- Email 驗證碼：註冊與忘記密碼。只存驗證碼的雜湊，不存明碼。
 ALTER TABLE user_info ADD COLUMN email_verified_at TIMESTAMPTZ;
+-- 最近一次登入時間（之後的管理後台會用到）
+ALTER TABLE user_info ADD COLUMN last_login_at TIMESTAMPTZ;
 
 CREATE TABLE email_verification_code (
     id BIGSERIAL PRIMARY KEY,

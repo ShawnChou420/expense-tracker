@@ -6,6 +6,26 @@ export const authToken = ref(null)
 export const authEmail = ref('')
 export const isAuthenticated = computed(() => Boolean(authToken.value))
 
+// 登入狀態保存在這台裝置上：重新整理或關掉 App 都不會登出，直到主動登出或登入過期（後端 30 天、使用中會自動延長）
+const SESSION_KEY = 'expense-tracker.session'
+function saveSession(result) {
+  try {
+    localStorage.setItem(
+      SESSION_KEY,
+      JSON.stringify({ token: result.token, email: result.email, expiresAt: result.expiresAt }),
+    )
+  } catch {
+    // 無痕模式或停用儲存時，只維持這次開啟期間的登入
+  }
+}
+function forgetSession() {
+  try {
+    localStorage.removeItem(SESSION_KEY)
+  } catch {
+    // ignore
+  }
+}
+
 const configuredBase = import.meta.env?.VITE_API_BASE_URL?.replace(/\/$/, '') || ''
 export const isApiAvailable = !Capacitor.isNativePlatform() || configuredBase.startsWith('https://')
 
@@ -53,7 +73,42 @@ export async function signIn(mode, email, password, code) {
   })
   authToken.value = result.token
   authEmail.value = result.email
+  saveSession(result)
   return result
+}
+
+/**
+ * App 啟動時恢復上次的登入。向後端確認登入仍有效才算成功；失效就清掉。
+ * @returns {Promise<boolean>}
+ */
+export async function restoreSavedSession() {
+  let saved = null
+  try {
+    saved = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null')
+  } catch {
+    saved = null
+  }
+  // 不在前端判斷期限：後端使用中會自動延長，由後端決定是否仍有效
+  if (!saved?.token) {
+    forgetSession()
+    return false
+  }
+  authToken.value = saved.token
+  authEmail.value = saved.email || ''
+  try {
+    const me = await apiRequest('/auth/me')
+    authEmail.value = me.email
+    return true
+  } catch (error) {
+    // 網路暫時不通時保留登入，讓使用者稍後重試；只有後端明確拒絕才登出
+    if (!authToken.value) return false
+    if (String(error?.message || '').includes('無法連線')) {
+      authToken.value = null
+      return false
+    }
+    clearSession()
+    return false
+  }
 }
 
 /** 後端是否啟用 Email 驗證（沒有設定寄信服務時，註冊不需要驗證碼、也不提供忘記密碼） */
@@ -81,6 +136,7 @@ export async function signOut() {
 }
 
 export function clearSession() {
+  forgetSession()
   authToken.value = null
   authEmail.value = ''
 }

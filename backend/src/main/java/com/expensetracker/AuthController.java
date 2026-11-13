@@ -17,13 +17,20 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(AuthController.class);
     private final AuthService auth;
+    private final EmailCodeService codes;
+    private final MailService mail;
 
-    AuthController(AuthService auth) {
+    AuthController(AuthService auth, EmailCodeService codes, MailService mail) {
         this.auth = auth;
+        this.codes = codes;
+        this.mail = mail;
     }
 
     record Credentials(String email, String password) {}
+    record RegisterRequest(String email, String password, String code) {}
+    record CodeRequest(String email, String purpose) {}
     record TokenResponse(String token, Instant expiresAt, String email) {}
 
     @ExceptionHandler(ResponseStatusException.class)
@@ -46,10 +53,59 @@ public class AuthController {
         }
     }
 
+    static void validateEmail(String email) {
+        validate(new Credentials(email, "x".repeat(MIN_PASSWORD_LENGTH)));
+    }
+
+    /** 前端用來決定註冊是否需要驗證碼、是否提供忘記密碼 */
+    @GetMapping("/config")
+    Map<String, Object> config() {
+        return Map.of("emailVerification", codes.enabled());
+    }
+
+    @PostMapping("/email-code")
+    ResponseEntity<Map<String, Object>> emailCode(@RequestBody CodeRequest request) {
+        if (request == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "請輸入有效的 Email");
+        validateEmail(request.email());
+        EmailCodeService.Purpose purpose;
+        try {
+            purpose = EmailCodeService.Purpose.valueOf(String.valueOf(request.purpose()));
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "不支援的驗證類型");
+        }
+        codes.request(AuthService.normalizeEmail(request.email()), purpose);
+        return ResponseEntity.accepted().body(Map.of(
+            "resendAfterSeconds", EmailCodeService.RESEND_SECONDS,
+            "expiresInMinutes", EmailCodeService.CODE_TTL_MINUTES));
+    }
+
     @PostMapping("/register")
-    TokenResponse register(@RequestBody Credentials credentials) {
-        validate(credentials);
-        var result = auth.register(credentials.email(), credentials.password());
+    TokenResponse register(@RequestBody RegisterRequest request) {
+        if (request == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "請輸入有效的 Email");
+        validate(new Credentials(request.email(), request.password()));
+        boolean verify = codes.enabled();
+        if (verify) {
+            codes.verify(AuthService.normalizeEmail(request.email()), EmailCodeService.Purpose.REGISTER, request.code());
+        }
+        var result = auth.register(request.email(), request.password(), verify);
+        if (verify) {
+            try {
+                mail.send(result.email(), "歡迎使用 WORK & SAVE",
+                    "你的帳號 " + result.email() + " 已經建立完成。", MailService.welcomeHtml(result.email()));
+            } catch (RuntimeException exception) {
+                log.warn("歡迎信寄送失敗");
+            }
+        }
+        return new TokenResponse(result.token(), result.expiresAt(), result.email());
+    }
+
+    @PostMapping("/reset-password")
+    TokenResponse resetPassword(@RequestBody RegisterRequest request) {
+        if (request == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "請輸入有效的 Email");
+        if (!codes.enabled()) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Email 驗證尚未啟用");
+        validate(new Credentials(request.email(), request.password()));
+        codes.verify(AuthService.normalizeEmail(request.email()), EmailCodeService.Purpose.RESET_PASSWORD, request.code());
+        var result = auth.resetPassword(request.email(), request.password());
         return new TokenResponse(result.token(), result.expiresAt(), result.email());
     }
 

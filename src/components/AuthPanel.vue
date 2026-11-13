@@ -1,33 +1,136 @@
 <script setup>
-import { ref } from 'vue'
+// 登入／註冊／忘記密碼。後端有設定寄信服務時，註冊與重設密碼都需要 Email 驗證碼。
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { showToast } from 'vant'
-import { isApiAvailable, signIn } from '../services/authSession.js'
+import { getAuthConfig, isApiAvailable, requestEmailCode, signIn } from '../services/authSession.js'
 
-defineProps({ show: Boolean })
+const props = defineProps({ show: Boolean })
 const emit = defineEmits(['update:show', 'signed-in'])
-const mode = ref('login')
+
+const MIN_PASSWORD = 8
+const mode = ref('login') // login | register | forgot
+const step = ref('form') // form | code
 const email = ref('')
 const password = ref('')
+const code = ref('')
+const showPassword = ref(false)
 const busy = ref(false)
+const error = ref('')
+const errorAction = ref(null) // { label, run }
+const emailVerification = ref(false)
+const resendIn = ref(0)
+let timer = null
 
-async function submit() {
-  if (busy.value) return
-  if (mode.value === 'register' && password.value.length < 8) {
-    showToast('註冊密碼至少需要 8 個字元')
-    return
+watch(
+  () => props.show,
+  async (show) => {
+    if (!show) return
+    error.value = ''
+    const config = await getAuthConfig()
+    emailVerification.value = Boolean(config?.emailVerification)
+  },
+  { immediate: true },
+)
+onBeforeUnmount(() => clearInterval(timer))
+
+const titles = { login: '登入帳號', register: '建立帳號', forgot: '重設密碼' }
+const title = computed(() => titles[mode.value])
+const needsCode = computed(() => mode.value === 'forgot' || (mode.value === 'register' && emailVerification.value))
+const trimmedEmail = computed(() => email.value.trim())
+const emailValid = computed(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail.value))
+const passwordHint = computed(() => {
+  if (mode.value === 'login' || !password.value) return ''
+  return password.value.length < MIN_PASSWORD ? `還差 ${MIN_PASSWORD - password.value.length} 個字元` : '密碼長度可以'
+})
+
+function switchMode(next) {
+  mode.value = next
+  step.value = 'form'
+  code.value = ''
+  error.value = ''
+  errorAction.value = null
+  if (next === 'forgot') password.value = ''
+}
+
+function startCountdown(seconds) {
+  clearInterval(timer)
+  resendIn.value = seconds
+  timer = setInterval(() => {
+    resendIn.value -= 1
+    if (resendIn.value <= 0) clearInterval(timer)
+  }, 1000)
+}
+
+function fail(message, action = null) {
+  error.value = message
+  errorAction.value = action
+}
+
+async function sendCode() {
+  if (!emailValid.value) return fail('請輸入有效的 Email')
+  if (mode.value === 'register' && password.value.length < MIN_PASSWORD) {
+    return fail(`密碼至少需要 ${MIN_PASSWORD} 個字元`)
   }
   busy.value = true
+  error.value = ''
   try {
-    await signIn(mode.value, email.value.trim(), password.value)
-    password.value = ''
-    emit('update:show', false)
-    emit('signed-in')
-  } catch (error) {
-    showToast(error.message)
+    const result = await requestEmailCode(trimmedEmail.value, mode.value === 'register' ? 'REGISTER' : 'RESET_PASSWORD')
+    step.value = 'code'
+    code.value = ''
+    startCountdown(result?.resendAfterSeconds ?? 60)
+    showToast('驗證碼已寄出')
+  } catch (err) {
+    const message = err.message || '寄送失敗'
+    fail(message, message.includes('已經註冊過') ? { label: '改為登入', run: () => switchMode('login') } : null)
   } finally {
     busy.value = false
   }
 }
+
+async function submit() {
+  if (busy.value) return
+  error.value = ''
+  errorAction.value = null
+  if (needsCode.value && step.value === 'form') return sendCode()
+  if (!emailValid.value) return fail('請輸入有效的 Email')
+  if (mode.value !== 'login' && password.value.length < MIN_PASSWORD) {
+    return fail(`密碼至少需要 ${MIN_PASSWORD} 個字元`)
+  }
+  if (needsCode.value && !/^\d{6}$/.test(code.value.trim())) return fail('請輸入信中的 6 位數驗證碼')
+  busy.value = true
+  try {
+    const apiMode = mode.value === 'forgot' ? 'reset-password' : mode.value
+    await signIn(apiMode, trimmedEmail.value, password.value, needsCode.value ? code.value.trim() : undefined)
+    if (mode.value === 'forgot') showToast('密碼已更新，已為你登入')
+    else if (mode.value === 'register') showToast('註冊完成，歡迎加入')
+    password.value = ''
+    code.value = ''
+    step.value = 'form'
+    mode.value = 'login'
+    emit('update:show', false)
+    emit('signed-in')
+  } catch (err) {
+    const message = err.message || '操作失敗'
+    if (mode.value === 'login' && message.includes('不正確')) {
+      fail(
+        'Email 或密碼不正確。',
+        emailVerification.value ? { label: '忘記密碼？用 Email 重設', run: () => switchMode('forgot') } : null,
+      )
+    } else if (message.includes('已經註冊過')) {
+      fail(message, { label: '改為登入', run: () => switchMode('login') })
+    } else {
+      fail(message)
+    }
+  } finally {
+    busy.value = false
+  }
+}
+
+const primaryLabel = computed(() => {
+  if (mode.value === 'login') return '登入'
+  if (needsCode.value && step.value === 'form') return '寄送驗證碼'
+  return mode.value === 'register' ? '完成註冊' : '重設密碼並登入'
+})
 </script>
 
 <template>
@@ -38,43 +141,109 @@ async function submit() {
     safe-area-inset-bottom
     @update:show="emit('update:show', $event)"
   >
-    <form class="auth-sheet" @submit.prevent="submit">
+    <form class="auth-sheet" novalidate @submit.prevent="submit">
       <div class="auth-sheet__header">
-        <h2>{{ mode === 'login' ? '登入帳號' : '建立帳號' }}</h2>
+        <button
+          v-if="mode !== 'login'"
+          type="button"
+          class="auth-sheet__back"
+          aria-label="返回登入"
+          @click="step === 'code' ? (step = 'form') : switchMode('login')"
+        >
+          <van-icon name="arrow-left" />
+        </button>
+        <h2>{{ title }}</h2>
         <button type="button" aria-label="關閉" @click="emit('update:show', false)">
           <van-icon name="cross" />
         </button>
       </div>
-      <p>訪客試算仍可使用；登入後才能將私人紀錄存到資料庫。</p>
-      <p v-if="!isApiAvailable" class="auth-sheet__warning">
-        此原生版本尚未設定 HTTPS API 位址，暫時無法登入。
+
+      <p v-if="mode === 'login'">訪客試算仍可使用；登入後才能將私人紀錄存到資料庫。</p>
+      <p v-else-if="mode === 'register' && step === 'form'">
+        {{ emailVerification ? '輸入 Email 與密碼，我們會寄一組驗證碼到你的信箱。' : '建立帳號後，紀錄會保存到資料庫，換手機也找得回來。' }}
       </p>
-      <van-field v-model="email" label="Email" type="email" autocomplete="email" required />
-      <van-field
-        v-model="password"
-        label="密碼"
-        type="password"
-        :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"
-        required
-      />
-      <small v-if="mode === 'register'"
-        >請使用至少 8 個字元；本版尚無 Email 驗證與忘記密碼。</small
-      >
-      <van-button
-        block
-        type="primary"
-        native-type="submit"
-        :disabled="!isApiAvailable || busy"
-        :loading="busy"
-        >{{ mode === 'login' ? '登入' : '註冊' }}</van-button
-      >
-      <button
-        class="auth-sheet__switch"
-        type="button"
-        @click="mode = mode === 'login' ? 'register' : 'login'"
-      >
-        {{ mode === 'login' ? '沒有帳號？註冊' : '已有帳號？登入' }}
-      </button>
+      <p v-else-if="mode === 'forgot' && step === 'form'">輸入註冊時的 Email，我們會寄一組驗證碼給你重設密碼。</p>
+      <p v-if="!isApiAvailable" class="auth-sheet__warning">此原生版本尚未設定 HTTPS API 位址，暫時無法登入。</p>
+
+      <template v-if="step === 'form'">
+        <van-field
+          v-model="email"
+          label="Email"
+          type="email"
+          inputmode="email"
+          autocomplete="email"
+          placeholder="you@example.com"
+          :disabled="busy"
+        />
+        <van-field
+          v-if="mode !== 'forgot'"
+          v-model="password"
+          label="密碼"
+          :type="showPassword ? 'text' : 'password'"
+          :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"
+          :placeholder="mode === 'login' ? '' : `至少 ${MIN_PASSWORD} 個字元`"
+          :right-icon="showPassword ? 'eye-o' : 'closed-eye'"
+          :disabled="busy"
+          @click-right-icon="showPassword = !showPassword"
+        />
+        <small v-if="passwordHint" :class="{ 'auth-sheet__ok': password.length >= MIN_PASSWORD }">{{ passwordHint }}</small>
+      </template>
+
+      <template v-else>
+        <div class="auth-sheet__sent">
+          <van-icon name="envelop-o" aria-hidden="true" />
+          <span>
+            驗證碼已寄到 <strong>{{ trimmedEmail }}</strong>
+            <small>10 分鐘內有效。沒收到的話，看看垃圾郵件匣。</small>
+          </span>
+        </div>
+        <label class="auth-sheet__code">
+          <span>6 位數驗證碼</span>
+          <input
+            v-model="code"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            maxlength="6"
+            placeholder="••••••"
+            aria-label="6 位數驗證碼"
+            @input="code = code.replace(/\D/g, '').slice(0, 6)"
+          />
+        </label>
+        <van-field
+          v-if="mode === 'forgot'"
+          v-model="password"
+          label="新密碼"
+          :type="showPassword ? 'text' : 'password'"
+          autocomplete="new-password"
+          :placeholder="`至少 ${MIN_PASSWORD} 個字元`"
+          :right-icon="showPassword ? 'eye-o' : 'closed-eye'"
+          @click-right-icon="showPassword = !showPassword"
+        />
+        <small v-if="mode === 'forgot' && passwordHint" :class="{ 'auth-sheet__ok': password.length >= MIN_PASSWORD }">{{ passwordHint }}</small>
+        <button type="button" class="auth-sheet__resend" :disabled="resendIn > 0 || busy" @click="sendCode">
+          {{ resendIn > 0 ? `${resendIn} 秒後可重新寄送` : '重新寄送驗證碼' }}
+        </button>
+      </template>
+
+      <div v-if="error" class="auth-sheet__error" role="alert">
+        <van-icon name="warning-o" aria-hidden="true" />
+        <span>
+          {{ error }}
+          <button v-if="errorAction" type="button" @click="errorAction.run()">{{ errorAction.label }}</button>
+        </span>
+      </div>
+
+      <van-button block type="primary" native-type="submit" :disabled="!isApiAvailable || busy" :loading="busy">
+        {{ primaryLabel }}
+      </van-button>
+
+      <div class="auth-sheet__links">
+        <template v-if="mode === 'login'">
+          <button type="button" class="auth-sheet__switch" @click="switchMode('register')">沒有帳號？註冊</button>
+          <button v-if="emailVerification" type="button" class="auth-sheet__link" @click="switchMode('forgot')">忘記密碼？</button>
+        </template>
+        <button v-else type="button" class="auth-sheet__switch" @click="switchMode('login')">已有帳號？登入</button>
+      </div>
     </form>
   </van-popup>
 </template>
@@ -83,7 +252,7 @@ async function submit() {
 .auth-sheet {
   display: grid;
   gap: 12px;
-  max-height: min(80dvh, 680px);
+  max-height: min(86dvh, 720px);
   overflow-y: auto;
   padding: 20px var(--page-horizontal-padding, 18px) calc(24px + env(safe-area-inset-bottom));
   background: #fff;
@@ -91,9 +260,10 @@ async function submit() {
 .auth-sheet__header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 4px;
 }
 .auth-sheet__header h2 {
+  flex: 1;
   margin: 0;
   color: #1b2a3b;
   font-size: 20px;
@@ -104,6 +274,11 @@ async function submit() {
   border: 0;
   background: transparent;
   color: #657588;
+  font-size: 18px;
+}
+.auth-sheet__header .auth-sheet__back {
+  margin-left: -10px;
+  color: #1b2a3b;
 }
 .auth-sheet p,
 .auth-sheet small {
@@ -112,6 +287,9 @@ async function submit() {
   font-size: 13px;
   line-height: 1.5;
 }
+.auth-sheet .auth-sheet__ok {
+  color: var(--color-income, #16845b);
+}
 .auth-sheet .auth-sheet__warning {
   color: #b45309;
 }
@@ -119,11 +297,108 @@ async function submit() {
   min-height: 44px;
   border-radius: 12px;
 }
-.auth-sheet__switch {
+.auth-sheet__sent {
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #eef5fe;
+  color: #1b2a3b;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.auth-sheet__sent .van-icon {
+  flex: none;
+  margin-top: 2px;
+  color: #1268da;
+  font-size: 20px;
+}
+.auth-sheet__sent strong {
+  overflow-wrap: anywhere;
+}
+.auth-sheet__sent small {
+  display: block;
+}
+.auth-sheet__code {
+  display: grid;
+  gap: 6px;
+  color: #1b2a3b;
+  font-size: 14px;
+  font-weight: 700;
+}
+.auth-sheet__code input {
+  width: 100%;
+  min-height: 56px;
+  box-sizing: border-box;
+  border: 1.5px solid #d6dee8;
+  border-radius: 12px;
+  color: #1b2a3b;
+  font: inherit;
+  font-size: 28px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.4em;
+  text-align: center;
+}
+.auth-sheet__code input:focus {
+  border-color: #1268da;
+  outline: none;
+}
+.auth-sheet__resend {
+  justify-self: start;
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #1268da;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+}
+.auth-sheet__resend:disabled {
+  color: #9aa7b6;
+}
+.auth-sheet__error {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fdecec;
+  color: #b42318;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.auth-sheet__error .van-icon {
+  flex: none;
+  margin-top: 2px;
+}
+.auth-sheet__error button {
+  display: inline;
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #1268da;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+}
+.auth-sheet__links {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.auth-sheet__switch,
+.auth-sheet__link {
   min-height: 40px;
   border: 0;
   background: transparent;
   color: #166dd1;
+  font: inherit;
+  font-size: 14px;
   font-weight: 700;
+}
+.auth-sheet__link {
+  color: #657588;
 }
 </style>

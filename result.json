@@ -1,0 +1,18 @@
+{
+  "wrongCodeRejected": true,
+  "memberHeroAsksSetup": true,
+  "depositCheckedByDefault": true,
+  "wizardOpensAtShifts": true,
+  "latestPayslipCard": true,
+  "latestNetPay": true,
+  "staysSignedInAfterReload": true,
+  "monthPreviewHasShifts": true,
+  "monthShifts": 21,
+  "guestAfterLogout": true,
+  "resetPasswordSignedIn": true,
+  "payslipRestored": true,
+  "payRestored": true,
+  "scheduleRestored": true,
+  "noDuplicateAfterRelogin": true,
+  "pageErrors": []
+}

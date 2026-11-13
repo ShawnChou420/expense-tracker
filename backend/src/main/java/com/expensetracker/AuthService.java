@@ -49,6 +49,7 @@ public class AuthService {
                     + "VALUES (?, ?, ?, ?, CASE WHEN ? THEN now() END) RETURNING seq",
                 Long.class, UUID.randomUUID().toString(), normalized, normalized, passwords.encode(password),
                 emailVerified);
+            AuditLog.event("REGISTER", userSeq, normalized);
             return issue(userSeq, normalized);
         } catch (DuplicateKeyException exception) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "這個 Email 已經註冊過，請直接登入；忘記密碼可以重設");
@@ -67,15 +68,19 @@ public class AuthService {
             + "update_time = now() WHERE seq = ?", passwords.encode(password), userSeq);
         db.update("UPDATE auth_session SET revoked_at = now() WHERE user_seq = ? AND revoked_at IS NULL", userSeq);
         attempts.keySet().removeIf(key -> key.endsWith(":" + normalized));
+        AuditLog.event("PASSWORD_RESET", userSeq, normalized);
         return issue(userSeq, normalized);
     }
 
     @Transactional
     IssuedToken login(String email, String password, String ip) {
         String normalized = normalizeEmail(email);
+        // 失敗次數只存在記憶體：清掉已過期的，避免被大量亂打的帳號塞滿
+        if (attempts.size() > 5_000) attempts.values().removeIf(item -> item.until.isBefore(Instant.now()));
         String key = ip + ":" + normalized;
         Attempt state = attempts.get(key);
         if (state != null && state.count >= 5 && state.until.isAfter(Instant.now())) {
+            AuditLog.event("LOGIN_LOCKED", null, normalized);
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "請稍後再試");
         }
         var users = db.query(
@@ -85,9 +90,11 @@ public class AuthService {
             attempts.compute(key, (ignored, old) ->
                 new Attempt(old == null || old.until.isBefore(Instant.now()) ? 1 : old.count + 1,
                     Instant.now().plus(15, ChronoUnit.MINUTES)));
+            AuditLog.event("LOGIN_FAILED", users.size() == 1 ? (Long) users.get(0)[0] : null, normalized);
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Email 或密碼不正確");
         }
         attempts.remove(key);
+        AuditLog.event("LOGIN", (Long) users.get(0)[0], null);
         return issue((Long) users.get(0)[0], normalized);
     }
 
@@ -119,6 +126,7 @@ public class AuthService {
     void logout(Long userSeq, String token) {
         db.update("UPDATE auth_session SET revoked_at = now() WHERE user_seq = ? AND token_hash = ?",
             userSeq, hash(token));
+        AuditLog.event("LOGOUT", userSeq, null);
     }
 
     record AccountInfo(String email, String nickname, Instant createdAt) {}
@@ -153,6 +161,7 @@ public class AuthService {
             passwords.encode(newPassword), userSeq);
         db.update("UPDATE auth_session SET revoked_at = now() WHERE user_seq = ? AND token_hash <> ? AND revoked_at IS NULL",
             userSeq, hash(currentToken));
+        AuditLog.event("PASSWORD_CHANGE", userSeq, null);
     }
 
     /** 刪除帳號時依外鍵由子到父刪除；全部表都以 user_seq 限定為同一會員。 */
@@ -185,6 +194,7 @@ public class AuthService {
     void deleteAccount(Long userSeq, String password) {
         verifyCurrentPassword("account-delete:" + userSeq, userSeq, password);
         for (String sql : ACCOUNT_DELETE_STATEMENTS) db.update(sql, userSeq);
+        AuditLog.event("ACCOUNT_DELETE", userSeq, null);
     }
 
     /** 驗證目前密碼並套用 15 分鐘 5 次的嘗試限制；錯誤回 400（不是 401），回傳目前雜湊。 */
@@ -198,6 +208,7 @@ public class AuthService {
             attempts.compute(key, (ignored, old) ->
                 new Attempt(old == null || old.until.isBefore(Instant.now()) ? 1 : old.count + 1,
                     Instant.now().plus(15, ChronoUnit.MINUTES)));
+            AuditLog.event(key.startsWith("account-delete") ? "DELETE_PASSWORD_FAILED" : "PASSWORD_CHECK_FAILED", userSeq, null);
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "目前密碼不正確");
         }
         attempts.remove(key);

@@ -82,6 +82,7 @@ export async function signIn(mode, email, password, code) {
  * @returns {Promise<boolean>}
  */
 export async function restoreSavedSession() {
+  /** @type {{ token?: string, email?: string } | null} */
   let saved = null
   try {
     saved = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null')
@@ -99,7 +100,7 @@ export async function restoreSavedSession() {
     const me = await apiRequest('/auth/me')
     authEmail.value = me.email
     return true
-  } catch (error) {
+  } catch (/** @type {any} */ error) {
     // 網路暫時不通時保留登入，讓使用者稍後重試；只有後端明確拒絕才登出
     if (!authToken.value) return false
     if (String(error?.message || '').includes('無法連線')) {

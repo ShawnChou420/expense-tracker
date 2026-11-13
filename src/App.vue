@@ -302,8 +302,8 @@ async function handleSignedIn() {
         await showConfirmDialog({
           title: '匯入本次訪客紀錄？',
           message: memberHasData
-            ? '此會員已有紀錄。相同 ID 或同日期禁休會略過，但同一天不同 ID 的班表仍可能重複；請確認後再匯入。'
-            : '將本次訪客的工作設定、薪資單、班表、禁休公告、採買清單、乘客、行程、支出與目標匯入此會員。',
+            ? '這個帳號已有資料，匯入後同一天的班表可能重複。'
+            : '要把剛才的資料存進這個帳號嗎？',
           confirmButtonText: '匯入',
         })
         const missing = (guestItems, memberItems) => guestItems.filter(
@@ -983,7 +983,7 @@ const restoreSelectedDateShift = () => {
     startTime.value = ''
     endTime.value = ''
     openSelectedDateEditor()
-    showToast('這天沒有排班設定，請選擇上下班時間後儲存')
+    showToast('請選擇上下班時間')
     return
   }
   if (!workSetup.requireSetup({ type: 'ADD_SHIFT', label: '新增班表' }, 'pay')) return
@@ -1243,7 +1243,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
           {{ currencyFlag }} {{ currentCurrency }}
         </van-button>
       </div>
-      <p>記錄班表，預估薪資。</p>
+      <p>排班與薪資預估</p>
     </div>
 
     <section class="work-setup-card" :class="{ 'work-setup-card--todo': !setupState.ready }" aria-labelledby="work-setup-title">
@@ -1254,7 +1254,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
         <div>
           <h2 id="work-setup-title">工作設定</h2>
           <p v-if="!setupState.ready">先設定薪資費率與班別，再使用自動排班。</p>
-          <p v-else>試算依照你自己的費率與班表</p>
+          <p v-else>已完成</p>
         </div>
       </div>
       <button type="button" class="work-setup-card__row" @click="openWorkSetup(1)">
@@ -1333,8 +1333,8 @@ const markDesignatedWorkDate = ({ date, marked }) => {
             {{ selectedLeaveBlackout ? '編輯禁休公告' : '新增禁休' }}
           </van-button>
         </div>
-        <p v-if="selectedRecord?.shiftType === 'leave'" class="calendar-day-actions__hint">{{ selectedDateHasDefaultShift ? `恢復時套用你的排班：${selectedPlannedShift.startTime}–${selectedPlannedShift.endTime}；如需不同工時，請再編輯。` : '這天沒有排班設定，請設定上下班時間後儲存。' }}</p>
-        <p class="calendar-day-actions__hint">禁休只用來提醒主管公告，不會變更班表、休假或薪資。</p>
+        <p v-if="selectedRecord?.shiftType === 'leave'" class="calendar-day-actions__hint">{{ selectedDateHasDefaultShift ? `恢復為 ${selectedPlannedShift.startTime}–${selectedPlannedShift.endTime}` : '請設定上下班時間' }}</p>
+        <p class="calendar-day-actions__hint">僅供提醒，不影響班表與薪資。</p>
       </div>
     </div>
 
@@ -1344,7 +1344,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
           <strong>{{ selectedLeaveBlackout ? '編輯禁休公告' : '新增禁休' }}</strong>
           <span>{{ workDate }}</span>
         </div>
-        <p>記下主管公告的原因，之後排休時不用再找訊息。這只是個人提醒，不代表系統會阻止請假。</p>
+        <p>記下主管公告的原因，方便之後排休。</p>
         <van-field v-model="blackoutReason" type="textarea" rows="2" autosize maxlength="240" show-word-limit
           label="公告說明" placeholder="選填，例如：人手不足、旺季不得請假" />
         <div class="blackout-editor__actions">
@@ -1409,7 +1409,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
         <van-cell v-else>
           <template #title>
             <div style="color: #ee0a24; text-align: center; font-size: 14px; padding: 10px 0; font-weight: bold;">
-              🏖️ 當日排定為「請假休假」，工時與薪資為 0。
+              休假，這天不計薪。
             </div>
           </template>
         </van-cell>
@@ -1436,7 +1436,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       <div class="section">
         <h2>儲存班表</h2>
         <div class="section-card">
-          <p class="section-note">日曆可直接設休假；需要調整時間或備註時，在這裡儲存當天班表。</p>
+          <p class="section-note">修改時間或備註後按儲存。</p>
           <div class="weekly-actions">
             <!-- 單日儲存按鈕 -->
             <van-button block type="primary" :icon="isEditingRecord ? 'edit' : 'plus'" @click="addTodayRecordToList">
@@ -1456,7 +1456,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
           <van-icon name="balance-o" aria-hidden="true" />
           <div>
             <strong>還沒有設定薪資費率</strong>
-            <p>上傳 Payslip 或手動輸入時薪後，這裡會顯示這天的預估薪資。</p>
+            <p>設定時薪後顯示預估。</p>
           </div>
           <van-button size="small" type="primary" @click="openWorkSetup(1)">設定</van-button>
         </div>
@@ -1498,7 +1498,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
               <div><dt>P/HOL 150%</dt><dd>國定假日加給（NSW 假日）</dd></div>
               <div><dt>Smoko</dt><dd>班中的帶薪休息時間</dd></div>
             </dl>
-            <p class="section-note section-note--compact">加給規則依你的 Award／合約而定，如與薪資單不符請以雇主為準。</p>
+            <p class="section-note section-note--compact">以雇主薪資單為準。</p>
           </van-collapse-item>
         </van-collapse>
       </div>
@@ -1509,7 +1509,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
           <span class="payslip-entry__icon" aria-hidden="true"><van-icon name="description-o" /></span>
           <span class="payslip-entry__text">
             <strong>{{ workSetup.latestPayslip.value ? '上傳新的薪資單' : '從薪資單匯入費率' }}</strong>
-            <small>上傳 PDF，自動讀出時薪、各項加給與本期預扣比例</small>
+            <small>自動讀出時薪與加給</small>
           </span>
           <van-icon name="arrow" aria-hidden="true" />
         </button>
@@ -1530,7 +1530,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
               <van-cell-group :border="false">
                 <van-cell v-for="rate in ratePreviewItems.slice(1, 7)" :key="rate.key" :title="rate.label" :value="hidesRate(rate.key) ? '—' : formatRate(rate.value)" :label="rateSourceLabel(rate.key)" />
               </van-cell-group>
-              <p class="section-note section-note--compact">只有薪資單或你手動確認過的費率算「已確認」。未確認的加給，需要你在工作設定中同意暫估才會計入；上傳含該項目的薪資單後會自動校正。已存的班表金額不會因費率變更而改變。</p>
+              <p class="section-note section-note--compact">未確認的加給要在工作設定同意暫估才會計入。修改費率不會改到已存的班表。</p>
               <van-button size="small" plain type="primary" class="rate-reset-btn" @click="openWorkSetup(1, { manual: true })">手動修改費率</van-button>
             </van-collapse-item>
           </van-collapse>
@@ -1539,7 +1539,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
           <van-icon name="info-o" aria-hidden="true" />
           <div>
             <strong>尚未設定費率</strong>
-            <p>每個人的時薪與加給不同，請上傳 Payslip 或手動設定。</p>
+            <p>上傳 Payslip 或手動輸入。</p>
           </div>
           <van-button size="small" type="primary" @click="openWorkSetup(1, { manual: true })">手動設定</van-button>
         </div>
@@ -1554,7 +1554,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
         </div>
         <div v-if="monthlyScheduleRecords.length === 0" class="section-card empty-state">
           <div class="empty-state__title">{{ scheduleMonth }} 沒有班表紀錄</div>
-          <div class="empty-state__text">可切換月份查看，或回到日曆填滿此月。</div>
+          <div class="empty-state__text">可切換月份，或回到日曆排班。</div>
         </div>
         <van-collapse v-else v-model="scheduleSections" class="schedule-collapse">
           <van-collapse-item name="records">
@@ -1637,7 +1637,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
         <van-collapse v-model="dataManagementSections" class="data-management-collapse">
           <van-collapse-item name="data-management" title="打開 匯入 / 匯出 備份操作區">
             <div class="button-group">
-              <p class="section-note section-note--compact">您可以將資料安全地備份為標準 JSON 檔，或匯出為自動排版的 Excel 薪資對帳單。</p>
+              <p class="section-note section-note--compact">備份成 JSON，或匯出 Excel 對帳單。</p>
               <van-button block plain type="default" @click="exportTodayJson">匯出今日單日 JSON</van-button>
               <div class="import-export-row">
                 <van-button block plain type="primary" :disabled="records.length === 0" @click="exportWeeklyJson">匯出本週 JSON</van-button>

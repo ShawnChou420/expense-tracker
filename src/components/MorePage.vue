@@ -7,24 +7,24 @@ const tools = [
     name: 'work-setup',
     icon: 'setting-o',
     title: '工作設定',
-    description: '薪資費率、班別、每週工作日與 Smoko 規則。',
+    description: '時薪、班別與 Smoko',
   },
   {
     name: 'payslip',
     icon: 'description-o',
     title: '匯入薪資單',
-    description: '上傳 PDF，自動讀出時薪、加給、本期預扣比例與年度累計。',
+    description: '上傳 PDF 自動設定時薪與加給',
   },
   {
     name: 'shopping',
     icon: 'cart-o',
     title: '採買清單',
-    description: '和室友一起列要買的東西，買完可直接記成支出。',
+    description: '和室友共用，買完直接記成支出',
   },
 ]
 
 const upcoming = [
-  { icon: 'balance-list-o', title: '稅務追蹤', description: '年度級距與預估稅額（首頁已可看年度進度）' },
+  { icon: 'balance-list-o', title: '稅務追蹤', description: '年度級距與預估稅額' },
   { icon: 'description-o', title: '薪資單核對', description: '比對薪資單與班表預估的差額' },
   { icon: 'medal-o', title: '儲蓄成就', description: '每週存款目標、連續達標與徽章' },
 ]

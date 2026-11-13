@@ -31,7 +31,7 @@ export function getOnboardingSteps({
     {
       id: 'schedule',
       title: '排好這週的班表',
-      description: '設定好班別後，按「填滿本週」預覽並加入班表，自動試算週薪。',
+      description: '按「填滿本週」排好班表。',
       actionLabel: '去排班',
       action: 'payroll',
       done: workRecords.some(
@@ -43,7 +43,7 @@ export function getOnboardingSteps({
           {
             id: 'salary',
             title: '記錄一筆薪資入帳',
-            description: '收到薪水後記下稅後金額，首頁的收入才是實際數字。',
+            description: '收到薪水後記一筆。',
             actionLabel: '記錄入帳',
             action: 'salary',
             done: Array.isArray(salaryDeposits) && salaryDeposits.length > 0,
@@ -53,7 +53,7 @@ export function getOnboardingSteps({
     {
       id: 'expense',
       title: '記一筆支出',
-      description: '房租、超市、油錢都記下來，才能算出每週存了多少。',
+      description: '房租、超市、油錢都記下來。',
       actionLabel: '去記帳',
       action: 'expenses',
       done: expenses.length > 0,
@@ -61,7 +61,7 @@ export function getOnboardingSteps({
     {
       id: 'goal',
       title: '設定儲蓄目標',
-      description: '設定目標金額與日期，首頁會顯示你的存款進度。',
+      description: '設定目標金額與日期。',
       actionLabel: '設定目標',
       action: 'goal',
       done: Boolean(savingGoal),

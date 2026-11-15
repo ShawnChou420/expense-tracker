@@ -62,6 +62,8 @@ public class SecurityConfig {
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type"));
         config.setAllowCredentials(false);
+        // 量測期間讓前端讀得到伺服器端耗時拆解（見 RequestTimingFilter，預設不送出此標頭）
+        config.setExposedHeaders(Arrays.asList("Server-Timing"));
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;

@@ -11,6 +11,7 @@ import AccountPage from './components/AccountPage.vue'
 import PrivacyPage from './components/PrivacyPage.vue'
 import { accountRepository } from './repositories/accountRepository.js'
 import { authEmail, authToken, signOut, clearSession, apiRequest, restoreSavedSession } from './services/authSession.js'
+import { startPerfPhase } from './services/perfTrace.js'
 import { useWorkRecordsPersistence } from './composables/useWorkRecordsPersistence.js'
 import { getGuestLedgerSnapshot, notifyLedgerChanged, passengerRepository, tripRepository, expenseRepository, salaryDepositRepository } from './repositories/appRepositories.js'
 import { dashboardSettingsRepository, getGuestDashboardSettings } from './repositories/inMemoryDashboardSettingsRepository.js'
@@ -154,7 +155,10 @@ const fetchExchangeRates = async () => {
 onMounted(async () => {
   fetchExchangeRates()
   // 恢復上次的登入（重新整理不會登出）
-  if (await restoreSavedSession()) await handleSignedIn()
+  const endRestore = startPerfPhase('恢復登入（/auth/me）')
+  const restored = await restoreSavedSession()
+  endRestore()
+  if (restored) await handleSignedIn()
 })
 
 const onCurrencyConfirm = ({ selectedOptions }) => {
@@ -274,6 +278,7 @@ async function restoreGuestSettings() {
 }
 
 async function handleSignedIn() {
+  const endPerfPhase = startPerfPhase('登入後載入資料')
   switchingAccount = true
   rateWritePaused = true
   try {
@@ -388,6 +393,7 @@ async function handleSignedIn() {
     await nextTick()
     rateWritePaused = false
     switchingAccount = false
+    endPerfPhase()
   }
 }
 

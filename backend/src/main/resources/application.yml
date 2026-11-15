@@ -21,4 +21,7 @@ server:
     session:
       tracking-modes: cookie
 app:
+  # P0 效能排查：回傳 Server-Timing 標頭（預設關閉，量測期間暫時設 SERVER_TIMING_ENABLED=true）
+  server-timing:
+    enabled: ${SERVER_TIMING_ENABLED:false}
   cors-origins: ${CORS_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost,https://localhost,capacitor://localhost}

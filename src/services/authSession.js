@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import { computed, ref } from 'vue'
 import { Capacitor } from '@capacitor/core'
+import { isPerfTraceEnabled, parseServerTiming, recordRequest } from './perfTrace.js'
 
 /** @type {import('vue').Ref<string | null>} */
 export const authToken = ref(null)
@@ -38,6 +39,17 @@ function endpoint(path) {
 /** @param {string} path @param {{ method?: string, body?: unknown }} [options] */
 export async function apiRequest(path, { method = 'GET', body } = {}) {
   let response
+  const startedAt = performance.now()
+  const trace = (/** @type {number} */ status) => {
+    if (!isPerfTraceEnabled()) return
+    recordRequest({
+      method,
+      path,
+      status,
+      ms: performance.now() - startedAt,
+      server: parseServerTiming(response?.headers?.get('Server-Timing')),
+    })
+  }
   try {
     response = await fetch(endpoint(path), {
       method,
@@ -49,8 +61,10 @@ export async function apiRequest(path, { method = 'GET', body } = {}) {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
   } catch {
+    trace(0)
     throw new Error('無法連線到後端，請檢查網路與 API 設定')
   }
+  trace(response.status)
   if (response.status === 401 && authToken.value) {
     clearSession()
     throw new Error('登入已失效，請重新登入')

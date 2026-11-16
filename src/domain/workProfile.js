@@ -77,6 +77,7 @@ export const WEEKDAYS = [
  *   shiftTemplates: ShiftTemplate[],
  *   weekPlan: Record<string, string | null>,
  *   cleaningDays: Record<string, boolean>,
+ *   dayTimes: Record<string, { startTime: string, endTime: string }>,
  *   offDayRule: string,
  *   smoko: SmokoSetting,
  * }} WorkProfile
@@ -101,6 +102,8 @@ export function createEmptyWorkProfile() {
     weekPlan: {},
     // 星期 → 這天固定是清潔日（使用班別的清潔日時間）；臨時的清潔日仍可在當天標記
     cleaningDays: {},
+    // 星期 → 這天自己的上下班時間（和班別預設不同時才有）；同一個晚班在不同星期可以不同時間
+    dayTimes: {},
     /** 沒有排班的日子：SKIP＝不建立紀錄；LEAVE＝建立休假紀錄 */
     offDayRule: 'SKIP',
     smoko: { mode: 'AUTO', count: 1, minutes: 30, paid: false },
@@ -159,6 +162,20 @@ export function normalizeWorkProfile(raw) {
     const template = templates.find((item) => item.id === weekPlan[day])
     if (raw.cleaningDays?.[day] === true && template?.cleaningStartTime) cleaningDays[day] = true
   }
+  // 每天自己的上下班時間：只保留有排班的日子、時間有效且上下班不同
+  /** @type {Record<string, { startTime: string, endTime: string }>} */
+  const dayTimes = {}
+  for (const { day } of WEEKDAYS) {
+    const value = raw.dayTimes?.[day]
+    if (
+      weekPlan[day] &&
+      TIME.test(value?.startTime) &&
+      TIME.test(value?.endTime) &&
+      value.startTime !== value.endTime
+    ) {
+      dayTimes[day] = { startTime: value.startTime, endTime: value.endTime }
+    }
+  }
   const smokoMode = ['AUTO', 'FIXED'].includes(raw.smoko?.mode) ? raw.smoko.mode : 'AUTO'
   const smokoCount = Math.min(3, Math.max(0, Math.round(Number(raw.smoko?.count) || 0)))
   const smokoMinutes = Math.min(60, Math.max(0, Math.round(Number(raw.smoko?.minutes ?? 30))))
@@ -185,6 +202,7 @@ export function normalizeWorkProfile(raw) {
     shiftTemplates: templates,
     weekPlan,
     cleaningDays,
+    dayTimes,
     offDayRule: raw.offDayRule === 'LEAVE' ? 'LEAVE' : 'SKIP',
     smoko: {
       mode: smokoMode,
@@ -242,9 +260,8 @@ export function getSetupCompleteness(profile, rates) {
 export function getPlannedShift(profile, dateText) {
   const date = parseLocalDate(dateText)
   if (!date) return null
-  const templateId = profile.weekPlan[date.getDay()]
-  const template = profile.shiftTemplates.find((item) => item.id === templateId)
-  if (!template) {
+  const shift = getWeekdayShift(profile, date.getDay())
+  if (!shift) {
     return profile.offDayRule === 'LEAVE'
       ? {
           shiftType: 'leave',
@@ -255,14 +272,94 @@ export function getPlannedShift(profile, dateText) {
         }
       : null
   }
-  // 每週固定的清潔日用班別的清潔日時間；其他日子是一般班（臨時清潔日在當天標記）
-  const cleaning = isWeeklyCleaningDay(profile, date.getDay(), template)
   return {
     shiftType: 'normal',
-    ...getTemplateTimes(template, cleaning),
-    isCleaningDay: cleaning,
-    name: template.name,
+    startTime: shift.startTime,
+    endTime: shift.endTime,
+    isCleaningDay: shift.isCleaningDay,
+    name: shift.name,
   }
+}
+
+/**
+ * 每週固定班表中，某個星期幾的班（沒排班回傳 null）。
+ * 時間優先用這天自己設定的時間；沒有時用班別預設（固定清潔日用清潔日時間）。
+ * @param {WorkProfile} profile
+ * @param {number} day 0=日…6=六
+ */
+export function getWeekdayShift(profile, day) {
+  const template = profile.shiftTemplates.find((item) => item.id === profile.weekPlan[day])
+  if (!template) return null
+  const cleaning = isWeeklyCleaningDay(profile, day, template)
+  const custom = profile.dayTimes?.[day]
+  const times = custom ?? getTemplateTimes(template, cleaning)
+  return {
+    day,
+    templateId: template.id,
+    name: template.name,
+    startTime: times.startTime,
+    endTime: times.endTime,
+    isCleaningDay: cleaning,
+    customTimes: Boolean(custom),
+  }
+}
+
+/**
+ * 一次設定一天或多天的班（例如「週一到週五晚班」）。回傳新的 weekPlan、cleaningDays、dayTimes，不修改原物件。
+ * 時間和班別預設相同時不另外保存，之後改班別預設時間，這些日子會跟著改。
+ * @param {Pick<WorkProfile, 'shiftTemplates' | 'weekPlan' | 'cleaningDays' | 'dayTimes'>} profile
+ * @param {number[]} days
+ * @param {{ templateId: string | null, cleaning?: boolean, startTime?: string, endTime?: string }} shift
+ */
+export function setWeekdayShifts(
+  profile,
+  days,
+  { templateId, cleaning = false, startTime, endTime },
+) {
+  const weekPlan = { ...profile.weekPlan }
+  const cleaningDays = { ...(profile.cleaningDays || {}) }
+  const dayTimes = { ...(profile.dayTimes || {}) }
+  const template = profile.shiftTemplates.find((item) => item.id === templateId) ?? null
+  const useCleaning = Boolean(
+    template && cleaning && template.cleaningStartTime && template.cleaningEndTime,
+  )
+  const defaults = template ? getTemplateTimes(template, useCleaning) : null
+  for (const day of days) {
+    weekPlan[day] = template ? template.id : null
+    if (useCleaning) cleaningDays[day] = true
+    else delete cleaningDays[day]
+    const custom =
+      template &&
+      TIME.test(startTime ?? '') &&
+      TIME.test(endTime ?? '') &&
+      startTime !== endTime &&
+      (startTime !== defaults?.startTime || endTime !== defaults?.endTime)
+    if (custom)
+      dayTimes[day] = {
+        startTime: /** @type {string} */ (startTime),
+        endTime: /** @type {string} */ (endTime),
+      }
+    else delete dayTimes[day]
+  }
+  return { weekPlan, cleaningDays, dayTimes }
+}
+
+/**
+ * 說明這班記在哪一天，讓使用者確認跨午夜與凌晨開始的班。
+ * 規則：一班一律記在「上班開始的那一天」（薪資計算也依實際時段切分）。
+ * @param {string} dayLabel 例如「二」
+ * @param {string} startTime
+ * @param {string} endTime
+ */
+export function describeShiftDay(dayLabel, startTime, endTime) {
+  if (!TIME.test(startTime) || !TIME.test(endTime)) return ''
+  if (startTime < '05:00') {
+    return `週${dayLabel}凌晨 ${startTime} 上班 → ${endTime} 下班，記在週${dayLabel}（開始的那一天，不是前一天）。`
+  }
+  if (endTime <= startTime) {
+    return `週${dayLabel} ${startTime} 上班 → 隔天 ${endTime} 下班，整班記在週${dayLabel}。`
+  }
+  return `週${dayLabel} ${startTime} 上班 → ${endTime} 下班。`
 }
 
 /**
@@ -492,24 +589,27 @@ export function summarizeFillPreview(records) {
  * @param {WorkProfile} profile
  */
 export function describeWeekPlan(profile) {
-  return profile.shiftTemplates
-    .map((template) => {
-      const days = WEEKDAYS.filter(({ day }) => profile.weekPlan[day] === template.id)
-        .map(({ label }) => label)
-        .join('')
-      const time = `${template.startTime}–${template.endTime}${crossesMidnight(template) ? '（隔天）' : ''}`
-      const cleaning = WEEKDAYS.filter(
-        ({ day }) =>
-          profile.weekPlan[day] === template.id && isWeeklyCleaningDay(profile, day, template),
-      )
-        .map(({ label }) => label)
-        .join('')
-      const cleaningText = cleaning
-        ? ` · 清潔日週${cleaning} ${template.cleaningStartTime}–${template.cleaningEndTime}`
-        : ''
-      return days ? `${template.name} ${time} · 週${days}${cleaningText}` : null
-    })
-    .filter(Boolean)
+  // 班別、時間、是否清潔日都相同的日子合併成一行，例如「晚班 23:50–06:00（隔天） · 週一三四五」
+  /** @type {Map<string, { name: string, startTime: string, endTime: string, cleaning: boolean, days: string[] }>} */
+  const groups = new Map()
+  for (const { day, label } of WEEKDAYS) {
+    const shift = getWeekdayShift(profile, day)
+    if (!shift) continue
+    const key = [shift.templateId, shift.startTime, shift.endTime, shift.isCleaningDay].join('|')
+    const group = groups.get(key) ?? {
+      name: shift.name,
+      startTime: shift.startTime,
+      endTime: shift.endTime,
+      cleaning: shift.isCleaningDay,
+      days: [],
+    }
+    group.days.push(label)
+    groups.set(key, group)
+  }
+  return [...groups.values()].map((group) => {
+    const overnight = group.endTime <= group.startTime ? '（隔天）' : ''
+    return `${group.name}${group.cleaning ? '（清潔日）' : ''} ${group.startTime}–${group.endTime}${overnight} · 週${group.days.join('')}`
+  })
 }
 
 /** Smoko 設定的說明文字 */

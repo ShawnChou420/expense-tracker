@@ -20,6 +20,8 @@ import {
   inferLegacyWorkProfile,
   normalizeWorkProfile,
   planFill,
+  setWeekdayShifts,
+  describeShiftDay,
   summarizeFillPreview,
 } from './workProfile.js'
 
@@ -134,7 +136,7 @@ describe('shift templates', () => {
       endTime: '12:15',
       isCleaningDay: true,
     })
-    expect(describeWeekPlan(profile).join(' / ')).toContain('清潔日週二 06:00–12:15')
+    expect(describeWeekPlan(profile).join(' / ')).toContain('早班（清潔日） 06:00–12:15 · 週二')
   })
 
   it('keeps weekly cleaning days only for working days whose shift has cleaning times', () => {
@@ -157,6 +159,42 @@ describe('shift templates', () => {
   it('creates leave records on off days only when the user chose that rule', () => {
     const profile = { ...configuredProfile(), offDayRule: 'LEAVE' }
     expect(getPlannedShift(profile, '2026-11-15')).toMatchObject({ shiftType: 'leave' })
+  })
+})
+
+describe('per-weekday times', () => {
+  it('lets the same night shift have different times on different weekdays', () => {
+    const base = configuredProfile()
+    const next = {
+      ...base,
+      ...setWeekdayShifts(base, [5], { templateId: 'night', startTime: '22:00', endTime: '06:30' }),
+    }
+    expect(getPlannedShift(next, '2026-11-13')).toMatchObject({
+      name: '晚班',
+      startTime: '22:00',
+      endTime: '06:30',
+    })
+    expect(getPlannedShift(next, '2026-11-12')).toMatchObject({
+      startTime: '23:50',
+      endTime: '06:00',
+    })
+    expect(planFill([], next, ['2026-11-13']).plan[0]).toMatchObject({ startTime: '22:00' })
+    // 保存後重新載入（normalize）仍保留
+    expect(normalizeWorkProfile(next).dayTimes).toEqual({
+      5: { startTime: '22:00', endTime: '06:30' },
+    })
+    // 和預設相同的時間不另外保存
+    expect(
+      setWeekdayShifts(base, [5], { templateId: 'night', startTime: '23:50', endTime: '06:00' })
+        .dayTimes,
+    ).toEqual({})
+  })
+
+  it('explains which day an overnight or early-morning shift belongs to', () => {
+    expect(describeShiftDay('一', '23:50', '06:00')).toContain('整班記在週一')
+    expect(describeShiftDay('二', '00:30', '06:00')).toContain(
+      '記在週二（開始的那一天，不是前一天）',
+    )
   })
 })
 

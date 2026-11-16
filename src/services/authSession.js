@@ -46,7 +46,10 @@ export function wakeServer() {
   if (wakeRequested || !isApiAvailable) return
   wakeRequested = true
   try {
-    fetch(endpoint('/health'), { credentials: 'omit' }).catch(() => {})
+    // 讀完回應內容，讓這個請求確實結束（未讀取的回應會讓連線一直處於進行中）
+    fetch(endpoint('/health'), { credentials: 'omit' })
+      .then((response) => response.text())
+      .catch(() => {})
   } catch {
     // 不支援 fetch 或網址錯誤時略過
   }

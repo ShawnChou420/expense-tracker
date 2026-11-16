@@ -112,4 +112,16 @@ describe('apiRequest', () => {
     expect(fetch.mock.calls[0][0]).toMatch(/\/health$/)
     expect(serverSlow.value).toBe(false)
   })
+
+  it('reads the wake-up response so the request actually finishes', async () => {
+    vi.resetModules()
+    const { wakeServer: freshWake } = await import('../src/services/authSession.js')
+    const text = vi.fn(async () => '{"status":"ok"}')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ text })),
+    )
+    freshWake()
+    await vi.waitFor(() => expect(text).toHaveBeenCalledTimes(1))
+  })
 })

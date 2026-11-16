@@ -7,7 +7,14 @@
  * 請求一次只送一筆，每一步都重新讀取最新快照，所以快速連續編輯會合併成最新值，
  * 不會把每次中間編輯都重送一遍。
  * 失敗的項目保留為待同步，依退避時間自動重試（下次編輯或 flush 時也會再試）。
+ * 一次有很多筆要上傳時（例如補登歷史班表），改用批次 API，每次最多 BATCH_SIZE 筆；
+ * 批次失敗時這些紀錄改回逐筆上傳，錯誤才能對應到單一紀錄。
  */
+
+/** 待上傳筆數達到這個數量才改用批次 API */
+export const BATCH_MIN = 5
+/** 每次批次上傳的筆數（後端上限 200 筆、請求 256 KB） */
+export const BATCH_SIZE = 100
 
 /** 自動重試的等待時間（毫秒）：依序 2、5、15、30、60 秒，用完就等下次編輯或 flush。 */
 export const DEFAULT_RETRY_DELAYS_MS = [2000, 5000, 15000, 30000, 60000]
@@ -82,9 +89,27 @@ export function createWorkRecordSync({
   async function drain() {
     const token = baselineToken
     const failedThisRun = new Set()
+    const batchFailed = new Set()
     let lastError = null
     while (isActive(token)) {
       const { deletes, puts } = diffRecordSnapshots(synced, desired)
+      const pendingDeletes = deletes.filter((id) => !failedThisRun.has(id))
+      const batchable = puts.filter((id) => !failedThisRun.has(id) && !batchFailed.has(id))
+      if (!pendingDeletes.length && batchable.length >= BATCH_MIN) {
+        const ids = batchable.slice(0, BATCH_SIZE)
+        const jsons = ids.map((id) => /** @type {string} */ (desired.get(id)))
+        try {
+          await request('/work-records/batch', {
+            method: 'POST',
+            body: jsons.map((json) => JSON.parse(json)),
+          })
+          if (token === baselineToken) ids.forEach((id, index) => synced.set(id, jsons[index]))
+        } catch {
+          // 改回逐筆上傳，讓失敗只影響有問題的那筆
+          ids.forEach((id) => batchFailed.add(id))
+        }
+        continue
+      }
       const deleteId = deletes.find((id) => !failedThisRun.has(id))
       const putId = deleteId === undefined ? puts.find((id) => !failedThisRun.has(id)) : undefined
       const id = deleteId ?? putId

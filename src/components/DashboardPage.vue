@@ -44,6 +44,7 @@ import {
   subscribeToLedgerChanges,
   tripRepository,
 } from '../repositories/appRepositories.js'
+import VisaJourneyCard from './VisaJourneyCard.vue'
 const IncomeTrendChart = defineAsyncComponent(() => import('./IncomeTrendChart.vue'))
 const ExpenseDonutChart = defineAsyncComponent(() => import('./ExpenseDonutChart.vue'))
 
@@ -59,6 +60,9 @@ const props = defineProps({
   // 工作設定完成度：{ payReady, scheduleReady, ready }
   setup: { type: Object, default: () => ({ payReady: false, scheduleReady: false, ready: false }) },
   taxSource: { type: Object, default: null },
+  // 集簽設定（null＝尚未設定）與 getVisaJourneyProgress() 的估算結果
+  visaJourney: { type: Object, default: null },
+  visaProgress: { type: Object, default: null },
 })
 const emit = defineEmits([
   'mark-work-date',
@@ -67,6 +71,8 @@ const emit = defineEmits([
   'quick-action',
   'import-payslip',
   'work-setup',
+  'visa-setup',
+  'import-history',
 ])
 
 const today = formatLocalDate(new Date())
@@ -613,40 +619,15 @@ async function saveTarget() {
       </p>
     </ProgressCard>
 
-    <ProgressCard
+    <!-- 集簽：選擇「目前不集簽」時隱藏；歷史班表照常保留 -->
+    <VisaJourneyCard
+      v-if="visaJourney?.goal !== 'NONE'"
       class="home-block"
-      title="集簽進度"
-      subtitle="指定工作紀錄 · 個人追蹤，非官方資格判定"
-      :current="`${workProgress.count} 天`"
-      :target="workProgress.target === null ? '' : `${workProgress.target} 天`"
-      :percent="workProgress.progressPercent ?? 0"
-      :foot-left="`已記錄 ${Math.round(workProgress.progressPercent ?? 0)}%`"
-      :foot-right="workProgress.remaining === 0 ? '已達到你的目標 🎉' : `還差 ${workProgress.remaining} 天`"
-      tone="primary"
-    >
-      <template #action>
-        <button
-          v-if="workProgress.target !== null"
-          type="button"
-          class="icon-button"
-          aria-label="調整追蹤目標"
-          @click="openTargetEditor"
-        >
-          <van-icon name="setting-o" />
-        </button>
-      </template>
-      <template v-if="workProgress.target === null" #empty>
-        <EmptyState
-          class="home-card-empty"
-          stacked
-          icon="flag-o"
-          :title="workProgress.count > 0 ? `已標記 ${workProgress.count} 天指定工作` : '設定你想追蹤的工作天數'"
-          description="設定目標天數，追蹤還差幾天。"
-          action-label="設定目標"
-          @action="openTargetEditor"
-        />
-      </template>
-    </ProgressCard>
+      :settings="visaJourney"
+      :progress="visaProgress"
+      @setup="emit('visa-setup')"
+      @import-history="emit('import-history')"
+    />
 
     <ProgressCard
       v-if="incomeYearProgress"

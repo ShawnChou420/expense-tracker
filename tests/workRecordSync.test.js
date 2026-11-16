@@ -216,4 +216,24 @@ describe('createWorkRecordSync', () => {
     await vi.advanceTimersByTimeAsync(5000)
     expect(request).toHaveBeenCalledTimes(1)
   })
+
+  it('uploads many new records in batches and falls back to single PUTs when a batch fails', async () => {
+    const { sync, calls, request } = setup()
+    sync.reset('token-a', [])
+    const many = Array.from({ length: 7 }, (_, index) => record(index + 1))
+    await sync.update(many)
+    expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual(['POST /work-records/batch'])
+    expect(calls[0].body).toHaveLength(7)
+
+    calls.length = 0
+    request.mockImplementation(async (path, options) => {
+      calls.push({ path, ...options })
+      if (path === '/work-records/batch') throw new Error('batch down')
+    })
+    const edited = many.map((item) => ({ ...item, remark: 'x' }))
+    await sync.update(edited)
+    expect(calls[0].path).toBe('/work-records/batch')
+    expect(calls.slice(1).map((call) => call.method)).toEqual(Array(7).fill('PUT'))
+    expect(sync.hasPendingChanges()).toBe(false)
+  })
 })

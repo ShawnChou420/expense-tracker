@@ -18,6 +18,12 @@ const tools = [
     description: '上傳 PDF 自動設定時薪與加給',
   },
   {
+    name: 'visa',
+    icon: 'flag-o',
+    title: '集簽追蹤',
+    description: '集二簽／集三簽目標與簽證資料',
+  },
+  {
     name: 'shopping',
     icon: 'cart-o',
     title: '採買清單',

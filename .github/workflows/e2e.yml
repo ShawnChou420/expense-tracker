@@ -9,6 +9,7 @@ on:
       - 'src/**'
       - 'backend/**'
       - '.github/scripts/e2e-member.mjs'
+      - '.github/scripts/e2e-visa.mjs'
       - '.github/fixtures/**'
       - '.github/workflows/e2e.yml'
   workflow_dispatch:
@@ -87,6 +88,11 @@ jobs:
         env:
           OUT_DIR: ${{ github.workspace }}/e2e-screenshots
           FIXTURE_DIR: ${{ github.workspace }}/.github/fixtures
+      - name: Visa journey flow
+        working-directory: e2e
+        run: node ../.github/scripts/e2e-visa.mjs
+        env:
+          OUT_DIR: ${{ github.workspace }}/e2e-screenshots
       - name: Check database
         if: always()
         run: |
@@ -95,6 +101,9 @@ jobs:
             "SELECT count(*) AS work_profiles FROM work_profile;" -c \
             "SELECT pay_date, net_cents, deposit_id IS NOT NULL AS has_deposit FROM payslip_import;" -c \
             "SELECT count(*) AS shifts FROM work_shift_info;" -c \
+            "SELECT goal, visa_subclass, started FROM visa_journey;" -c \
+            "SELECT count(*) AS blackout_notices FROM leave_blackout_notice;" -c \
+            "SELECT record_json->>'source' AS source, record_json->>'leaveType' AS leave_type, count(*) FROM work_shift_info GROUP BY 1, 2 ORDER BY 1, 2;" -c \
             "SELECT email_verified_at IS NOT NULL AS verified FROM user_info WHERE email_normalized LIKE 'e2e-%';" -c \
             "SELECT purpose, attempts, consumed_at IS NOT NULL AS used FROM email_verification_code ORDER BY id;"
       - name: Logs

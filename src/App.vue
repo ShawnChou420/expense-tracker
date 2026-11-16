@@ -17,7 +17,15 @@ import { getGuestLedgerSnapshot, notifyLedgerChanged, passengerRepository, tripR
 import { dashboardSettingsRepository, getGuestDashboardSettings } from './repositories/inMemoryDashboardSettingsRepository.js'
 import { leaveBlackoutRepository, getGuestLeaveBlackouts } from './repositories/leaveBlackoutRepository.js'
 import { shoppingRepository, getGuestShoppingItems, notifyShoppingChanged } from './repositories/shoppingRepository.js'
-import { removeLeaveBlackout, upsertLeaveBlackout } from './domain/leaveBlackouts.js'
+import { getNoticesForDate, legacyBlackoutToNotice, removeLeaveBlackout, upsertBlackoutNotice } from './domain/leaveBlackouts.js'
+import { blackoutNoticeRepository, getGuestBlackoutNotices } from './repositories/blackoutNoticeRepository.js'
+import { visaJourneyRepository, getGuestVisaJourney } from './repositories/visaJourneyRepository.js'
+import { getVisaJourneyProgress } from './domain/visaJourney.js'
+import { applyBatchLeave, getLeaveLabel } from './domain/leaveTypes.js'
+import VisaJourneySetup from './components/VisaJourneySetup.vue'
+import HistoryImportWizard from './components/HistoryImportWizard.vue'
+import BatchLeaveSheet from './components/BatchLeaveSheet.vue'
+import BlackoutNoticeSheet from './components/BlackoutNoticeSheet.vue'
 import { formatCalendarAmount } from './utils/calendarMoney.js'
 import { formatLocalDate, getCalendarDateRange, getMonthRange, getWeekRange } from './domain/date.js'
 import { centsToDollars } from './domain/money.js'
@@ -177,9 +185,13 @@ const expandedRecordId = ref('')
 const workInputSection = ref(null)
 const records = ref([])
 const leaveBlackouts = ref([])
+const blackoutNotices = ref([])
 const showBlackoutEditor = ref(false)
-const blackoutReason = ref('')
-const blackoutSaving = ref(false)
+// 集簽追蹤（設定由使用者輸入；進度依班表即時估算）
+const visaJourney = ref(null)
+const visaSetupOpen = ref(false)
+const historyWizardOpen = ref(false)
+const batchLeaveOpen = ref(false)
 const authPanelOpen = ref(false)
 const accountSheetOpen = ref(false)
 const accountNickname = ref('')
@@ -229,6 +241,7 @@ function handlePageNavigate(target) {
   if (target === 'payslip') payslipImportOpen.value = true
   else if (target === 'privacy') privacyOpen.value = true
   else if (target === 'work-setup') openWorkSetup()
+  else if (target === 'visa') visaSetupOpen.value = true
   else activeTab.value = target
 }
 const expenseTrackerRef = ref(null)
@@ -297,9 +310,14 @@ async function handleSignedIn() {
     const guestSettings = getGuestDashboardSettings()
     const guestBlackouts = getGuestLeaveBlackouts()
     const guestShopping = getGuestShoppingItems()
-    const [memberWork, memberPassengers, memberTrips, memberExpenses, memberSettings, memberBlackouts] = await Promise.all([
+    const guestVisa = getGuestVisaJourney()
+    const guestNotices = getGuestBlackoutNotices()
+    const [memberWork, memberPassengers, memberTrips, memberExpenses, memberSettings, memberBlackouts, memberVisa, memberNotices] = await Promise.all([
       apiRequest('/work-records'), passengerRepository.list(), tripRepository.list(), expenseRepository.list(),
       apiRequest('/dashboard-settings'), leaveBlackoutRepository.list(),
+      // 讀取失敗時是 undefined，不可當成「沒有設定」而用訪客資料覆蓋
+      visaJourneyRepository.load().catch(() => undefined),
+      blackoutNoticeRepository.list().catch(() => undefined),
     ])
     let memberShopping = null
     try { memberShopping = await shoppingRepository.list() } catch { showToast('採買清單暫時無法讀取，請更新 Java 後端') }
@@ -315,6 +333,7 @@ async function handleSignedIn() {
       Boolean(memberProfile) || inferLegacyWorkProfile(existingRates).payStatus !== PAY_STATUS.NOT_CONFIGURED
     const hasGuestData = guestWork.length || guestLedger.passengers.length || guestLedger.trips.length ||
       guestLedger.expenses.length || guestSettings.savingGoal || guestSettings.workDayTarget || guestBlackouts.length || (memberShopping && guestShopping.length) ||
+      (guestVisa && memberVisa === null) || (guestNotices.length && memberNotices) ||
       guestWorkSetup.payslips.length || (guestHasPaySetup && !memberHasPaySetup)
     // 有匯入訪客資料時，下面要重新讀取；沒有匯入就直接重用剛讀到的資料，不重複請求
     let imported = false
@@ -346,6 +365,12 @@ async function handleSignedIn() {
             await shoppingRepository.save(item)
           }
         }
+        if (guestVisa && memberVisa === null) await visaJourneyRepository.save(guestVisa)
+        if (memberNotices) {
+          for (const notice of guestNotices.filter((item) => !memberNotices.some((member) => member.id === item.id))) {
+            await blackoutNoticeRepository.save(notice)
+          }
+        }
         if (guestSettings.savingGoal && !memberSettings.savingGoal) await dashboardSettingsRepository.saveSavingGoal(guestSettings.savingGoal)
         if (guestSettings.workDayTarget && !memberSettings.workDayTarget) await dashboardSettingsRepository.saveWorkDayTarget(guestSettings.workDayTarget)
         // 會員還沒有自己的工作設定時，才把訪客剛完成的設定與費率帶過去（不覆蓋會員既有設定）
@@ -375,6 +400,8 @@ async function handleSignedIn() {
     }
     await workPersistence.loadMemberRecords(imported ? undefined : memberWork)
     leaveBlackouts.value = imported ? await leaveBlackoutRepository.list() : memberBlackouts
+    visaJourney.value = imported ? await visaJourneyRepository.load().catch(() => memberVisa ?? null) : memberVisa ?? null
+    blackoutNotices.value = imported ? await blackoutNoticeRepository.list().catch(() => memberNotices ?? []) : memberNotices ?? []
     const memberRates = imported ? await apiRequest('/salary-rates') : existingRates
     // 沒有存過費率的會員就是 0（未設定），絕不套用任何人的預設費率
     baseRate.value = Number(memberRates.baseRate ?? 0)
@@ -399,6 +426,8 @@ async function handleSignedIn() {
     clearSession()
     await workPersistence.restoreGuestRecords()
     leaveBlackouts.value = getGuestLeaveBlackouts()
+    blackoutNotices.value = getGuestBlackoutNotices()
+    visaJourney.value = getGuestVisaJourney()
     await restoreGuestSettings()
   } finally {
     await nextTick()
@@ -416,6 +445,8 @@ async function handleSignOut() {
     try { await signOut() } catch { showToast('登出請求失敗；本機登入狀態已清除') }
     await workPersistence.restoreGuestRecords()
     leaveBlackouts.value = getGuestLeaveBlackouts()
+    blackoutNotices.value = getGuestBlackoutNotices()
+    visaJourney.value = getGuestVisaJourney()
     await restoreGuestSettings()
     notifyLedgerChanged()
     notifyShoppingChanged()
@@ -440,6 +471,8 @@ watch(authToken, async (token) => {
   if (!token && !switchingAccount) {
     await workPersistence.restoreGuestRecords()
     leaveBlackouts.value = getGuestLeaveBlackouts()
+    blackoutNotices.value = getGuestBlackoutNotices()
+    visaJourney.value = getGuestVisaJourney()
     await restoreGuestSettings()
     notifyLedgerChanged()
     notifyShoppingChanged()
@@ -487,42 +520,37 @@ const calendarMaxYear = computed(() => calendarRange.value.maxDate.getFullYear()
 const calendarMinDate = computed(() => new Date(calendarMinYear.value, 0, 1))
 const calendarMaxDate = computed(() => new Date(calendarMaxYear.value, 11, 31))
 const selectedRecord = computed(() => records.value.find((record) => record.workDate === workDate.value))
-const selectedLeaveBlackout = computed(() => leaveBlackouts.value.find((item) => item.date === workDate.value))
+// 禁休公告：新的期間公告＋舊版單日禁休一起顯示。只是提醒，不影響班表、薪資或集簽。
+const allBlackoutNotices = computed(() => [
+  ...blackoutNotices.value,
+  ...leaveBlackouts.value.map(legacyBlackoutToNotice),
+])
+const selectedNotices = computed(() => getNoticesForDate(allBlackoutNotices.value, workDate.value))
 
 const openBlackoutEditor = () => {
-  blackoutReason.value = selectedLeaveBlackout.value?.reason || ''
   showBlackoutEditor.value = true
 }
 
-const saveSelectedBlackout = async () => {
-  if (blackoutSaving.value) return
-  blackoutSaving.value = true
-  try {
-    const saved = await leaveBlackoutRepository.save({ date: workDate.value, reason: blackoutReason.value })
-    leaveBlackouts.value = upsertLeaveBlackout(leaveBlackouts.value, saved)
-    showBlackoutEditor.value = false
-    showToast(`${workDate.value} 已標記禁休`)
-  } catch (error) {
-    showToast(error.message || '儲存禁休公告失敗')
-  } finally {
-    blackoutSaving.value = false
+async function saveBlackoutNotice(notice, previous) {
+  const saved = await blackoutNoticeRepository.save(notice)
+  blackoutNotices.value = upsertBlackoutNotice(blackoutNotices.value, saved)
+  // 舊版單日禁休編輯後已轉存成新公告，移除舊的那一筆
+  if (previous?.legacyDate) {
+    await leaveBlackoutRepository.remove(previous.legacyDate)
+    leaveBlackouts.value = removeLeaveBlackout(leaveBlackouts.value, previous.legacyDate)
   }
 }
 
-const deleteSelectedBlackout = async () => {
-  if (blackoutSaving.value) return
-  blackoutSaving.value = true
-  try {
-    await leaveBlackoutRepository.remove(workDate.value)
-    leaveBlackouts.value = removeLeaveBlackout(leaveBlackouts.value, workDate.value)
-    showBlackoutEditor.value = false
-    showToast(`${workDate.value} 已移除禁休標記`)
-  } catch (error) {
-    showToast(error.message || '移除禁休公告失敗')
-  } finally {
-    blackoutSaving.value = false
+async function removeBlackoutNotice(notice) {
+  if (notice.legacyDate) {
+    await leaveBlackoutRepository.remove(notice.legacyDate)
+    leaveBlackouts.value = removeLeaveBlackout(leaveBlackouts.value, notice.legacyDate)
+    return
   }
+  await blackoutNoticeRepository.remove(notice.id)
+  blackoutNotices.value = blackoutNotices.value.filter((item) => item.id !== notice.id)
 }
+
 // 這天依使用者的每週排班應該上什麼班（沒有設定就是 null，不再用任何人的固定班表）
 const plannedShiftFor = (date) => getPlannedShift(workSetup.profile.value, date)
 const selectedPlannedShift = computed(() => {
@@ -664,6 +692,10 @@ function continuePendingAction(action) {
     activeTab.value = 'payroll'
     return
   }
+  if (action.type === 'HISTORY_IMPORT') {
+    historyWizardOpen.value = true
+    return
+  }
   activeTab.value = 'payroll'
   if (action.type === 'ADD_SHIFT') {
     addTodayRecordToList()
@@ -730,7 +762,7 @@ const holidayCalendarFormatter = (day) => {
   const dateStr = `${year}-${month}-${dayNum}`
 
   const holidayLabel = getNswPublicHolidayShortLabel(day.date)
-  const isBlackout = leaveBlackouts.value.some((item) => item.date === dateStr)
+  const isBlackout = getNoticesForDate(allBlackoutNotices.value, dateStr).length > 0
   const record = records.value.find((r) => r.workDate === dateStr)
   // 清潔班只依使用者自己的班表或排班設定標示，不再固定星期二
   const isCleaning = record ? record.isCleaningDay === true : plannedShiftFor(dateStr)?.isCleaningDay === true
@@ -752,7 +784,7 @@ const holidayCalendarFormatter = (day) => {
   
   if (record) {
     if (record.shiftType === 'leave') {
-      day.bottomInfo = '休假'
+      day.bottomInfo = record.leaveType ? getLeaveLabel(record).slice(0, 2) : '休假'
     } else {
       const convertedPay = record.grossPay * currentExchangeRate.value
       day.bottomInfo = `+${formatCalendarAmount(convertedPay)}`
@@ -961,6 +993,8 @@ const buildWorkRecordFromInputs = ({
   prepMinutes: inputPrepMinutes = 0,
   // 沒有指定時沿用工作設定的 Smoko 規則（自動或固定次數、每次分鐘數、是否計薪）
   smokoMinutes: inputSmokoMinutes = smokoMinutesPerBreak.value,
+  // 補登時使用者把某天改成「自動」：不套用工作設定的固定次數
+  forceAutoSmoko = false,
 }) => {
 
   if (inputShiftType === 'leave') {
@@ -990,7 +1024,7 @@ const buildWorkRecordFromInputs = ({
   const tempWorkDate = ref(paidStart.workDate)
   const tempStartTime = ref(paidStart.startTime)
   const tempEndTime = ref(inputEndTime)
-  const tempSmokoCountOverride = ref(inputSmokoCountOverride ?? profileSmoko.value.smokoCountOverride)
+  const tempSmokoCountOverride = ref(forceAutoSmoko ? null : (inputSmokoCountOverride ?? profileSmoko.value.smokoCountOverride))
   const tempSmokoMinutes = ref(inputSmokoMinutes)
 
   const {
@@ -1034,6 +1068,118 @@ const buildWorkRecordFromInputs = ({
   // 記下這一班用到哪些未確認費率；之後費率變更不會改寫這筆紀錄的金額
   record.rateFlags = getRateFlags(tempPayBreakdown.value, rateStatus.value)
   return record
+}
+
+// --- 集簽：進度、首次設定、補登歷史班表 ---
+const visaProgress = computed(() =>
+  getVisaJourneyProgress({
+    settings: visaJourney.value,
+    records: records.value,
+    payslips: workSetup.payslips.value,
+    profile: workSetup.profile.value,
+    today: getTodayDate(),
+  }),
+)
+
+async function saveVisaJourney(settings) {
+  const saved = await visaJourneyRepository.save(settings)
+  visaJourney.value = saved
+  visaSetupOpen.value = false
+  if (saved.goal === 'NONE') return showToast('已設定為目前不集簽')
+  showToast('已開始追蹤集簽進度')
+  if (!saved.started || visaProgress.value?.hasHistory) return
+  try {
+    await showConfirmDialog({
+      title: '要不要幫你補登過去的工作紀錄？',
+      message: '依你的班別與每週排班產生草稿，確認後才保存；已經有的班表不會被覆蓋。',
+      confirmButtonText: '補登',
+      cancelButtonText: '稍後',
+    })
+    openHistoryWizard()
+  } catch {
+    // 稍後再補登：首頁卡片會保留入口
+  }
+}
+
+function openHistoryWizard() {
+  // 補登要依使用者自己的班別與排班；還沒設定就先完成工作設定
+  if (!workSetup.requireSetup({ type: 'HISTORY_IMPORT', label: '補登歷史工作' })) return
+  historyWizardOpen.value = true
+}
+
+/** 補登精靈用：依草稿用既有薪資計算建立一筆上班紀錄 */
+function buildHistoryWork(draft, id) {
+  return buildWorkRecordFromInputs({
+    id,
+    workDate: draft.date,
+    startTime: draft.startTime,
+    endTime: draft.endTime,
+    shiftType: 'normal',
+    isCleaningDay: draft.isCleaningDay,
+    remark: '',
+    designatedWork: true,
+    prepMinutes: currentPrepMinutes.value,
+    smokoCountOverride: draft.smokoMode === 'MANUAL' ? draft.smokoCount : null,
+    forceAutoSmoko: draft.smokoMode === 'AUTO',
+  })
+}
+
+let historyIdCursor = 0
+function nextHistoryId() {
+  historyIdCursor = Math.max(historyIdCursor + 1, nextRecordId(records.value))
+  return historyIdCursor
+}
+
+async function saveHistoryRecords(newRecords) {
+  const taken = new Set(records.value.map((record) => record.workDate))
+  const additions = newRecords.filter((record) => !taken.has(record.workDate))
+  records.value = ensureUniqueRecordIds([...records.value, ...additions])
+  await nextTick()
+  // 會員：等同步完成才回報成功，確保重新登入後資料還在
+  if (authToken.value) {
+    await workPersistence.flush()
+    if (workPersistence.hasPendingChanges()) throw new Error('部分紀錄尚未保存，請檢查網路後再試')
+  }
+  loadSelectedDate()
+  return additions.length
+}
+
+function viewVisaProgress() {
+  historyWizardOpen.value = false
+  activeTab.value = 'dashboard'
+  nextTick(() => document.querySelector('.visa-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
+}
+
+// --- 請假（單日或批次） ---
+function applyLeave({ dates, leaveType, conflictMode }) {
+  let cursor = nextRecordId(records.value)
+  records.value = applyBatchLeave(records.value, dates, { leaveType, conflictMode, nextId: () => cursor++ })
+  batchLeaveOpen.value = false
+  loadSelectedDate()
+  showToast(dates.length === 1 ? `${dates[0]} 已設為請假` : `已設定 ${dates.length} 天請假`)
+}
+
+/** 批次請假時改成請假的工作日，可以恢復原本的時間 */
+function restoreReplacedWork() {
+  const previous = selectedRecord.value?.replacedWork
+  if (!previous) return
+  const record = buildWorkRecordFromInputs({
+    id: selectedRecord.value.id,
+    workDate: workDate.value,
+    startTime: previous.startTime,
+    endTime: previous.endTime,
+    shiftType: 'normal',
+    isCleaningDay: previous.isCleaningDay,
+    remark: selectedRecord.value.remark || '',
+    designatedWork: previous.designatedWork === true,
+    prepMinutes: currentPrepMinutes.value,
+    smokoCountOverride: Number.isInteger(previous.smokoCount) ? previous.smokoCount : null,
+  })
+  if (!record) return showToast('原本的時間無法計算，請手動編輯')
+  if (selectedRecord.value.source) record.source = selectedRecord.value.source
+  records.value = upsertRecordForDate(records.value, record)
+  loadSelectedDate()
+  showToast(`已恢復 ${previous.startTime}–${previous.endTime}`)
 }
 
 const markSelectedDateAsLeave = () => {
@@ -1275,6 +1421,18 @@ const markDesignatedWorkDate = ({ date, marked }) => {
     </div>
     <AuthPanel v-model:show="authPanelOpen" @signed-in="handleSignedIn" @open-privacy="privacyOpen = true" />
     <PrivacyPage v-model:show="privacyOpen" />
+    <VisaJourneySetup v-model:show="visaSetupOpen" :settings="visaJourney" :today="getTodayDate()" :submit="saveVisaJourney" />
+    <HistoryImportWizard
+      v-model:show="historyWizardOpen"
+      :records="records"
+      :profile="workSetup.profile.value"
+      :build-work="buildHistoryWork"
+      :next-id="nextHistoryId"
+      :default-start="visaJourney?.workStart || ''"
+      :today="getTodayDate()"
+      :submit="saveHistoryRecords"
+      @view-progress="viewVisaProgress"
+    />
     <DashboardPage
       v-show="activeTab === 'dashboard'"
       :work-records="records"
@@ -1284,6 +1442,10 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       :latest-payslip="workSetup.latestPayslip.value"
       :setup="setupState"
       :tax-source="workSetup.profile.value.taxRateSource"
+      :visa-journey="visaJourney"
+      :visa-progress="visaProgress"
+      @visa-setup="visaSetupOpen = true"
+      @import-history="openHistoryWizard"
       @mark-work-date="markDesignatedWorkDate"
       @navigate="activeTab = $event"
       @open-account="openAccount"
@@ -1398,6 +1560,8 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       <div class="calendar-month-actions">
         <span>目前顯示 {{ visibleMonth }}</span>
         <van-button size="small" plain type="primary" @click="fillCurrentMonth">填滿此月</van-button>
+        <van-button size="small" plain type="warning" @click="batchLeaveOpen = true">請假區間</van-button>
+        <van-button size="small" plain type="primary" @click="openHistoryWizard">補登歷史</van-button>
         <van-button size="small" plain type="danger" :disabled="displayedMonthRecords.length === 0" @click="clearCurrentMonth">清除此月班表</van-button>
       </div>
       <div class="calendar-wrapper">
@@ -1417,12 +1581,13 @@ const markDesignatedWorkDate = ({ date, marked }) => {
         <div class="calendar-day-actions__heading">
           <div>
             <strong>{{ workDate }} <small>{{ getDayOfWeek(workDate) }}</small></strong>
-            <p v-if="selectedRecord?.shiftType === 'leave'">已標記休假，不計工時與薪資</p>
+            <p v-if="selectedRecord?.shiftType === 'leave'">{{ getLeaveLabel(selectedRecord) }} · 無薪，不計工時與薪資</p>
             <p v-else-if="selectedRecord">已排班 · {{ selectedRecord.startTime }}–{{ selectedRecord.endTime }}</p>
             <p v-else>尚未加入班表</p>
-            <p v-if="selectedLeaveBlackout" class="calendar-day-actions__blackout">
-              禁休公告{{ selectedLeaveBlackout.reason ? `：${selectedLeaveBlackout.reason}` : '' }}
-            </p>
+            <button v-for="notice in selectedNotices" :key="notice.id" type="button" class="calendar-day-actions__blackout" @click="openBlackoutEditor">
+              禁休公告{{ notice.title ? `：${notice.title}` : '' }} <span>查看</span>
+            </button>
+            <p v-if="selectedRecord?.source === 'HISTORICAL_USER_CONFIRMED'" class="calendar-day-actions__source">使用者補登</p>
           </div>
           <strong v-if="selectedRecord && selectedRecord.shiftType !== 'leave'" class="calendar-day-actions__pay">
             {{ currencySymbol }}{{ formatDisplayMoney(selectedRecord.grossPay * currentExchangeRate) }}
@@ -1430,11 +1595,12 @@ const markDesignatedWorkDate = ({ date, marked }) => {
         </div>
         <div class="calendar-day-actions__buttons">
           <van-button v-if="selectedRecord?.shiftType === 'leave'" block plain type="primary" @click="restoreSelectedDateShift">{{ selectedDateHasDefaultShift ? `恢復${selectedPlannedShift.name}` : '設定出勤時間' }}</van-button>
-          <van-button v-else block plain type="danger" @click="markSelectedDateAsLeave">設為休假</van-button>
+          <van-button v-else block plain type="danger" @click="batchLeaveOpen = true">請假…</van-button>
+          <van-button v-if="selectedRecord?.replacedWork" block plain type="primary" @click="restoreReplacedWork">恢復原本班表 {{ selectedRecord.replacedWork.startTime }}–{{ selectedRecord.replacedWork.endTime }}</van-button>
           <van-button v-if="canToggleCleaning" block plain type="success" @click="toggleSelectedDateCleaning">{{ selectedDayIsCleaning ? '取消清潔日' : '設為清潔日' }}</van-button>
           <van-button block plain type="default" @click="openSelectedDateEditor">{{ selectedRecord ? '編輯當天工時' : '新增當天班表' }}</van-button>
           <van-button block plain type="warning" class="calendar-day-actions__blackout-button" @click="openBlackoutEditor">
-            {{ selectedLeaveBlackout ? '編輯禁休公告' : '新增禁休' }}
+            {{ selectedNotices.length ? '查看禁休公告' : '新增禁休公告' }}
           </van-button>
         </div>
         <p v-if="selectedRecord?.shiftType === 'leave'" class="calendar-day-actions__hint">{{ selectedDateHasDefaultShift ? `恢復為 ${selectedPlannedShift.startTime}–${selectedPlannedShift.endTime}` : '請設定上下班時間' }}</p>
@@ -1442,21 +1608,14 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       </div>
     </div>
 
-    <van-popup v-model:show="showBlackoutEditor" position="bottom" round>
-      <div class="blackout-editor">
-        <div class="blackout-editor__heading">
-          <strong>{{ selectedLeaveBlackout ? '編輯禁休公告' : '新增禁休' }}</strong>
-          <span>{{ workDate }}</span>
-        </div>
-        <p>記下主管公告的原因，方便之後排休。</p>
-        <van-field v-model="blackoutReason" type="textarea" rows="2" autosize maxlength="240" show-word-limit
-          label="公告說明" placeholder="選填，例如：人手不足、旺季不得請假" />
-        <div class="blackout-editor__actions">
-          <van-button v-if="selectedLeaveBlackout" block plain type="danger" :loading="blackoutSaving" @click="deleteSelectedBlackout">移除標記</van-button>
-          <van-button block type="primary" :loading="blackoutSaving" @click="saveSelectedBlackout">儲存禁休</van-button>
-        </div>
-      </div>
-    </van-popup>
+    <BlackoutNoticeSheet
+      v-model:show="showBlackoutEditor"
+      :notices="selectedNotices"
+      :date="workDate"
+      :save="saveBlackoutNotice"
+      :remove="removeBlackoutNotice"
+    />
+    <BatchLeaveSheet v-model:show="batchLeaveOpen" :records="records" :default-date="workDate" @apply="applyLeave" />
 
     <div ref="workInputSection" class="section">
       <h2>出勤與時間</h2>
@@ -1851,7 +2010,9 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 .calendar-day-actions__heading strong { color: #1b2a3b; font-size: 15px; }
 .calendar-day-actions__heading small { color: #8290a0; font-size: 11px; }
 .calendar-day-actions__heading p { margin: 4px 0 0; color: #657588; font-size: 12px; }
-.calendar-day-actions__heading .calendar-day-actions__blackout { color: #a95a0c; font-weight: 700; overflow-wrap: anywhere; }
+.calendar-day-actions__heading .calendar-day-actions__blackout { display: block; margin: 4px 0 0; padding: 0; border: 0; background: none; color: #a95a0c; font: inherit; font-weight: 700; text-align: left; overflow-wrap: anywhere; }
+.calendar-day-actions__blackout span { margin-left: 4px; color: var(--color-primary); font-weight: 600; text-decoration: underline; }
+.calendar-day-actions__heading .calendar-day-actions__source { display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 999px; background: var(--color-primary-soft); color: var(--color-primary); font-size: 12px; }
 .calendar-day-actions__pay { margin-left: auto; color: #166dd1 !important; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .calendar-day-actions__buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 13px; }
 .calendar-day-actions__buttons :deep(.van-button) { min-height: 42px; padding: 0 8px; border-radius: 11px; font-size: 13px; }

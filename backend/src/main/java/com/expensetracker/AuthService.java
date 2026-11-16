@@ -206,6 +206,8 @@ public class AuthService {
         "DELETE FROM salary_setting_info WHERE user_seq = ?",
         "DELETE FROM work_shift_info WHERE user_seq = ?",
         "DELETE FROM leave_blackout WHERE user_seq = ?",
+        "DELETE FROM leave_blackout_notice WHERE user_seq = ?",
+        "DELETE FROM visa_journey WHERE user_seq = ?",
         "DELETE FROM shopping_item WHERE user_seq = ?",
         "DELETE FROM auth_session WHERE user_seq = ?",
         // 驗證碼以 Email 為鍵，不含 user_seq；一併刪除未過期的驗證碼

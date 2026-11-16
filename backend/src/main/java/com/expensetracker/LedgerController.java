@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -83,13 +84,53 @@ public class LedgerController {
             (rs, row) -> json.readValue(rs.getString(1), Map.class), owner(auth));
     }
 
+    /** 請假類型與資料來源：只接受已知值，避免任意字串寫進紀錄 */
+    static final List<String> LEAVE_TYPES = List.of("PERSONAL", "SICK", "HOLIDAY", "UNPAID_OTHER", "REST_DAY");
+    static final List<String> RECORD_SOURCES = List.of("HISTORICAL_USER_CONFIRMED");
+    /** 一次批次保存的上限（另有 256 KB 請求大小限制） */
+    static final int MAX_BATCH = 200;
+
+    static void validateRecordMeta(Map<String, Object> body) {
+        Object leaveType = body.get("leaveType");
+        if (leaveType != null && !LEAVE_TYPES.contains(leaveType))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "無效請假類型");
+        Object source = body.get("source");
+        if (source != null && !RECORD_SOURCES.contains(source))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "無效紀錄來源");
+    }
+
     @PutMapping("/work-records/{id}")
     @Transactional
     Map<String, Object> saveWorkRecord(Authentication auth, @PathVariable String id,
                                        @RequestBody Map<String, Object> body) {
-        id = clientId(id);
-        if (!id.equals(String.valueOf(body.get("id"))))
+        upsertWorkRecord(owner(auth), id, body);
+        return body;
+    }
+
+    /**
+     * 批次保存班表（例如補登歷史班表）。整批在同一個交易內：任何一筆無效就全部不寫入。
+     * 每筆的驗證與單筆保存完全相同。
+     */
+    @PostMapping("/work-records/batch")
+    @Transactional
+    Map<String, Object> saveWorkRecords(Authentication auth, @RequestBody List<Map<String, Object>> records) {
+        if (records == null || records.isEmpty() || records.size() > MAX_BATCH)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "一次最多保存 " + MAX_BATCH + " 筆班表");
+        long userSeq = owner(auth);
+        var ids = new java.util.HashSet<String>();
+        for (Map<String, Object> record : records) {
+            if (record == null || !ids.add(String.valueOf(record.get("id"))))
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "批次中有重複的紀錄 ID");
+        }
+        for (Map<String, Object> record : records) upsertWorkRecord(userSeq, String.valueOf(record.get("id")), record);
+        return Map.of("saved", records.size());
+    }
+
+    private void upsertWorkRecord(long userSeq, String rawId, Map<String, Object> body) {
+        String id = clientId(rawId);
+        if (body == null || !id.equals(String.valueOf(body.get("id"))))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "紀錄 ID 不一致");
+        validateRecordMeta(body);
         LocalDate workDate = date(body, "workDate");
         LocalTime start;
         LocalTime end;
@@ -113,10 +154,9 @@ public class LedgerController {
               smoko_count=EXCLUDED.smoko_count, gross_pay=EXCLUDED.gross_pay,
               gross_cents=EXCLUDED.gross_cents, record_json=EXCLUDED.record_json,
               designated_work=EXCLUDED.designated_work, update_time=now()
-            """, owner(auth), id, workDate, start, end, totalMinutes, smokoCount,
+            """, userSeq, id, workDate, start, end, totalMinutes, smokoCount,
             BigDecimal.valueOf(grossCents, 2), grossCents, json.writeValueAsString(body),
             Boolean.TRUE.equals(body.get("designatedWork")));
-        return body;
     }
 
     @DeleteMapping("/work-records/{id}")

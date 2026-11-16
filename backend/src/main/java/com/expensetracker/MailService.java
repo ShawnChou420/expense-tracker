@@ -79,6 +79,28 @@ public class MailService {
         }
     }
 
+    /**
+     * 非必要的通知信（例如歡迎信）在背景寄出，不讓 SMTP 的等待時間拖慢 API 回應。
+     * 單一執行緒、最多排 100 封；排不下或寄送失敗只記錄種類，不影響呼叫端。
+     */
+    private static final java.util.concurrent.ThreadPoolExecutor BACKGROUND =
+        new java.util.concurrent.ThreadPoolExecutor(1, 1, 0, java.util.concurrent.TimeUnit.SECONDS,
+            new java.util.concurrent.ArrayBlockingQueue<>(100), runnable -> {
+                Thread thread = new Thread(runnable, "mail-background");
+                thread.setDaemon(true);
+                return thread;
+            }, (runnable, executor) -> log.warn("背景寄信佇列已滿，略過一封通知信"));
+
+    void sendInBackground(String to, String subject, String text, String html) {
+        BACKGROUND.execute(() -> {
+            try {
+                send(to, subject, text, html);
+            } catch (RuntimeException exception) {
+                log.warn("背景寄信失敗：{}", exception.getClass().getSimpleName());
+            }
+        });
+    }
+
     static String codeHtml(String title, String intro, String code, String footer) {
         return """
             <div style="font-family:-apple-system,'Segoe UI','PingFang TC','Microsoft JhengHei',sans-serif;max-width:480px;margin:0 auto;padding:28px 24px;color:#102a43">

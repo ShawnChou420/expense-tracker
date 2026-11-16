@@ -17,7 +17,6 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(AuthController.class);
     private final AuthService auth;
     private final EmailCodeService codes;
     private final MailService mail;
@@ -108,12 +107,9 @@ public class AuthController {
         }
         var result = auth.register(request.email(), request.password(), verify);
         if (verify) {
-            try {
-                mail.send(result.email(), "歡迎使用 WORK & SAVE",
-                    "你的帳號 " + result.email() + " 已經建立完成。", MailService.welcomeHtml(result.email()));
-            } catch (RuntimeException exception) {
-                log.warn("歡迎信寄送失敗");
-            }
+            // 歡迎信在背景寄出：SMTP 慢或失敗都不影響註冊回應
+            mail.sendInBackground(result.email(), "歡迎使用 WORK & SAVE",
+                "你的帳號 " + result.email() + " 已經建立完成。", MailService.welcomeHtml(result.email()));
         }
         return new TokenResponse(result.token(), result.expiresAt(), result.email());
     }

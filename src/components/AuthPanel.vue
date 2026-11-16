@@ -19,6 +19,8 @@ const busy = ref(false)
 const error = ref('')
 const errorAction = ref(null) // { label, run }
 const emailVerification = ref(false)
+// 是否已從後端確認過 Email 驗證設定；連不上時為 false，註冊前會再試一次
+const configLoaded = ref(false)
 const resendIn = ref(0)
 let timer = null
 
@@ -27,12 +29,20 @@ watch(
   async (show) => {
     if (!show) return
     error.value = ''
-    const config = await getAuthConfig()
-    emailVerification.value = Boolean(config?.emailVerification)
+    await loadConfig()
   },
   { immediate: true },
 )
 onBeforeUnmount(() => clearInterval(timer))
+
+async function loadConfig() {
+  const config = await getAuthConfig()
+  if (config) {
+    emailVerification.value = Boolean(config.emailVerification)
+    configLoaded.value = true
+  }
+  return configLoaded.value
+}
 
 const titles = { login: '登入帳號', register: '建立帳號', forgot: '重設密碼' }
 const title = computed(() => titles[mode.value])
@@ -91,6 +101,12 @@ async function submit() {
   if (busy.value) return
   error.value = ''
   errorAction.value = null
+  // 開啟面板時伺服器可能還在啟動：註冊前一定要確認是否需要驗證碼，不憑猜測送出
+  if (mode.value === 'register' && !configLoaded.value) {
+    busy.value = true
+    const loaded = await loadConfig().finally(() => (busy.value = false))
+    if (!loaded) return fail('伺服器啟動中或暫時無法連線，請稍候再按一次')
+  }
   if (needsCode.value && step.value === 'form') return sendCode()
   if (!emailValid.value) return fail('請輸入有效的 Email')
   if (mode.value !== 'login' && passwordPolicyError(password.value)) {
@@ -118,6 +134,12 @@ async function submit() {
       )
     } else if (message.includes('已經註冊過')) {
       fail(message, { label: '改為登入', run: () => switchMode('login') })
+    } else if (err?.code === 'TIMEOUT' && mode.value === 'register') {
+      // 逾時不代表失敗：帳號可能已經建立，先用登入確認，避免重複註冊
+      fail('伺服器回應逾時，帳號可能已經建立。請先試著登入；登入失敗再重新註冊。', {
+        label: '改為登入',
+        run: () => switchMode('login'),
+      })
     } else {
       fail(message)
     }

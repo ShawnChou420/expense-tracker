@@ -128,16 +128,21 @@ public class LedgerController {
     @GetMapping("/expenses")
     List<Map> expenses(Authentication auth) {
         long userSeq = owner(auth);
+        // 一次讀出此會員所有付款紀錄再分組，不再每筆支出各查一次（N+1），也不會同時占用兩條連線
+        Map<Long, List<Map<String, Object>>> paymentsByExpense = new java.util.HashMap<>();
+        db.query("""
+            SELECT expense_seq, occurrence_date, paid_on, amount_cents FROM expense_payment
+            WHERE user_seq = ? ORDER BY expense_seq, occurrence_date
+            """, (org.springframework.jdbc.core.RowCallbackHandler) paymentRs ->
+                paymentsByExpense.computeIfAbsent(paymentRs.getLong("expense_seq"), key -> new ArrayList<>())
+                    .add(Map.<String, Object>of(
+                        "occurrenceDate", paymentRs.getDate("occurrence_date").toLocalDate().toString(),
+                        "paidAt", paymentRs.getDate("paid_on").toLocalDate().toString(),
+                        "amountCents", paymentRs.getLong("amount_cents"))), userSeq);
         return db.query("SELECT seq, record_json::text FROM expense_record WHERE user_seq = ? AND record_json IS NOT NULL ORDER BY expense_date, seq",
             (rs, row) -> {
                 Map record = json.readValue(rs.getString("record_json"), Map.class);
-                var payments = db.query("""
-                    SELECT occurrence_date, paid_on, amount_cents FROM expense_payment
-                    WHERE user_seq = ? AND expense_seq = ? ORDER BY occurrence_date
-                    """, (paymentRs, paymentRow) -> Map.<String, Object>of(
-                        "occurrenceDate", paymentRs.getDate("occurrence_date").toLocalDate().toString(),
-                        "paidAt", paymentRs.getDate("paid_on").toLocalDate().toString(),
-                        "amountCents", paymentRs.getLong("amount_cents")), userSeq, rs.getLong("seq"));
+                var payments = paymentsByExpense.getOrDefault(rs.getLong("seq"), List.of());
                 record.put("payments", payments);
                 if (!"NONE".equals(record.get("frequency"))) {
                     record.put("paidDates", payments.stream().map(payment -> payment.get("occurrenceDate")).toList());

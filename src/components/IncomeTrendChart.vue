@@ -25,6 +25,8 @@ Chart.register(
 )
 
 const props = defineProps({
+  // 金額顯示方式（首頁可切換幣別）；預設 AUD
+  format: { type: Function, default: formatAud },
   points: { type: Array, required: true },
   mode: { type: String, required: true },
   active: Boolean,
@@ -73,7 +75,7 @@ function renderChart() {
       plugins: {
         legend: { display: false },
         tooltip: {
-          callbacks: { label: (context) => formatAud(Math.round(context.parsed.y * 100)) },
+          callbacks: { label: (context) => props.format(Math.round(context.parsed.y * 100)) },
         },
       },
       scales: {

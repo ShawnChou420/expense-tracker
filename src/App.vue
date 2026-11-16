@@ -21,6 +21,7 @@ import { getNoticesForDate, legacyBlackoutToNotice, removeLeaveBlackout, upsertB
 import { blackoutNoticeRepository, getGuestBlackoutNotices } from './repositories/blackoutNoticeRepository.js'
 import { visaJourneyRepository, getGuestVisaJourney } from './repositories/visaJourneyRepository.js'
 import { getVisaJourneyProgress } from './domain/visaJourney.js'
+import { resolveDisplayCurrency } from './domain/displayCurrency.js'
 import { applyBatchLeave, getLeaveLabel } from './domain/leaveTypes.js'
 import VisaJourneySetup from './components/VisaJourneySetup.vue'
 import HistoryImportWizard from './components/HistoryImportWizard.vue'
@@ -147,6 +148,8 @@ const currencyFlag = computed(() => {
 const currentExchangeRate = computed(() => {
   return exchangeRates.value[currentCurrency.value] || 1
 })
+// 首頁用：同一個顯示幣別，沒有匯率時退回 AUD
+const dashboardCurrency = computed(() => resolveDisplayCurrency(currentCurrency.value, exchangeRates.value))
 
 const fetchExchangeRates = async () => {
   try {
@@ -1446,6 +1449,8 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       :tax-source="workSetup.profile.value.taxRateSource"
       :visa-journey="visaJourney"
       :visa-progress="visaProgress"
+      :display-currency="dashboardCurrency"
+      @change-currency="showCurrencyPicker = true"
       @visa-setup="visaSetupOpen = true"
       @import-history="openHistoryWizard"
       @mark-work-date="markDesignatedWorkDate"
@@ -1947,8 +1952,9 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       </div>
 
     </div>
-    <van-popup v-model:show="showCurrencyPicker" position="bottom" round>
-      <van-picker title="選擇全域對照外幣" :columns="currencyColumns" @confirm="onCurrencyConfirm" @cancel="showCurrencyPicker = false" />
+    <!-- 首頁與薪資頁共用；放到 body，在首頁也能打開 -->
+    <van-popup v-model:show="showCurrencyPicker" position="bottom" round teleport="body">
+      <van-picker title="選擇顯示幣別" :model-value="[currentCurrency]" :columns="currencyColumns" @confirm="onCurrencyConfirm" @cancel="showCurrencyPicker = false" />
     </van-popup>
     </section>
 

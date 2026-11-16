@@ -6,6 +6,8 @@ import { PAY_ITEM_LABELS } from '../domain/payslip/classify.js'
 import { getPayslipHighlights } from '../domain/payslip/summary.js'
 
 const props = defineProps({
+  // 金額顯示方式（首頁可切換幣別）；預設 AUD
+  format: { type: Function, default: formatAud },
   payslip: { type: Object, required: true },
   scheduleReady: Boolean,
   isMember: Boolean,
@@ -43,7 +45,7 @@ const items = computed(() =>
 
     <div class="latest-pay__amount">
       <small>實領 Net Pay</small>
-      <strong>{{ formatAud(payslip.netCents) }}</strong>
+      <strong>{{ format(payslip.netCents) }}</strong>
       <span>
         {{ periodLabel ? `工作期間 ${periodLabel} · ` : '' }}{{ shortDate(payslip.payDate) }} 入帳
       </span>
@@ -52,11 +54,11 @@ const items = computed(() =>
     <dl class="latest-pay__grid">
       <div>
         <dt>稅前 Gross</dt>
-        <dd>{{ payslip.grossCents === null ? '—' : formatAud(payslip.grossCents) }}</dd>
+        <dd>{{ payslip.grossCents === null ? '—' : format(payslip.grossCents) }}</dd>
       </div>
       <div>
         <dt>預扣 PAYG{{ withholdingPercent !== null ? ` · ${withholdingPercent}%` : '' }}</dt>
-        <dd>{{ payslip.taxCents === null ? '—' : formatAud(payslip.taxCents) }}</dd>
+        <dd>{{ payslip.taxCents === null ? '—' : format(payslip.taxCents) }}</dd>
       </div>
       <div>
         <dt>工時</dt>
@@ -64,11 +66,11 @@ const items = computed(() =>
       </div>
       <div>
         <dt>平均每小時稅前</dt>
-        <dd>{{ highlights.effectiveHourlyCents === null ? '—' : formatAud(highlights.effectiveHourlyCents) }}</dd>
+        <dd>{{ highlights.effectiveHourlyCents === null ? '—' : format(highlights.effectiveHourlyCents) }}</dd>
       </div>
     </dl>
     <p v-if="payslip.superCents" class="latest-pay__super">
-      另有 Super {{ formatAud(payslip.superCents) }} 存入退休金帳戶（不計入實領）
+      另有 Super {{ format(payslip.superCents) }} 存入退休金帳戶（不計入實領）
     </p>
 
     <button
@@ -87,7 +89,7 @@ const items = computed(() =>
           <strong>{{ PAY_ITEM_LABELS[item.type] || item.rawName }}</strong>
           <small>{{ item.rawName }}{{ item.hours ? ` · ${item.hours} 小時 × $${item.rate}` : '' }}</small>
         </span>
-        <b>{{ formatAud(item.amountCents) }}</b>
+        <b>{{ format(item.amountCents) }}</b>
       </li>
     </ul>
 

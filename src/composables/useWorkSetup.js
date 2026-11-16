@@ -125,10 +125,11 @@ export function useWorkSetup({ baseRate, ppeAllowance, withholdingTaxRate, confi
   /**
    * 會員登入後還原設定。沒有工作設定的舊會員依既有費率推斷，避免被當成新使用者或改變原本的預估。
    * @param {Record<string, unknown>} storedRates GET /salary-rates
+   * @param {{ profile: unknown }} [preloaded] 登入流程剛讀到的工作設定，提供時不再重複請求
    */
-  async function loadMember(storedRates) {
+  async function loadMember(storedRates, preloaded) {
     const [saved, list] = await Promise.all([
-      workProfileRepository.load(),
+      preloaded ? Promise.resolve(preloaded.profile) : workProfileRepository.load(),
       payslipImportRepository.list().catch(() => []),
     ])
     payslips.value = list || []

@@ -36,8 +36,36 @@ function endpoint(path) {
   return `${configuredBase || '/api'}${path}`
 }
 
-/** @param {string} path @param {{ method?: string, body?: unknown }} [options] */
-export async function apiRequest(path, { method = 'GET', body } = {}) {
+/** 請求超過這個時間仍未回應，就顯示「伺服器啟動中」提示（免費方案閒置後喚醒約需 1 分鐘） */
+export const SLOW_REQUEST_MS = 4000
+/** 超過這個時間放棄等待；冷啟動通常在這之內完成 */
+export const REQUEST_TIMEOUT_MS = 120_000
+/** 目前是否有請求等待超過 SLOW_REQUEST_MS，畫面據此顯示提示 */
+export const serverSlow = ref(false)
+let slowRequests = 0
+
+/** 同時發出的相同 GET（同一個登入身分、同一個路徑）共用一次網路請求 */
+const inflightGets = new Map()
+
+/**
+ * @param {string} path
+ * @param {{ method?: string, body?: unknown }} [options]
+ * @returns {Promise<any>}
+ */
+export function apiRequest(path, { method = 'GET', body } = {}) {
+  if (method !== 'GET') return send(path, method, body)
+  const key = `${authToken.value || ''} ${path}`
+  let shared = inflightGets.get(key)
+  if (!shared) {
+    shared = send(path, method, body).finally(() => inflightGets.delete(key))
+    inflightGets.set(key, shared)
+  }
+  // 每個呼叫端拿到自己的複本，避免共用同一個物件時互相修改
+  return shared.then((result) => (result === null ? null : structuredClone(result)))
+}
+
+/** @param {string} path @param {string} method @param {unknown} body */
+async function send(path, method, body) {
   let response
   const startedAt = performance.now()
   const trace = (/** @type {number} */ status) => {
@@ -50,30 +78,53 @@ export async function apiRequest(path, { method = 'GET', body } = {}) {
       server: parseServerTiming(response?.headers?.get('Server-Timing')),
     })
   }
+  let markedSlow = false
+  const slowTimer = setTimeout(() => {
+    markedSlow = true
+    slowRequests += 1
+    serverSlow.value = true
+  }, SLOW_REQUEST_MS)
+  const controller = new AbortController()
+  const timeoutTimer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   try {
-    response = await fetch(endpoint(path), {
-      method,
-      credentials: 'omit',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(authToken.value ? { Authorization: `Bearer ${authToken.value}` } : {}),
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    })
-  } catch {
-    trace(0)
-    throw new Error('無法連線到後端，請檢查網路與 API 設定')
+    try {
+      response = await fetch(endpoint(path), {
+        method,
+        credentials: 'omit',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken.value ? { Authorization: `Bearer ${authToken.value}` } : {}),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      })
+    } catch {
+      trace(0)
+      if (controller.signal.aborted) {
+        const timeout = new Error('伺服器回應逾時，暫時無法連線，請稍後再試')
+        Object.assign(timeout, { code: 'TIMEOUT' })
+        throw timeout
+      }
+      throw new Error('無法連線到後端，請檢查網路與 API 設定')
+    }
+    trace(response.status)
+    if (response.status === 401 && authToken.value) {
+      clearSession()
+      throw new Error('登入已失效，請重新登入')
+    }
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}))
+      throw new Error(error.detail || error.message || `操作失敗（${response.status}）`)
+    }
+    return response.status === 204 ? null : await response.json()
+  } finally {
+    clearTimeout(slowTimer)
+    clearTimeout(timeoutTimer)
+    if (markedSlow) {
+      slowRequests -= 1
+      if (slowRequests === 0) serverSlow.value = false
+    }
   }
-  trace(response.status)
-  if (response.status === 401 && authToken.value) {
-    clearSession()
-    throw new Error('登入已失效，請重新登入')
-  }
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}))
-    throw new Error(error.detail || error.message || `操作失敗（${response.status}）`)
-  }
-  return response.status === 204 ? null : response.json()
 }
 
 /**
@@ -127,12 +178,17 @@ export async function restoreSavedSession() {
   }
 }
 
-/** 後端是否啟用 Email 驗證（沒有設定寄信服務時，註冊不需要驗證碼、也不提供忘記密碼） */
+/**
+ * 後端是否啟用 Email 驗證（沒有設定寄信服務時，註冊不需要驗證碼、也不提供忘記密碼）。
+ * 連不上後端時回傳 null。
+ * @returns {Promise<{ emailVerification: boolean } | null>}
+ */
 export async function getAuthConfig() {
   try {
     return await apiRequest('/auth/config')
   } catch {
-    return { emailVerification: false }
+    // 連不上時不要猜「不需要驗證碼」：回傳 null，由畫面在送出前重新確認
+    return null
   }
 }
 

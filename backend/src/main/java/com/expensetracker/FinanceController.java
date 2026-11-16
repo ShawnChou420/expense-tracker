@@ -113,12 +113,10 @@ public class FinanceController {
     Map<String, Object> dashboardSettings(Authentication auth) {
         long owner = LedgerController.owner(auth);
         Map<String, Object> result = new HashMap<>();
-        var currencies = db.query("SELECT display_currency FROM user_preferences WHERE user_seq=?",
-            (rs, row) -> rs.getString(1), owner);
-        result.put("displayCurrency", currencies.isEmpty() ? "AUD" : currencies.get(0).trim());
-        var targets = db.query("SELECT work_day_target FROM user_preferences WHERE user_seq=?",
-            (rs, row) -> rs.getObject(1), owner);
-        result.put("workDayTarget", targets.isEmpty() ? null : targets.get(0));
+        var preferences = db.query("SELECT display_currency, work_day_target FROM user_preferences WHERE user_seq=?",
+            (rs, row) -> new Object[] { rs.getString(1), rs.getObject(2) }, owner);
+        result.put("displayCurrency", preferences.isEmpty() ? "AUD" : ((String) preferences.get(0)[0]).trim());
+        result.put("workDayTarget", preferences.isEmpty() ? null : preferences.get(0)[1]);
         var goals = db.query("""
             SELECT name, target_cents, initial_cents, start_date, end_date FROM saving_goal
             WHERE user_seq=?

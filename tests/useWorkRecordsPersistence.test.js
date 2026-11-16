@@ -49,6 +49,17 @@ describe('useWorkRecordsPersistence (login / logout)', () => {
     expect(persistence.getGuestRecords()).toEqual([record(1)])
   })
 
+  it('uses records already fetched during sign-in without requesting them again', async () => {
+    const records = ref([])
+    const persistence = useWorkRecordsPersistence(records, vi.fn())
+    await nextTick()
+    auth.token.value = 'member-token'
+    await persistence.loadMemberRecords([record(10)])
+    await settle(persistence)
+    expect(auth.request).not.toHaveBeenCalled()
+    expect(records.value.map((item) => item.id)).toEqual([10])
+  })
+
   it('loads member records without re-uploading them, then syncs only edits', async () => {
     const records = ref([record(1)])
     const persistence = useWorkRecordsPersistence(records, vi.fn())

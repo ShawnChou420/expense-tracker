@@ -10,7 +10,7 @@ import AuthPanel from './components/AuthPanel.vue'
 import AccountPage from './components/AccountPage.vue'
 import PrivacyPage from './components/PrivacyPage.vue'
 import { accountRepository } from './repositories/accountRepository.js'
-import { authEmail, authToken, signOut, clearSession, apiRequest, restoreSavedSession } from './services/authSession.js'
+import { authEmail, authToken, signOut, clearSession, apiRequest, restoreSavedSession, serverSlow } from './services/authSession.js'
 import { startPerfPhase } from './services/perfTrace.js'
 import { useWorkRecordsPersistence } from './composables/useWorkRecordsPersistence.js'
 import { getGuestLedgerSnapshot, notifyLedgerChanged, passengerRepository, tripRepository, expenseRepository, salaryDepositRepository } from './repositories/appRepositories.js'
@@ -303,7 +303,12 @@ async function handleSignedIn() {
     ])
     let memberShopping = null
     try { memberShopping = await shoppingRepository.list() } catch { showToast('採買清單暫時無法讀取，請更新 Java 後端') }
-    const memberProfile = await workProfileRepository.load().catch(() => null)
+    // 讀取失敗時不可當成「沒有設定」重用，否則可能被推斷成舊會員設定並覆蓋
+    let memberProfileLoaded = true
+    const memberProfile = await workProfileRepository.load().catch(() => {
+      memberProfileLoaded = false
+      return null
+    })
     const existingRates = await apiRequest('/salary-rates')
     // 會員已有自己的設定（或舊版已存的費率）時，不用訪客的設定覆蓋
     const memberHasPaySetup =
@@ -311,6 +316,8 @@ async function handleSignedIn() {
     const hasGuestData = guestWork.length || guestLedger.passengers.length || guestLedger.trips.length ||
       guestLedger.expenses.length || guestSettings.savingGoal || guestSettings.workDayTarget || guestBlackouts.length || (memberShopping && guestShopping.length) ||
       guestWorkSetup.payslips.length || (guestHasPaySetup && !memberHasPaySetup)
+    // 有匯入訪客資料時，下面要重新讀取；沒有匯入就直接重用剛讀到的資料，不重複請求
+    let imported = false
     const memberHasData = memberWork.length || memberPassengers.length || memberTrips.length || memberExpenses.length || memberBlackouts.length || memberShopping?.length
     if (hasGuestData) {
       try {
@@ -321,6 +328,7 @@ async function handleSignedIn() {
             : '要把剛才的資料存進這個帳號嗎？',
           confirmButtonText: '匯入',
         })
+        imported = true
         const missing = (guestItems, memberItems) => guestItems.filter(
           (item) => !memberItems.some((member) => String(member.id) === String(item.id)),
         )
@@ -365,18 +373,21 @@ async function handleSignedIn() {
         if (error !== 'cancel') showToast(error.message || '匯入未完成，請檢查資料後重試')
       }
     }
-    await workPersistence.loadMemberRecords()
-    leaveBlackouts.value = await leaveBlackoutRepository.list()
-    const memberRates = await apiRequest('/salary-rates')
+    await workPersistence.loadMemberRecords(imported ? undefined : memberWork)
+    leaveBlackouts.value = imported ? await leaveBlackoutRepository.list() : memberBlackouts
+    const memberRates = imported ? await apiRequest('/salary-rates') : existingRates
     // 沒有存過費率的會員就是 0（未設定），絕不套用任何人的預設費率
     baseRate.value = Number(memberRates.baseRate ?? 0)
     ppeAllowance.value = Number(memberRates.ppeAllowance ?? 0)
     withholdingTaxRate.value = Number(memberRates.withholdingTaxRate ?? 0)
-    await workSetup.loadMember(memberRates)
+    await workSetup.loadMember(memberRates, !imported && memberProfileLoaded ? { profile: memberProfile } : undefined)
     loadSelectedDate()
     currentCurrency.value = memberSettings.displayCurrency || 'AUD'
-    notifyLedgerChanged()
-    notifyShoppingChanged()
+    // 各頁面在登入身分改變時已自行讀取；只有匯入過訪客資料才需要再通知一次
+    if (imported) {
+      notifyLedgerChanged()
+      notifyShoppingChanged()
+    }
     // 顯示名稱只用於帳號卡，讀取失敗不影響登入
     const signedInToken = authToken.value
     accountRepository.get().then((account) => {
@@ -1235,6 +1246,16 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 
 <template>
   <div class="page">
+    <!-- 免費方案閒置後第一次連線要等伺服器啟動；明確告知，避免使用者重複點擊或以為壞掉 -->
+    <van-notice-bar
+      v-if="serverSlow"
+      class="server-waking"
+      role="status"
+      left-icon="clock-o"
+      wrapable
+      :scrollable="false"
+      text="伺服器啟動中，第一次連線約需 1 分鐘。請稍候，不需要重新整理或重複送出。"
+    />
     <div v-if="activeTab !== 'dashboard'" class="account-shell">
       <div class="account-card" :class="{ 'account-card--shopping-guest': !authToken && activeTab === 'shopping' }">
         <span class="account-card__avatar" aria-hidden="true">
@@ -1789,6 +1810,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 </template>
 
 <style scoped>
+.server-waking { position: fixed; top: env(safe-area-inset-top, 0px); left: 0; right: 0; z-index: 3000; }
 .page { min-height: 100vh; background: #f5f7fa; }
 .account-shell { max-width: 820px; margin-inline: auto; padding: calc(10px + env(safe-area-inset-top, 0px)) max(var(--page-inset), env(safe-area-inset-right, 0px)) 0 max(var(--page-inset), env(safe-area-inset-left, 0px)); }
 .account-card { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 58px; padding: 8px 10px; box-sizing: border-box; border: 1px solid var(--color-border); border-radius: 16px; background: var(--color-surface); box-shadow: 0 6px 18px rgba(29, 66, 106, .05); }

@@ -33,6 +33,19 @@ public class AuthService {
         this.passwords = passwords;
     }
 
+    private volatile String dummyHash;
+
+    /** 第一次需要時才產生，避免拖慢冷啟動 */
+    String dummyHash() {
+        String hash = dummyHash;
+        if (hash == null) {
+            byte[] bytes = new byte[16];
+            RANDOM.nextBytes(bytes);
+            hash = dummyHash = passwords.encode(Base64.getEncoder().encodeToString(bytes));
+        }
+        return hash;
+    }
+
     record Attempt(int count, Instant until) {}
     record IssuedToken(String token, Instant expiresAt, String email) {}
 
@@ -86,7 +99,15 @@ public class AuthService {
         var users = db.query(
             "SELECT seq, password_hash FROM user_info WHERE email_normalized = ?",
             (rs, row) -> new Object[] { rs.getLong("seq"), rs.getString("password_hash") }, normalized);
-        if (users.size() != 1 || !passwords.matches(password, (String) users.get(0)[1])) {
+        // Email 不存在時也跑一次相同成本的密碼比對，讓回應時間不會透露帳號是否存在
+        boolean valid;
+        if (users.size() == 1) {
+            valid = passwords.matches(password, (String) users.get(0)[1]);
+        } else {
+            passwords.matches(password, dummyHash());
+            valid = false;
+        }
+        if (!valid) {
             attempts.compute(key, (ignored, old) ->
                 new Attempt(old == null || old.until.isBefore(Instant.now()) ? 1 : old.count + 1,
                     Instant.now().plus(15, ChronoUnit.MINUTES)));
@@ -112,15 +133,20 @@ public class AuthService {
     Long findUserForToken(String token) {
         if (token.length() < 40 || token.length() > 100) return null;
         String tokenHash = hash(token);
-        var users = db.query(
-            "SELECT user_seq FROM auth_session WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > now()",
-            (rs, row) -> rs.getLong(1), tokenHash);
-        if (users.isEmpty()) return null;
-        // 滑動期限：最多一天延長一次，避免每個請求都寫資料庫
-        db.update("UPDATE auth_session SET expires_at = now() + (? * interval '1 day') "
-            + "WHERE token_hash = ? AND expires_at < now() + (? * interval '1 day')",
-            SESSION_DAYS, tokenHash, SESSION_DAYS - 1);
-        return users.get(0);
+        // 查詢時順便判斷是否需要延長，大多數請求只要 1 次 SQL
+        var sessions = db.query(
+            "SELECT user_seq, expires_at < now() + (? * interval '1 day') AS renew FROM auth_session "
+                + "WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > now()",
+            (rs, row) -> new Object[] { rs.getLong("user_seq"), rs.getBoolean("renew") },
+            SESSION_DAYS - 1, tokenHash);
+        if (sessions.isEmpty()) return null;
+        // 滑動期限：最多一天延長一次，只有需要延長時才寫資料庫
+        if ((Boolean) sessions.get(0)[1]) {
+            db.update("UPDATE auth_session SET expires_at = now() + (? * interval '1 day') "
+                + "WHERE token_hash = ? AND expires_at < now() + (? * interval '1 day')",
+                SESSION_DAYS, tokenHash, SESSION_DAYS - 1);
+        }
+        return (Long) sessions.get(0)[0];
     }
 
     void logout(Long userSeq, String token) {

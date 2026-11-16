@@ -3,13 +3,12 @@ import {
   createInMemoryPassengerRepository,
   createInMemoryTripRepository,
 } from './inMemoryTripRepositories.js'
-import { watch } from 'vue'
 import { apiRequest, authToken } from '../services/authSession.js'
 
 const listeners = new Set()
 const notify = () => listeners.forEach((listener) => listener())
 export const notifyLedgerChanged = notify
-watch(authToken, notify)
+// 登入身分變更時不另外通知：各頁面已自行監看 authToken 重新讀取，重複通知會讓每個清單多讀一次
 
 export function subscribeToLedgerChanges(listener) {
   listeners.add(listener)

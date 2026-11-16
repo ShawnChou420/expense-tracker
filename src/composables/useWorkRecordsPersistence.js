@@ -32,9 +32,10 @@ export function useWorkRecordsPersistence(records, onError, syncOptions = {}) {
     { deep: true },
   )
 
-  async function loadMemberRecords() {
+  /** @param {Array<any>} [preloaded] 登入流程剛讀到的同一份 /work-records，提供時不再重複請求 */
+  async function loadMemberRecords(preloaded) {
     const token = authToken.value
-    const loaded = await apiRequest('/work-records')
+    const loaded = preloaded ?? (await apiRequest('/work-records'))
     const normalized = loaded.map(normalizeWorkRecord)
     // 先設定基準再更新畫面，剛載入的紀錄不會被重新上傳
     sync.reset(token, normalized)

@@ -76,6 +76,7 @@ export const WEEKDAYS = [
  *   scheduleStatus: 'NOT_CONFIGURED' | 'CONFIGURED',
  *   shiftTemplates: ShiftTemplate[],
  *   weekPlan: Record<string, string | null>,
+ *   cleaningDays: Record<string, boolean>,
  *   offDayRule: string,
  *   smoko: SmokoSetting,
  * }} WorkProfile
@@ -98,6 +99,8 @@ export function createEmptyWorkProfile() {
     shiftTemplates: [],
     // 星期（0=日…6=六）→ 班別 id；null＝休息
     weekPlan: {},
+    // 星期 → 這天固定是清潔日（使用班別的清潔日時間）；臨時的清潔日仍可在當天標記
+    cleaningDays: {},
     /** 沒有排班的日子：SKIP＝不建立紀錄；LEAVE＝建立休假紀錄 */
     offDayRule: 'SKIP',
     smoko: { mode: 'AUTO', count: 1, minutes: 30, paid: false },
@@ -149,6 +152,13 @@ export function normalizeWorkProfile(raw) {
     const value = raw.weekPlan?.[day]
     weekPlan[day] = typeof value === 'string' && templateIds.has(value) ? value : null
   }
+  // 只保留「這天有排班、且該班別有清潔日時間」的清潔日
+  /** @type {Record<string, boolean>} */
+  const cleaningDays = {}
+  for (const { day } of WEEKDAYS) {
+    const template = templates.find((item) => item.id === weekPlan[day])
+    if (raw.cleaningDays?.[day] === true && template?.cleaningStartTime) cleaningDays[day] = true
+  }
   const smokoMode = ['AUTO', 'FIXED'].includes(raw.smoko?.mode) ? raw.smoko.mode : 'AUTO'
   const smokoCount = Math.min(3, Math.max(0, Math.round(Number(raw.smoko?.count) || 0)))
   const smokoMinutes = Math.min(60, Math.max(0, Math.round(Number(raw.smoko?.minutes ?? 30))))
@@ -174,6 +184,7 @@ export function normalizeWorkProfile(raw) {
         : SCHEDULE_STATUS.NOT_CONFIGURED,
     shiftTemplates: templates,
     weekPlan,
+    cleaningDays,
     offDayRule: raw.offDayRule === 'LEAVE' ? 'LEAVE' : 'SKIP',
     smoko: {
       mode: smokoMode,
@@ -244,14 +255,24 @@ export function getPlannedShift(profile, dateText) {
         }
       : null
   }
-  // 每週排班一律是一般班；清潔日由使用者在當天標記
+  // 每週固定的清潔日用班別的清潔日時間；其他日子是一般班（臨時清潔日在當天標記）
+  const cleaning = isWeeklyCleaningDay(profile, date.getDay(), template)
   return {
     shiftType: 'normal',
-    startTime: template.startTime,
-    endTime: template.endTime,
-    isCleaningDay: false,
+    ...getTemplateTimes(template, cleaning),
+    isCleaningDay: cleaning,
     name: template.name,
   }
+}
+
+/**
+ * 這個星期幾是否設定為固定清潔日（班別要有清潔日時間才成立）。
+ * @param {WorkProfile} profile
+ * @param {number} day 0=日…6=六
+ * @param {ShiftTemplate | undefined} template
+ */
+export function isWeeklyCleaningDay(profile, day, template) {
+  return profile.cleaningDays?.[day] === true && Boolean(template?.cleaningStartTime)
 }
 
 /** Smoko 設定 → 計算引擎的參數。自動＝沿用現有依工時判定（null）；計薪的 Smoko 不扣分鐘 */
@@ -477,7 +498,16 @@ export function describeWeekPlan(profile) {
         .map(({ label }) => label)
         .join('')
       const time = `${template.startTime}–${template.endTime}${crossesMidnight(template) ? '（隔天）' : ''}`
-      return days ? `${template.name} ${time} · 週${days}` : null
+      const cleaning = WEEKDAYS.filter(
+        ({ day }) =>
+          profile.weekPlan[day] === template.id && isWeeklyCleaningDay(profile, day, template),
+      )
+        .map(({ label }) => label)
+        .join('')
+      const cleaningText = cleaning
+        ? ` · 清潔日週${cleaning} ${template.cleaningStartTime}–${template.cleaningEndTime}`
+        : ''
+      return days ? `${template.name} ${time} · 週${days}${cleaningText}` : null
     })
     .filter(Boolean)
 }

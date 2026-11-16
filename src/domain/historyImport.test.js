@@ -61,6 +61,22 @@ describe('createHistoryDrafts', () => {
   })
 })
 
+describe('weekly cleaning days in history drafts', () => {
+  it('uses cleaning times on the weekday set as a cleaning day', () => {
+    const { drafts } = createHistoryDrafts({
+      records: [],
+      profile: { ...profile, cleaningDays: { 2: true } },
+      start: '2026-10-19',
+      end: '2026-10-21',
+    })
+    expect(drafts.map((draft) => [draft.startTime, draft.isCleaningDay])).toEqual([
+      ['22:00', false],
+      ['21:00', true],
+      ['22:00', false],
+    ])
+  })
+})
+
 describe('editHistoryDrafts', () => {
   const { drafts } = createHistoryDrafts({
     records: [],

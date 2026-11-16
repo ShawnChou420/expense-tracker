@@ -15,7 +15,7 @@ const tracking = computed(() => props.settings && props.settings.goal && props.s
 const recordedDays = computed(() => {
   const counts = props.progress?.counts
   if (!counts) return 0
-  return counts.actualDays + counts.historicalDays + counts.partialDays + counts.paidLeaveDays
+  return counts.actualDays + counts.historicalDays + counts.partialDays
 })
 const showHistoryPrompt = computed(
   () => tracking.value && props.progress && !props.progress.hasHistory && !props.settings.historyDismissed,

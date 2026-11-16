@@ -9,7 +9,7 @@ import { getPayslipHighlights } from './payslip/summary.js'
  * 規則依 Home Affairs「How to count specified work」（2026-11 查閱）：
  * - 二簽：至少 3 個月 = 88 個日曆天；三簽：至少 6 個月 = 179 個日曆天，都包含全職期間的週末或休息日。
  * - 需完成「該職務全職員工在 88／179 天內的正常工作天數」；兼職按比例折算。
- * - 一個日曆天最多算一天；有薪的國定假日與病假可以算，無薪的不行。
+ * - 一個日曆天最多算一天；無薪的假日與請假不能算。打工度假的工作沒有有薪假，請假一律視為無薪。
  * - 總期間不能短於 3／6 個日曆月。
  * - 工作必須在持有前一張 WHM 簽證期間完成（二簽靠第一簽期間、三簽靠第二簽期間）。
  *
@@ -124,7 +124,7 @@ const round1 = (/** @type {number} */ value) => Math.round(value * 10) / 10
 
 /**
  * 每一天的分類，給日曆與進度使用。
- * @typedef {'ACTUAL_WORK' | 'HISTORICAL_WORK' | 'PARTIAL_DAY' | 'PAID_LEAVE' | 'PAID_LEAVE_REVIEW' | 'UNPAID_LEAVE' | 'REST_DAY' | 'MISSING' | 'FUTURE_PLANNED' | 'OUTSIDE_VISA'} DayStatus
+ * @typedef {'ACTUAL_WORK' | 'HISTORICAL_WORK' | 'PARTIAL_DAY' | 'UNPAID_LEAVE' | 'REST_DAY' | 'MISSING' | 'FUTURE_PLANNED' | 'OUTSIDE_VISA'} DayStatus
  */
 
 /**
@@ -152,6 +152,7 @@ export function getVisaJourneyProgress({
     `依官方規則，${goal.label}需要至少 ${goal.months} 個月（${goal.minDays} 個日曆天）的指定工作。`,
     `以每週 ${FULL_TIME_DAYS_PER_WEEK} 天全職換算，約需 ${requiredWorkDays} 個完整工作天；實際標準以你的職務與產業為準。`,
     '工作行業與工作地點郵遞區號是否屬於指定工作，需自行對照 Home Affairs 公告。',
+    '請假（事假、病假、Holiday 等）一律視為無薪，不計入工作天。',
   ]
 
   if (settings.stage && settings.stage !== goal.priorStage) {
@@ -222,7 +223,6 @@ export function getVisaJourneyProgress({
     actualDays: 0,
     historicalDays: 0,
     partialDays: 0,
-    paidLeaveDays: 0,
     unpaidLeaveDays: 0,
     restDays: 0,
     missingDays: 0,
@@ -230,7 +230,6 @@ export function getVisaJourneyProgress({
   }
   const missingDates = []
   const partialDates = []
-  const paidLeaveReviewDates = []
   let hasHistory = false
 
   for (let date = workStart; date <= countedEnd; date = addDays(date, 1)) {
@@ -267,15 +266,8 @@ export function getVisaJourneyProgress({
       if (record.leaveType === 'REST_DAY') {
         counts.restDays += 1
         days.push({ date, status: 'REST_DAY', credit: 0 })
-      } else if (record.leavePaid === true && record.leaveType === 'SICK') {
-        // 官方：有薪病假可以算一天
-        counts.paidLeaveDays += 1
-        days.push({ date, status: 'PAID_LEAVE', credit: 1 })
-      } else if (record.leavePaid === true) {
-        // 有薪的 Holiday／事假：只有「有薪國定假日」明確可計，其他需核對，先不計入
-        paidLeaveReviewDates.push(date)
-        days.push({ date, status: 'PAID_LEAVE_REVIEW', credit: 0 })
       } else {
+        // 請假一律無薪，不計入工作天
         counts.unpaidLeaveDays += 1
         days.push({ date, status: 'UNPAID_LEAVE', credit: 0 })
       }
@@ -313,13 +305,6 @@ export function getVisaJourneyProgress({
       code: 'PARTIAL_DAYS',
       message: `${partialDates.length} 天的工時明顯少於你平常的一天，已按比例折算，需核對是否為產業標準工時。`,
       dates: partialDates,
-    })
-  }
-  if (paidLeaveReviewDates.length) {
-    reviewItems.push({
-      code: 'PAID_LEAVE_REVIEW',
-      message: `${paidLeaveReviewDates.length} 天有薪假（非病假）未計入：只有有薪國定假日與病假明確可計，請自行核對。`,
-      dates: paidLeaveReviewDates,
     })
   }
 

@@ -2,7 +2,7 @@
 // 請假（單日或一段期間）：選日期區間與請假類型。已有實際工作的日期列為衝突，由使用者決定略過或改成請假。
 import { computed, ref, watch } from 'vue'
 import { showToast } from 'vant'
-import { LEAVE_TYPES, getLeaveType, planBatchLeave } from '../domain/leaveTypes.js'
+import { LEAVE_TYPES, planBatchLeave } from '../domain/leaveTypes.js'
 import { addDays, daysBetweenInclusive } from '../domain/visaJourney.js'
 
 const props = defineProps({
@@ -17,7 +17,6 @@ const MAX_DAYS = 62
 const start = ref('')
 const end = ref('')
 const leaveType = ref('HOLIDAY')
-const leavePaid = ref(false)
 const conflictMode = ref('SKIP')
 
 watch(
@@ -27,13 +26,11 @@ watch(
     start.value = props.defaultDate
     end.value = props.defaultDate
     leaveType.value = 'HOLIDAY'
-    leavePaid.value = false
     conflictMode.value = 'SKIP'
   },
   { immediate: true },
 )
 
-const paidAllowed = computed(() => getLeaveType(leaveType.value)?.paidAllowed === true)
 const rangeError = computed(() => {
   if (!start.value || !end.value) return '請選擇日期'
   if (end.value < start.value) return '結束日期不可早於開始日期'
@@ -58,7 +55,6 @@ function apply() {
   emit('apply', {
     dates: dates.value,
     leaveType: leaveType.value,
-    leavePaid: paidAllowed.value && leavePaid.value,
     conflictMode: conflictMode.value,
   })
 }
@@ -97,11 +93,8 @@ function apply() {
           {{ type.label }}
         </button>
       </div>
-      <van-checkbox v-if="paidAllowed" v-model="leavePaid" class="leave-sheet__paid">
-        這是有薪假（例如有薪病假、有薪國定假日，供核對用）
-      </van-checkbox>
       <p class="leave-sheet__note">
-        請假預設無薪，不產生工時與薪資，也不計入集簽工作天。只有有薪病假會計入估算，其他有薪假列為需核對。
+        請假一律無薪，不產生工時與薪資，也不計入集簽工作天。
       </p>
 
       <div v-if="dates.length" class="leave-plan">
@@ -161,10 +154,6 @@ h3 {
   background: var(--color-primary-soft);
   color: var(--color-primary);
   font-weight: 700;
-}
-.leave-sheet__paid {
-  margin: 12px 2px 0;
-  font-size: 14px;
 }
 .leave-sheet__note {
   margin: 10px 0;

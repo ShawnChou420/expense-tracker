@@ -97,9 +97,6 @@ public class LedgerController {
         Object source = body.get("source");
         if (source != null && !RECORD_SOURCES.contains(source))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "無效紀錄來源");
-        Object paid = body.get("leavePaid");
-        if (paid != null && !(paid instanceof Boolean))
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "無效有薪標記");
     }
 
     @PutMapping("/work-records/{id}")

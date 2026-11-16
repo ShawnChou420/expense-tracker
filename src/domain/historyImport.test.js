@@ -79,7 +79,6 @@ describe('editHistoryDrafts', () => {
     expect(summarizeHistoryDrafts(edited)).toEqual({ work: 2, leave: 3, rest: 2 })
     expect(edited.find((draft) => draft.date === '2026-10-20'))?.toMatchObject({
       leaveType: 'HOLIDAY',
-      leavePaid: false,
     })
   })
 
@@ -129,7 +128,7 @@ describe('historyDraftsToRecords', () => {
     const edited = editHistoryDrafts(
       drafts,
       ['2026-10-20'],
-      { kind: 'leave', leaveType: 'SICK', leavePaid: true },
+      { kind: 'leave', leaveType: 'SICK' },
       profile,
     )
     let id = 1000
@@ -159,7 +158,6 @@ describe('historyDraftsToRecords', () => {
     expect(records[1]).toMatchObject({
       shiftType: 'leave',
       leaveType: 'SICK',
-      leavePaid: true,
       grossPay: 0,
     })
   })

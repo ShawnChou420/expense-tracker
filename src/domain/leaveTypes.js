@@ -2,15 +2,15 @@ import { parseLocalDate } from './date.js'
 import { normalizeWorkRecord } from '../utils/workRecord.js'
 
 /**
- * 請假類型。所有請假紀錄都是 shiftType = 'leave'，不產生工時與薪資；
- * leaveType 只說明原因，leavePaid 是使用者另外標示的「有薪」供核對用。
+ * 請假類型。所有請假紀錄都是 shiftType = 'leave'，一律無薪，不產生工時與薪資；
+ * leaveType 只說明原因（打工度假的工作沒有有薪假）。
  */
 export const LEAVE_TYPES = /** @type {const} */ ([
-  { id: 'PERSONAL', label: '事假', paidAllowed: true },
-  { id: 'SICK', label: '病假', paidAllowed: true },
-  { id: 'HOLIDAY', label: 'Holiday／旅行', paidAllowed: true },
-  { id: 'UNPAID_OTHER', label: '其他無薪假', paidAllowed: false },
-  { id: 'REST_DAY', label: '正常休息日', paidAllowed: false },
+  { id: 'PERSONAL', label: '事假' },
+  { id: 'SICK', label: '病假' },
+  { id: 'HOLIDAY', label: 'Holiday／旅行' },
+  { id: 'UNPAID_OTHER', label: '其他無薪假' },
+  { id: 'REST_DAY', label: '正常休息日' },
 ])
 
 /** 舊的請假紀錄沒有類型 */
@@ -33,13 +33,12 @@ export function isWorkedRecord(record) {
 
 /**
  * 建立一筆請假紀錄。金額與工時一律為 0，所以不影響薪資預估。
- * @param {{ id: number, workDate: string, leaveType: string, leavePaid?: boolean, remark?: string, source?: string | null, replacedWork?: unknown }} input
+ * @param {{ id: number, workDate: string, leaveType: string, remark?: string, source?: string | null, replacedWork?: unknown }} input
  */
 export function createLeaveRecord({
   id,
   workDate,
   leaveType,
-  leavePaid = false,
   remark = '',
   source = null,
   replacedWork = null,
@@ -56,7 +55,6 @@ export function createLeaveRecord({
     designatedWork: false,
     prepMinutes: 0,
     leaveType: type.id,
-    leavePaid: type.paidAllowed && leavePaid === true,
     ...(source ? { source } : {}),
     ...(replacedWork ? { replacedWork } : {}),
   }
@@ -85,18 +83,14 @@ export function planBatchLeave(records, dates) {
 /**
  * 套用批次請假，回傳新的紀錄陣列（不修改原陣列）。
  * - 沒有紀錄的日期：新增請假紀錄。
- * - 已是請假：只改類型與是否有薪。
+ * - 已是請假：只改類型。
  * - 已有工作（衝突）：`conflictMode = 'SKIP'` 保留不動；`'REPLACE'` 改成請假，
  *   並把原本的上下班時間存在 replacedWork，之後可以恢復，不會無聲刪除。
  * @param {Array<any>} records
  * @param {string[]} dates
- * @param {{ leaveType: string, leavePaid?: boolean, conflictMode?: 'SKIP' | 'REPLACE', nextId: () => number }} options
+ * @param {{ leaveType: string, conflictMode?: 'SKIP' | 'REPLACE', nextId: () => number }} options
  */
-export function applyBatchLeave(
-  records,
-  dates,
-  { leaveType, leavePaid = false, conflictMode = 'SKIP', nextId },
-) {
+export function applyBatchLeave(records, dates, { leaveType, conflictMode = 'SKIP', nextId }) {
   const wanted = new Set(dates)
   const { create } = planBatchLeave(records, dates)
   const result = records.map((record) => {
@@ -106,7 +100,6 @@ export function applyBatchLeave(
         id: record.id,
         workDate: record.workDate,
         leaveType,
-        leavePaid,
         remark: record.remark || '',
         source: record.source ?? null,
         replacedWork: record.replacedWork ?? null,
@@ -117,7 +110,6 @@ export function applyBatchLeave(
       id: record.id,
       workDate: record.workDate,
       leaveType,
-      leavePaid,
       remark: record.remark || '',
       source: record.source ?? null,
       replacedWork: {
@@ -130,7 +122,7 @@ export function applyBatchLeave(
     })
   })
   for (const date of create) {
-    result.push(createLeaveRecord({ id: nextId(), workDate: date, leaveType, leavePaid }))
+    result.push(createLeaveRecord({ id: nextId(), workDate: date, leaveType }))
   }
   return result
 }

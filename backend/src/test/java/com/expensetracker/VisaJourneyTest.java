@@ -92,14 +92,12 @@ class VisaJourneyTest {
 
     @Test
     void workRecordRejectsUnknownLeaveTypeOrSource() {
-        LedgerController.validateRecordMeta(Map.of("leaveType", "HOLIDAY", "leavePaid", true,
+        LedgerController.validateRecordMeta(Map.of("leaveType", "HOLIDAY",
             "source", "HISTORICAL_USER_CONFIRMED"));
         assertThrows(ResponseStatusException.class,
             () -> LedgerController.validateRecordMeta(Map.of("leaveType", "VACATION")));
         assertThrows(ResponseStatusException.class,
             () -> LedgerController.validateRecordMeta(Map.of("source", "HOME_AFFAIRS_VERIFIED")));
-        assertThrows(ResponseStatusException.class,
-            () -> LedgerController.validateRecordMeta(Map.of("leavePaid", "yes")));
     }
 
     @Test

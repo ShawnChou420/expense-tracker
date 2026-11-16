@@ -141,9 +141,9 @@ describe('getVisaJourneyProgress', () => {
     const records = [
       ...weekdays('2026-08-03', '2026-08-07', { source: 'HISTORICAL_USER_CONFIRMED' }),
       work('2026-08-10'),
-      createLeaveRecord({ id: 900, workDate: '2026-08-11', leaveType: 'SICK', leavePaid: true }),
-      createLeaveRecord({ id: 901, workDate: '2026-08-12', leaveType: 'SICK' }),
-      createLeaveRecord({ id: 902, workDate: '2026-08-13', leaveType: 'HOLIDAY', leavePaid: true }),
+      createLeaveRecord({ id: 900, workDate: '2026-08-11', leaveType: 'SICK' }),
+      createLeaveRecord({ id: 901, workDate: '2026-08-12', leaveType: 'PERSONAL' }),
+      createLeaveRecord({ id: 902, workDate: '2026-08-13', leaveType: 'HOLIDAY' }),
       // 08-14（週五）沒有紀錄
     ]
     const result = progress({
@@ -154,14 +154,13 @@ describe('getVisaJourneyProgress', () => {
     })
     expect(result.counts.historicalDays).toBe(5)
     expect(result.counts.actualDays).toBe(1)
-    expect(result.counts.paidLeaveDays).toBe(1)
-    expect(result.counts.unpaidLeaveDays).toBe(1)
+    // 病假、事假、Holiday 一律無薪，不計入工作天
+    expect(result.counts.unpaidLeaveDays).toBe(3)
     expect(result.counts.missingDays).toBe(1)
-    expect(result.creditedDays).toBe(7)
+    expect(result.creditedDays).toBe(6)
     expect(result.hasHistory).toBe(true)
     const codes = result.reviewItems.map((item) => item.code)
     expect(codes).toContain('MISSING_RECORDS')
-    expect(codes).toContain('PAID_LEAVE_REVIEW')
   })
 
   it('credits short days proportionally and flags them for review', () => {
@@ -281,7 +280,6 @@ describe('batch leave', () => {
     expect(result.find((record) => record.workDate === '2026-10-22')).toMatchObject({
       shiftType: 'leave',
       leaveType: 'HOLIDAY',
-      leavePaid: false,
       grossPay: 0,
       paidMinutes: 0,
     })
@@ -299,14 +297,9 @@ describe('batch leave', () => {
     expect(replaced.replacedWork).toMatchObject({ startTime: '07:00', endTime: '15:30' })
   })
 
-  it('only allows the paid flag on leave types that can be paid', () => {
-    expect(
-      createLeaveRecord({ id: 1, workDate: '2026-10-22', leaveType: 'REST_DAY', leavePaid: true })
-        .leavePaid,
-    ).toBe(false)
-    expect(
-      createLeaveRecord({ id: 1, workDate: '2026-10-22', leaveType: 'SICK', leavePaid: true })
-        .leavePaid,
-    ).toBe(true)
+  it('never creates paid leave: leave has no pay and no hours', () => {
+    const sick = createLeaveRecord({ id: 1, workDate: '2026-10-22', leaveType: 'SICK' })
+    expect(sick).toMatchObject({ shiftType: 'leave', grossPay: 0, paidMinutes: 0 })
+    expect('leavePaid' in sick).toBe(false)
   })
 })

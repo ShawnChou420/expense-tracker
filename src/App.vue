@@ -1151,9 +1151,9 @@ function viewVisaProgress() {
 }
 
 // --- 請假（單日或批次） ---
-function applyLeave({ dates, leaveType, leavePaid, conflictMode }) {
+function applyLeave({ dates, leaveType, conflictMode }) {
   let cursor = nextRecordId(records.value)
-  records.value = applyBatchLeave(records.value, dates, { leaveType, leavePaid, conflictMode, nextId: () => cursor++ })
+  records.value = applyBatchLeave(records.value, dates, { leaveType, conflictMode, nextId: () => cursor++ })
   batchLeaveOpen.value = false
   loadSelectedDate()
   showToast(dates.length === 1 ? `${dates[0]} 已設為請假` : `已設定 ${dates.length} 天請假`)
@@ -1581,7 +1581,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
         <div class="calendar-day-actions__heading">
           <div>
             <strong>{{ workDate }} <small>{{ getDayOfWeek(workDate) }}</small></strong>
-            <p v-if="selectedRecord?.shiftType === 'leave'">{{ getLeaveLabel(selectedRecord) }}{{ selectedRecord.leavePaid ? '（有薪）' : '' }} · 不計工時與薪資</p>
+            <p v-if="selectedRecord?.shiftType === 'leave'">{{ getLeaveLabel(selectedRecord) }} · 無薪，不計工時與薪資</p>
             <p v-else-if="selectedRecord">已排班 · {{ selectedRecord.startTime }}–{{ selectedRecord.endTime }}</p>
             <p v-else>尚未加入班表</p>
             <button v-for="notice in selectedNotices" :key="notice.id" type="button" class="calendar-day-actions__blackout" @click="openBlackoutEditor">

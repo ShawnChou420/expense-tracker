@@ -20,7 +20,6 @@ export const MAX_HISTORY_DAYS = 400
  *   smokoMode: 'AUTO' | 'MANUAL',
  *   smokoCount: number | null,
  *   leaveType: string | null,
- *   leavePaid: boolean,
  * }} HistoryDraft
  */
 
@@ -72,7 +71,6 @@ export function createHistoryDrafts({ records, profile, start, end }) {
       smokoMode: smoko.smokoCountOverride === null ? 'AUTO' : 'MANUAL',
       smokoCount: smoko.smokoCountOverride,
       leaveType: null,
-      leavePaid: false,
     })
   }
   return { drafts, skippedExisting }
@@ -80,7 +78,7 @@ export function createHistoryDrafts({ records, profile, start, end }) {
 
 /**
  * 一次修改多個日期（不修改原陣列）。
- * - `{ kind: 'leave', leaveType, leavePaid }`：改成請假
+ * - `{ kind: 'leave', leaveType }`：改成請假（一律無薪）
  * - `{ kind: 'rest' }`：改成休息日（不保存）
  * - `{ kind: 'work' }`：恢復成排班的上班（沒有排班的日子沿用第一個班別）
  * - `{ startTime, endTime }`、`{ smokoMode, smokoCount }`、`{ isCleaningDay }`：只改上班的日子
@@ -100,14 +98,9 @@ export function editHistoryDrafts(drafts, dates, patch, profile) {
     if (patch.kind === 'leave') {
       const type = getLeaveType(patch.leaveType)
       if (!type) return draft
-      return {
-        ...draft,
-        kind: 'leave',
-        leaveType: type.id,
-        leavePaid: type.paidAllowed && patch.leavePaid === true,
-      }
+      return { ...draft, kind: 'leave', leaveType: type.id }
     }
-    if (patch.kind === 'rest') return { ...draft, kind: 'rest', leaveType: null, leavePaid: false }
+    if (patch.kind === 'rest') return { ...draft, kind: 'rest', leaveType: null }
     if (patch.kind === 'work') {
       const template =
         profile.shiftTemplates.find((/** @type {any} */ item) => item.id === draft.templateId) ??
@@ -122,7 +115,6 @@ export function editHistoryDrafts(drafts, dates, patch, profile) {
         startTime: draft.startTime || times.startTime,
         endTime: draft.endTime || times.endTime,
         leaveType: null,
-        leavePaid: false,
       }
     }
     if (draft.kind !== 'work') return draft
@@ -172,7 +164,6 @@ export function historyDraftsToRecords(drafts, { records, buildWork, nextId }) {
           id: nextId(),
           workDate: draft.date,
           leaveType: draft.leaveType,
-          leavePaid: draft.leavePaid,
           source: HISTORY_SOURCE,
         }),
       )

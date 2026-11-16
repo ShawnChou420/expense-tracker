@@ -93,7 +93,7 @@ function rowDetail(draft) {
   if (draft.kind === 'rest') return '休息日（不保存）'
   if (draft.kind === 'leave') {
     const type = getLeaveType(draft.leaveType)
-    return `${type?.label ?? '請假'}${draft.leavePaid ? '（有薪）' : '（無薪）'}`
+    return `${type?.label ?? '請假'}（無薪）`
   }
   const record = preview.value.get(draft.date)
   if (!record) return `${draft.startTime || '--'}–${draft.endTime || '--'} · 時間不完整`
@@ -147,7 +147,6 @@ const editorDates = ref(/** @type {string[]} */ ([]))
 const editor = ref({
   kind: 'work',
   leaveType: 'HOLIDAY',
-  leavePaid: false,
   startTime: '',
   endTime: '',
   smokoMode: 'AUTO',
@@ -157,7 +156,6 @@ const editor = ref({
 const editorTitle = computed(() =>
   editorDates.value.length === 1 ? dayLabel(editorDates.value[0]) : `${editorDates.value.length} 天一起修改`,
 )
-const editorPaidAllowed = computed(() => getLeaveType(editor.value.leaveType)?.paidAllowed === true)
 const editorTemplate = computed(() => {
   const draft = drafts.value.find((item) => item.date === editorDates.value[0])
   return props.profile.shiftTemplates.find((item) => item.id === draft?.templateId) ?? null
@@ -170,7 +168,6 @@ function openEditor(dates) {
   editor.value = {
     kind: first.kind === 'rest' ? 'work' : first.kind,
     leaveType: first.leaveType || 'HOLIDAY',
-    leavePaid: first.leavePaid,
     startTime: first.startTime,
     endTime: first.endTime,
     smokoMode: first.smokoMode,
@@ -185,7 +182,7 @@ function applyEditor() {
   const value = editor.value
   let next = drafts.value
   if (value.kind === 'leave') {
-    next = editHistoryDrafts(next, dates, { kind: 'leave', leaveType: value.leaveType, leavePaid: value.leavePaid }, props.profile)
+    next = editHistoryDrafts(next, dates, { kind: 'leave', leaveType: value.leaveType }, props.profile)
   } else if (value.kind === 'rest') {
     next = editHistoryDrafts(next, dates, { kind: 'rest' }, props.profile)
   } else {
@@ -416,10 +413,7 @@ function close() {
           <van-radio-group v-model="editor.leaveType" class="history-editor__types">
             <van-radio v-for="type in LEAVE_TYPES" :key="type.id" :name="type.id">{{ type.label }}</van-radio>
           </van-radio-group>
-          <van-checkbox v-if="editorPaidAllowed" v-model="editor.leavePaid" class="history-editor__paid">
-            這天是有薪假（供核對用）
-          </van-checkbox>
-          <p class="history-note">請假預設無薪，不產生工時，也不計入集簽工作天。</p>
+          <p class="history-note">請假一律無薪，不產生工時，也不計入集簽工作天。</p>
         </template>
         <van-button block type="primary" class="history-wizard__primary" @click="applyEditor">套用</van-button>
       </div>
@@ -655,9 +649,6 @@ function close() {
   display: grid;
   gap: 14px;
   margin: 8px 4px 12px;
-}
-.history-editor__paid {
-  margin: 4px 4px 8px;
 }
 .history-editor .history-wizard__primary {
   width: 100%;

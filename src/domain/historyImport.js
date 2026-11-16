@@ -1,7 +1,7 @@
 import { parseLocalDate } from './date.js'
 import { addDays, daysBetweenInclusive } from './visaJourney.js'
 import { createLeaveRecord, getLeaveType } from './leaveTypes.js'
-import { getSmokoInputs, getTemplateTimes } from './workProfile.js'
+import { getSmokoInputs, getTemplateTimes, isWeeklyCleaningDay } from './workProfile.js'
 
 /** 補登歷史班表的資料來源標記：使用者確認過，但不代表雇主或 Home Affairs 認定 */
 export const HISTORY_SOURCE = 'HISTORICAL_USER_CONFIRMED'
@@ -60,14 +60,17 @@ export function createHistoryDrafts({ records, profile, start, end }) {
     const template = profile.shiftTemplates.find(
       (/** @type {any} */ item) => item.id === templateId,
     )
+    // 每週固定的清潔日直接帶入清潔日時間
+    const cleaning = isWeeklyCleaningDay(profile, day, template)
+    const times = template ? getTemplateTimes(template, cleaning) : { startTime: '', endTime: '' }
     drafts.push({
       date,
       kind: template ? 'work' : 'rest',
       templateId: template?.id ?? null,
       shiftName: template?.name ?? '休息',
-      startTime: template?.startTime ?? '',
-      endTime: template?.endTime ?? '',
-      isCleaningDay: false,
+      startTime: times.startTime,
+      endTime: times.endTime,
+      isCleaningDay: cleaning,
       smokoMode: smoko.smokoCountOverride === null ? 'AUTO' : 'MANUAL',
       smokoCount: smoko.smokoCountOverride,
       leaveType: null,

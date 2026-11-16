@@ -110,6 +110,50 @@ describe('shift templates', () => {
     expect(getPlannedShift(profile, '2026-11-14')).toBeNull()
   })
 
+  it('uses the cleaning-day times on weekdays the user set as weekly cleaning days', () => {
+    // 週二早班設為固定清潔日、週一晚班也設為清潔日
+    const profile = { ...configuredProfile(), cleaningDays: { 1: true, 2: true } }
+    expect(getPlannedShift(profile, '2026-11-10')).toMatchObject({
+      name: '早班',
+      startTime: '06:00',
+      endTime: '12:15',
+      isCleaningDay: true,
+    })
+    expect(getPlannedShift(profile, '2026-11-09')).toMatchObject({
+      startTime: '17:45',
+      endTime: '00:00',
+      isCleaningDay: true,
+    })
+    // 其他日子不受影響
+    expect(getPlannedShift(profile, '2026-11-11')).toMatchObject({
+      startTime: '23:50',
+      isCleaningDay: false,
+    })
+    // planFill 會把清潔日時間帶入
+    expect(planFill([], profile, ['2026-11-10']).plan[0]).toMatchObject({
+      endTime: '12:15',
+      isCleaningDay: true,
+    })
+    expect(describeWeekPlan(profile).join(' / ')).toContain('清潔日週二 06:00–12:15')
+  })
+
+  it('keeps weekly cleaning days only for working days whose shift has cleaning times', () => {
+    const custom = createShiftTemplate('custom', {
+      name: '自訂',
+      startTime: '08:00',
+      endTime: '16:00',
+    })
+    const raw = {
+      ...configuredProfile(),
+      shiftTemplates: [...configuredProfile().shiftTemplates, custom],
+      weekPlan: { 0: null, 1: 'night', 2: 'early', 3: 'custom', 4: 'night', 5: 'night', 6: null },
+      // 週三的自訂班沒有清潔日時間、週六休息、週日是不合法的值
+      cleaningDays: { 2: true, 3: true, 6: true, 0: 'yes' },
+    }
+    expect(normalizeWorkProfile(raw).cleaningDays).toEqual({ 2: true })
+    expect(normalizeWorkProfile({ ...raw, cleaningDays: undefined }).cleaningDays).toEqual({})
+  })
+
   it('creates leave records on off days only when the user chose that rule', () => {
     const profile = { ...configuredProfile(), offDayRule: 'LEAVE' }
     expect(getPlannedShift(profile, '2026-11-15')).toMatchObject({ shiftType: 'leave' })

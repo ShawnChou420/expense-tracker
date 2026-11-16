@@ -41,7 +41,7 @@ const current = ref(1) // 1 | 2 | 3 | 4（完成）
 const manualMode = ref(false)
 const saving = ref(false)
 const manual = ref({ baseRate: '', ppeAllowance: '', withholdingPercent: '', loadings: {}, allowProvisional: false })
-const draft = ref({ shiftTemplates: [], weekPlan: {}, offDayRule: 'SKIP', smoko: { mode: 'AUTO', count: 1, minutes: 30, paid: false } })
+const draft = ref({ shiftTemplates: [], weekPlan: {}, cleaningDays: {}, offDayRule: 'SKIP', smoko: { mode: 'AUTO', count: 1, minutes: 30, paid: false } })
 const smokoChoice = ref('AUTO') // AUTO | 0 | 1 | 2 | CUSTOM
 
 const payConfigured = computed(() => props.profile.payStatus !== PAY_STATUS.NOT_CONFIGURED && props.pay.baseRate > 0)
@@ -71,6 +71,7 @@ function initialise() {
   draft.value = clonePlain({
     shiftTemplates: props.profile.shiftTemplates,
     weekPlan: props.profile.weekPlan,
+    cleaningDays: props.profile.cleaningDays ?? {},
     offDayRule: props.profile.offDayRule,
     smoko: props.profile.smoko,
   })
@@ -175,11 +176,34 @@ function togglePreset(choice) {
 function removeTemplate(id) {
   draft.value.shiftTemplates = draft.value.shiftTemplates.filter((item) => item.id !== id)
   for (const { day } of WEEKDAYS) {
-    if (draft.value.weekPlan[day] === id) draft.value.weekPlan[day] = null
+    if (draft.value.weekPlan[day] === id) setDay(day, null)
   }
 }
 function setDay(day, templateId) {
   draft.value.weekPlan = { ...draft.value.weekPlan, [day]: templateId }
+  // 改成休息或沒有清潔日時間的班別時，這天就不再是清潔日
+  if (!hasCleaningTimes(templateId)) setCleaningDay(day, false)
+}
+const templateFor = (/** @type {string | null} */ id) => draft.value.shiftTemplates.find((item) => item.id === id)
+const hasCleaningTimes = (/** @type {string | null} */ id) => {
+  const template = templateFor(id)
+  return Boolean(template?.cleaningStartTime && template?.cleaningEndTime)
+}
+const isCleaningDay = (day) => draft.value.cleaningDays?.[day] === true && hasCleaningTimes(draft.value.weekPlan[day])
+function setCleaningDay(day, value) {
+  const next = { ...(draft.value.cleaningDays || {}) }
+  if (value) next[day] = true
+  else delete next[day]
+  draft.value.cleaningDays = next
+}
+/** 這天的上下班時間（清潔日顯示清潔日時間），讓使用者一眼看到 */
+function dayTimes(day) {
+  const template = templateFor(draft.value.weekPlan[day])
+  if (!template?.startTime || !template?.endTime) return ''
+  const cleaning = isCleaningDay(day)
+  const start = cleaning ? template.cleaningStartTime : template.startTime
+  const end = cleaning ? template.cleaningEndTime : template.endTime
+  return `${start}–${end}`
 }
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
 const templateErrors = computed(() =>
@@ -495,7 +519,7 @@ function goTo(step) {
               </span>
               <span v-if="shiftHours(template)" class="template__hours">{{ shiftHours(template) }}</span>
             </div>
-            <!-- 清潔日不固定，不放進每週排班；當天在班表上標記清潔日時，自動換成這組時間 -->
+            <!-- 清潔日時間：在下方每週排班勾選固定清潔日，或在班表當天標記臨時清潔日時使用 -->
             <div class="template__times template__times--cleaning">
               <label>
                 <small>清潔日上班</small>
@@ -507,11 +531,12 @@ function goTo(step) {
                 <input v-model="template.cleaningEndTime" type="time" step="300" />
               </label>
             </div>
+            <p class="template__hint">填好清潔日時間後，可以在下方指定每週哪天是清潔日。</p>
             <p v-if="templateErrors[template.id]" class="template__error">{{ templateErrors[template.id] }}</p>
           </article>
 
           <h3 class="setup__title">每週哪幾天上班？</h3>
-          <p class="setup__note">沒選的日子當休息。</p>
+          <p class="setup__note">沒選的日子當休息。固定的清潔日請打開「清潔日」，臨時的清潔日之後可以在班表當天標記。</p>
           <div class="week">
             <div v-for="weekday in WEEKDAYS" :key="weekday.day" class="week__row">
               <span class="week__day" :class="{ 'is-on': draft.weekPlan[weekday.day] }">{{ weekday.label }}</span>
@@ -534,7 +559,21 @@ function goTo(step) {
                 >
                   {{ template.name }}
                 </button>
+                <button
+                  v-if="hasCleaningTimes(draft.weekPlan[weekday.day])"
+                  type="button"
+                  class="chip chip--cleaning"
+                  :class="{ 'is-selected': isCleaningDay(weekday.day) }"
+                  :aria-pressed="isCleaningDay(weekday.day)"
+                  :aria-label="`週${weekday.label}是清潔日`"
+                  @click="setCleaningDay(weekday.day, !isCleaningDay(weekday.day))"
+                >
+                  <van-icon :name="isCleaningDay(weekday.day) ? 'success' : 'brush-o'" />清潔日
+                </button>
               </div>
+              <span v-if="dayTimes(weekday.day)" class="week__times" :class="{ 'is-cleaning': isCleaningDay(weekday.day) }">
+                {{ dayTimes(weekday.day) }}
+              </span>
             </div>
           </div>
           <div class="setup__offday">
@@ -1111,6 +1150,11 @@ function goTo(step) {
   color: var(--color-expense);
   font-size: 12px;
 }
+.template__hint {
+  margin: 8px 0 0;
+  color: var(--color-muted);
+  font-size: 12px;
+}
 
 .week {
   overflow: hidden;
@@ -1120,9 +1164,23 @@ function goTo(step) {
 }
 .week__row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
+}
+/* 這天的上下班時間：清潔日顯示清潔日時間，放在按鈕下方一行 */
+.week__times {
+  flex-basis: 100%;
+  margin-top: -4px;
+  padding-left: 42px;
+  color: var(--color-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.week__times.is-cleaning {
+  color: var(--color-income);
+  font-weight: 700;
 }
 .week__row + .week__row {
   border-top: 1px solid var(--color-border);
@@ -1168,6 +1226,18 @@ function goTo(step) {
   border-color: var(--color-primary);
   background: var(--color-primary);
   color: #fff;
+}
+.chip--cleaning {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-style: dashed;
+}
+.chip--cleaning.is-selected {
+  border-style: solid;
+  border-color: var(--color-income);
+  background: var(--color-income-soft);
+  color: var(--color-income);
 }
 .setup__offday {
   display: flex;

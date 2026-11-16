@@ -180,9 +180,9 @@ const primaryLabel = computed(() => {
         </button>
       </div>
 
-      <p v-if="mode === 'login'">登入後資料會存到雲端，換手機也不會不見。</p>
+      <p v-if="mode === 'login'">登入管理你的澳打旅程。</p>
       <p v-else-if="mode === 'register' && step === 'form'">
-        {{ emailVerification ? '我們會寄驗證碼到你的信箱。' : '登入後資料會存到雲端，換手機也不會不見。' }}
+        {{ emailVerification ? '我們會寄驗證碼到你的信箱。' : '建立帳號，管理你的澳打旅程。' }}
       </p>
       <p v-else-if="mode === 'forgot' && step === 'form'">輸入註冊的 Email，我們會寄驗證碼給你。</p>
       <p v-if="!isApiAvailable" class="auth-sheet__warning">此原生版本尚未設定 HTTPS API 位址，暫時無法登入。</p>

@@ -5,6 +5,7 @@ import {
   apiRequest,
   getAuthConfig,
   serverSlow,
+  wakeServer,
 } from '../src/services/authSession.js'
 
 /** 回傳一個可以手動完成的 fetch 回應 */
@@ -97,5 +98,18 @@ describe('apiRequest', () => {
       }),
     )
     expect(await getAuthConfig()).toBeNull()
+  })
+
+  it('wakes the server once per app start without blocking or retrying', async () => {
+    const fetch = vi.fn(async () => {
+      throw new Error('cold')
+    })
+    vi.stubGlobal('fetch', fetch)
+    wakeServer()
+    wakeServer()
+    await Promise.resolve()
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(fetch.mock.calls[0][0]).toMatch(/\/health$/)
+    expect(serverSlow.value).toBe(false)
   })
 })

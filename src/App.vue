@@ -10,7 +10,7 @@ import AuthPanel from './components/AuthPanel.vue'
 import AccountPage from './components/AccountPage.vue'
 import PrivacyPage from './components/PrivacyPage.vue'
 import { accountRepository } from './repositories/accountRepository.js'
-import { authEmail, authToken, signOut, clearSession, apiRequest, restoreSavedSession, serverSlow } from './services/authSession.js'
+import { authEmail, authToken, signOut, clearSession, apiRequest, restoreSavedSession, serverSlow, wakeServer } from './services/authSession.js'
 import { startPerfPhase } from './services/perfTrace.js'
 import { useWorkRecordsPersistence } from './composables/useWorkRecordsPersistence.js'
 import { getGuestLedgerSnapshot, notifyLedgerChanged, passengerRepository, tripRepository, expenseRepository, salaryDepositRepository } from './repositories/appRepositories.js'
@@ -161,6 +161,8 @@ const fetchExchangeRates = async () => {
 }
 
 onMounted(async () => {
+  // 先叫醒後端：使用者還在看畫面或輸入帳密時，伺服器就開始啟動
+  wakeServer()
   fetchExchangeRates()
   // 恢復上次的登入（重新整理不會登出）
   const endRestore = startPerfPhase('恢復登入（/auth/me）')

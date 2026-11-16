@@ -36,6 +36,22 @@ function endpoint(path) {
   return `${configuredBase || '/api'}${path}`
 }
 
+let wakeRequested = false
+/**
+ * 打開 App 時先叫醒後端（免費方案閒置會休眠，喚醒要等一陣子）。
+ * 只在每次開啟 App 時送一次，不重試、不定時重送；失敗也不影響畫面。
+ * 使用者還在看首頁或輸入帳密時，伺服器就已經在啟動，登入時等待會短很多。
+ */
+export function wakeServer() {
+  if (wakeRequested || !isApiAvailable) return
+  wakeRequested = true
+  try {
+    fetch(endpoint('/health'), { credentials: 'omit' }).catch(() => {})
+  } catch {
+    // 不支援 fetch 或網址錯誤時略過
+  }
+}
+
 /** 請求超過這個時間仍未回應，就顯示「伺服器啟動中」提示（免費方案閒置後喚醒約需 1 分鐘） */
 export const SLOW_REQUEST_MS = 4000
 /** 超過這個時間放棄等待；冷啟動通常在這之內完成 */

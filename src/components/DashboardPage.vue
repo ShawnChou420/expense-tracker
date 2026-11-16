@@ -439,14 +439,6 @@ async function saveTarget() {
       </div>
       <button
         type="button"
-        class="home-header__currency"
-        :aria-label="`顯示幣別：${displayCurrency.code}，點擊切換`"
-        @click="emit('change-currency')"
-      >
-        {{ displayCurrency.flag }} {{ displayCurrency.code }}
-      </button>
-      <button
-        type="button"
         class="home-header__account"
         :aria-label="authToken ? `帳號：${authEmail}` : '訪客模式，登入或註冊'"
         @click="emit('open-account')"
@@ -481,7 +473,19 @@ async function saveTarget() {
       :empty-action-icon="heroEmpty?.icon"
       @open="emit('navigate', 'payroll')"
       @action="onHeroAction"
-    />
+    >
+      <template #corner>
+        <button
+          type="button"
+          class="hero-currency"
+          :aria-label="`顯示幣別：${displayCurrency.code}，點擊切換`"
+          @click="emit('change-currency')"
+        >
+          {{ displayCurrency.flag }} {{ displayCurrency.code }}
+          <van-icon name="arrow-down" aria-hidden="true" />
+        </button>
+      </template>
+    </HeroCard>
 
     <LatestPayslipCard
       v-if="latestPayslip"
@@ -1005,15 +1009,16 @@ async function saveTarget() {
   gap: 12px;
   margin-bottom: 14px;
 }
-.home-header__currency {
-  flex: none;
-  min-height: 40px;
-  margin-right: 8px;
-  padding: 0 12px;
-  border: 1px solid var(--color-border);
+.hero-currency {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
   border-radius: 999px;
-  background: var(--color-surface);
-  color: var(--color-heading);
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
   font: inherit;
   font-size: 13px;
   font-weight: 700;

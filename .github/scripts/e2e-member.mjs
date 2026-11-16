@@ -108,10 +108,12 @@ try {
 
   // 3. 班別：晚班，週一到週五
   await page.getByRole('button', { name: /^晚班 23:50/ }).click()
-  const rows = page.locator('.week__row')
-  for (const index of [0, 1, 2, 3, 4]) {
-    await rows.nth(index).getByRole('button', { name: '晚班', exact: true }).click()
-  }
+  // 每週班表：整週快速設定（預設週一到週五）→ 晚班
+  await page.getByRole('button', { name: /整週快速設定/ }).click()
+  const daySheet = page.locator('.day-sheet')
+  await daySheet.getByRole('button', { name: '晚班', exact: true }).click()
+  await daySheet.getByRole('button', { name: '套用到 5 天' }).click()
+  await daySheet.waitFor({ state: 'hidden' })
   await page.getByRole('button', { name: '下一步', exact: true }).click()
   await page.getByText('以本週為例').waitFor()
   await page.getByRole('radio', { name: '1 次' }).click()

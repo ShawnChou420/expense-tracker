@@ -12,8 +12,13 @@ import {
   createShiftTemplate,
   crossesMidnight,
   describeSmoko,
+  describeShiftDay,
   describeWeekPlan,
+  getTemplateTimes,
+  getWeekdayShift,
+  setWeekdayShifts,
 } from '../domain/workProfile.js'
+import { showToast } from 'vant'
 import { formatHours } from '../domain/home.js'
 
 const props = defineProps({
@@ -71,7 +76,9 @@ function initialise() {
   draft.value = clonePlain({
     shiftTemplates: props.profile.shiftTemplates,
     weekPlan: props.profile.weekPlan,
-    cleaningDays: props.profile.cleaningDays ?? {},
+    // 不再另外設定清潔日：舊的固定清潔日轉成那天自己的時間，結果不變
+    cleaningDays: {},
+    dayTimes: legacyDayTimes(props.profile),
     offDayRule: props.profile.offDayRule,
     smoko: props.profile.smoko,
   })
@@ -159,6 +166,16 @@ const unconfirmedLoadingLabels = computed(() =>
   loadingFields.filter((field) => !props.profile.confirmedRateKeys.includes(field.key)).map((field) => field.label),
 )
 
+/** 舊設定的固定清潔日 → 那天自己的上下班時間 */
+function legacyDayTimes(profile) {
+  const result = { ...(profile.dayTimes ?? {}) }
+  for (const { day } of WEEKDAYS) {
+    const shift = getWeekdayShift(profile, day)
+    if (shift?.isCleaningDay && !result[day]) result[day] = { startTime: shift.startTime, endTime: shift.endTime }
+  }
+  return clonePlain(result)
+}
+
 // ---------- Step 2：班別 ----------
 const presetChoices = [...SHIFT_PRESETS.map((preset) => ({ ...preset })), { preset: 'CUSTOM', name: '自訂班別', startTime: '', endTime: '', cleaningStartTime: null, cleaningEndTime: null }]
 const hasPreset = (preset) => draft.value.shiftTemplates.some((item) => item.preset === preset)
@@ -169,8 +186,12 @@ function togglePreset(choice) {
     return
   }
   const id = crypto.randomUUID().slice(0, 8)
+  // 不再帶入清潔日時間；時間特別的日子（例如清潔日）請新增自訂班別
   draft.value.shiftTemplates.push(
-    createShiftTemplate(id, choice.preset === 'CUSTOM' ? { name: '自訂班別' } : choice),
+    createShiftTemplate(
+      id,
+      choice.preset === 'CUSTOM' ? { name: '' } : { ...choice, cleaningStartTime: null, cleaningEndTime: null },
+    ),
   )
 }
 function removeTemplate(id) {
@@ -180,31 +201,57 @@ function removeTemplate(id) {
   }
 }
 function setDay(day, templateId) {
-  draft.value.weekPlan = { ...draft.value.weekPlan, [day]: templateId }
-  // 改成休息或沒有清潔日時間的班別時，這天就不再是清潔日
-  if (!hasCleaningTimes(templateId)) setCleaningDay(day, false)
+  Object.assign(draft.value, setWeekdayShifts(draft.value, [day], { templateId }))
 }
 const templateFor = (/** @type {string | null} */ id) => draft.value.shiftTemplates.find((item) => item.id === id)
-const hasCleaningTimes = (/** @type {string | null} */ id) => {
+/** 每週班表的一列：這天的班別與時間（每天可以不同） */
+const rowShift = (day) => getWeekdayShift(draft.value, day)
+
+// 編輯一天或多天的班（Bottom Sheet）
+const dayEditor = ref({ show: false, days: [], templateId: null, startTime: '', endTime: '' })
+function openDayEditor(days) {
+  const first = rowShift(days[0])
+  dayEditor.value = {
+    show: true,
+    days: [...days],
+    templateId: first?.templateId ?? null,
+    startTime: first?.startTime ?? '',
+    endTime: first?.endTime ?? '',
+  }
+}
+function toggleEditorDay(day) {
+  const days = dayEditor.value.days
+  dayEditor.value.days = days.includes(day) ? days.filter((item) => item !== day) : [...days, day]
+}
+function chooseEditorTemplate(id) {
+  dayEditor.value.templateId = id
   const template = templateFor(id)
-  return Boolean(template?.cleaningStartTime && template?.cleaningEndTime)
+  if (template) Object.assign(dayEditor.value, getTemplateTimes(template, false))
 }
-const isCleaningDay = (day) => draft.value.cleaningDays?.[day] === true && hasCleaningTimes(draft.value.weekPlan[day])
-function setCleaningDay(day, value) {
-  const next = { ...(draft.value.cleaningDays || {}) }
-  if (value) next[day] = true
-  else delete next[day]
-  draft.value.cleaningDays = next
+const editorTemplate = computed(() => templateFor(dayEditor.value.templateId))
+const editorTimesCustom = computed(() => {
+  const template = editorTemplate.value
+  return Boolean(template) && (dayEditor.value.startTime !== template.startTime || dayEditor.value.endTime !== template.endTime)
+})
+const editorAttribution = computed(() => {
+  const { days, startTime, endTime, templateId } = dayEditor.value
+  if (!templateId || !days.length) return ''
+  const first = WEEKDAYS.find((item) => days.includes(item.day))
+  return describeShiftDay(first.label, startTime, endTime)
+})
+const editorTitle = computed(() => {
+  const days = WEEKDAYS.filter((item) => dayEditor.value.days.includes(item.day))
+  return days.length === 1 ? `週${days[0].label}的班` : `一次設定 ${days.length} 天`
+})
+function applyDayEditor() {
+  const { days, templateId, startTime, endTime } = dayEditor.value
+  if (!days.length) return showToast('請至少選一天')
+  if (templateId && (!TIME.test(startTime) || !TIME.test(endTime))) return showToast('請選擇上下班時間')
+  if (templateId && startTime === endTime) return showToast('上下班時間不能相同')
+  Object.assign(draft.value, setWeekdayShifts(draft.value, days, { templateId, startTime, endTime }))
+  dayEditor.value.show = false
 }
-/** 這天的上下班時間（清潔日顯示清潔日時間），讓使用者一眼看到 */
-function dayTimes(day) {
-  const template = templateFor(draft.value.weekPlan[day])
-  if (!template?.startTime || !template?.endTime) return ''
-  const cleaning = isCleaningDay(day)
-  const start = cleaning ? template.cleaningStartTime : template.startTime
-  const end = cleaning ? template.cleaningEndTime : template.endTime
-  return `${start}–${end}`
-}
+
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
 const templateErrors = computed(() =>
   Object.fromEntries(
@@ -216,11 +263,7 @@ const templateErrors = computed(() =>
           ? '請選擇上下班時間'
           : item.startTime === item.endTime
             ? '上下班時間不能相同'
-            : Boolean(item.cleaningStartTime) !== Boolean(item.cleaningEndTime)
-              ? '清潔日的上下班時間要一起填，或都留空'
-              : item.cleaningStartTime && item.cleaningStartTime === item.cleaningEndTime
-                ? '清潔日上下班時間不能相同'
-                : '',
+            : '',
     ]),
   ),
 )
@@ -495,9 +538,10 @@ function goTo(step) {
 
         <template v-if="draft.shiftTemplates.length">
           <h3 class="setup__title">我的班別</h3>
+          <p class="setup__note">這裡是班別的預設時間。時間特別的日子（例如清潔日）可以新增「自訂班別」，名稱取「清潔日」。</p>
           <article v-for="template in draft.shiftTemplates" :key="template.id" class="template">
             <div class="template__row">
-              <input v-model="template.name" class="template__name" maxlength="20" aria-label="班別名稱" />
+              <input v-model="template.name" class="template__name" maxlength="20" aria-label="班別名稱" placeholder="班別名稱，例如：清潔日" />
               <button type="button" class="template__remove" :aria-label="`移除${template.name}`" @click="removeTemplate(template.id)">
                 <van-icon name="delete-o" />
               </button>
@@ -519,62 +563,33 @@ function goTo(step) {
               </span>
               <span v-if="shiftHours(template)" class="template__hours">{{ shiftHours(template) }}</span>
             </div>
-            <!-- 清潔日時間：在下方每週排班勾選固定清潔日，或在班表當天標記臨時清潔日時使用 -->
-            <div class="template__times template__times--cleaning">
-              <label>
-                <small>清潔日上班</small>
-                <input v-model="template.cleaningStartTime" type="time" step="300" />
-              </label>
-              <van-icon name="arrow" aria-hidden="true" />
-              <label>
-                <small>清潔日下班</small>
-                <input v-model="template.cleaningEndTime" type="time" step="300" />
-              </label>
-            </div>
-            <p class="template__hint">填好清潔日時間後，可以在下方指定每週哪天是清潔日。</p>
             <p v-if="templateErrors[template.id]" class="template__error">{{ templateErrors[template.id] }}</p>
           </article>
 
-          <h3 class="setup__title">每週哪幾天上班？</h3>
-          <p class="setup__note">沒選的日子當休息。固定的清潔日請打開「清潔日」，臨時的清潔日之後可以在班表當天標記。</p>
+          <h3 class="setup__title">每週班表</h3>
+          <p class="setup__note">每天可以選不同班別、設定不同時間；同樣是晚班，週二和週五也可以不一樣。沒排班的日子當休息。</p>
+          <button type="button" class="week__quick" @click="openDayEditor([1, 2, 3, 4, 5])">
+            <van-icon name="setting-o" />整週快速設定（例如週一到週五同一個班）
+          </button>
           <div class="week">
-            <div v-for="weekday in WEEKDAYS" :key="weekday.day" class="week__row">
-              <span class="week__day" :class="{ 'is-on': draft.weekPlan[weekday.day] }">{{ weekday.label }}</span>
-              <div class="week__chips">
-                <button
-                  type="button"
-                  class="chip"
-                  :class="{ 'is-selected': !draft.weekPlan[weekday.day] }"
-                  @click="setDay(weekday.day, null)"
-                >
-                  休息
-                </button>
-                <button
-                  v-for="template in draft.shiftTemplates"
-                  :key="template.id"
-                  type="button"
-                  class="chip"
-                  :class="{ 'is-selected': draft.weekPlan[weekday.day] === template.id }"
-                  @click="setDay(weekday.day, template.id)"
-                >
-                  {{ template.name }}
-                </button>
-                <button
-                  v-if="hasCleaningTimes(draft.weekPlan[weekday.day])"
-                  type="button"
-                  class="chip chip--cleaning"
-                  :class="{ 'is-selected': isCleaningDay(weekday.day) }"
-                  :aria-pressed="isCleaningDay(weekday.day)"
-                  :aria-label="`週${weekday.label}是清潔日`"
-                  @click="setCleaningDay(weekday.day, !isCleaningDay(weekday.day))"
-                >
-                  <van-icon :name="isCleaningDay(weekday.day) ? 'success' : 'brush-o'" />清潔日
-                </button>
-              </div>
-              <span v-if="dayTimes(weekday.day)" class="week__times" :class="{ 'is-cleaning': isCleaningDay(weekday.day) }">
-                {{ dayTimes(weekday.day) }}
+            <button
+              v-for="weekday in WEEKDAYS"
+              :key="weekday.day"
+              type="button"
+              class="week__row"
+              :aria-label="`編輯週${weekday.label}的班`"
+              @click="openDayEditor([weekday.day])"
+            >
+              <span class="week__day" :class="{ 'is-on': rowShift(weekday.day) }">{{ weekday.label }}</span>
+              <span class="week__shift" :class="{ 'is-rest': !rowShift(weekday.day) }">{{ rowShift(weekday.day)?.name || '休息' }}</span>
+              <span class="week__times">
+                <template v-if="rowShift(weekday.day)">
+                  {{ rowShift(weekday.day).startTime }}–{{ rowShift(weekday.day).endTime }}
+                  <small v-if="rowShift(weekday.day).endTime <= rowShift(weekday.day).startTime">隔天</small>
+                </template>
               </span>
-            </div>
+              <span class="week__edit"><van-icon name="edit" />編輯</span>
+            </button>
           </div>
           <div class="setup__offday">
             <span>休息日</span>
@@ -682,6 +697,69 @@ function goTo(step) {
         </van-button>
         <van-button plain block class="setup__later" @click="close">{{ pendingAction ? '稍後再說' : '完成' }}</van-button>
       </section>
+    </div>
+  </van-popup>
+  <van-popup
+    v-model:show="dayEditor.show"
+    position="bottom"
+    round
+    closeable
+    safe-area-inset-bottom
+    teleport="body"
+    class="day-sheet"
+  >
+    <div class="day-sheet__body">
+      <h3>{{ editorTitle }}</h3>
+      <p class="day-sheet__label">套用到</p>
+      <div class="day-sheet__days" role="group" aria-label="套用到哪幾天">
+        <button
+          v-for="weekday in WEEKDAYS"
+          :key="weekday.day"
+          type="button"
+          class="day-sheet__day"
+          :class="{ 'is-selected': dayEditor.days.includes(weekday.day) }"
+          :aria-pressed="dayEditor.days.includes(weekday.day)"
+          :aria-label="`週${weekday.label}`"
+          @click="toggleEditorDay(weekday.day)"
+        >
+          {{ weekday.label }}
+        </button>
+      </div>
+      <p class="day-sheet__label">班別</p>
+      <div class="day-sheet__shifts">
+        <button type="button" class="chip" :class="{ 'is-selected': !dayEditor.templateId }" @click="dayEditor.templateId = null">休息</button>
+        <button
+          v-for="template in draft.shiftTemplates"
+          :key="template.id"
+          type="button"
+          class="chip"
+          :class="{ 'is-selected': dayEditor.templateId === template.id }"
+          @click="chooseEditorTemplate(template.id)"
+        >
+          {{ template.name || '未命名' }}
+        </button>
+      </div>
+      <template v-if="dayEditor.templateId">
+        <div class="template__times day-sheet__times">
+          <label>
+            <small>上班</small>
+            <input v-model="dayEditor.startTime" type="time" step="300" aria-label="上班時間" />
+          </label>
+          <van-icon name="arrow" aria-hidden="true" />
+          <label>
+            <small>下班{{ dayEditor.endTime && dayEditor.endTime <= dayEditor.startTime ? '（隔天）' : '' }}</small>
+            <input v-model="dayEditor.endTime" type="time" step="300" aria-label="下班時間" />
+          </label>
+        </div>
+        <p v-if="editorAttribution" class="day-sheet__attribution"><van-icon name="info-o" /> {{ editorAttribution }}</p>
+        <button v-if="editorTimesCustom" type="button" class="day-sheet__reset" @click="chooseEditorTemplate(dayEditor.templateId)">
+          恢復「{{ editorTemplate?.name }}」預設時間 {{ editorTemplate?.startTime }}–{{ editorTemplate?.endTime }}
+        </button>
+      </template>
+      <p class="day-sheet__note">這裡改的是每週固定班表；之後在班表上單獨修改某一天，不會改到這裡。</p>
+      <van-button block type="primary" class="day-sheet__apply" @click="applyDayEditor">
+        套用到 {{ dayEditor.days.length }} 天
+      </van-button>
     </div>
   </van-popup>
 </template>
@@ -1150,11 +1228,6 @@ function goTo(step) {
   color: var(--color-expense);
   font-size: 12px;
 }
-.template__hint {
-  margin: 8px 0 0;
-  color: var(--color-muted);
-  font-size: 12px;
-}
 
 .week {
   overflow: hidden;
@@ -1162,24 +1235,63 @@ function goTo(step) {
   border-radius: var(--radius-medium);
   background: var(--color-surface);
 }
+.week__quick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--touch-target);
+  margin: 0 0 10px;
+  padding: 0 14px;
+  border: 1px dashed var(--color-primary);
+  border-radius: 999px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
 .week__row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 10px;
-  padding: 8px 10px;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 12px;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: var(--color-heading);
+  cursor: pointer;
 }
-/* 這天的上下班時間：清潔日顯示清潔日時間，放在按鈕下方一行 */
-.week__times {
-  flex-basis: 100%;
-  margin-top: -4px;
-  padding-left: 42px;
+.week__shift {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.week__shift.is-rest {
   color: var(--color-muted);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
+  font-weight: 500;
 }
-.week__times.is-cleaning {
-  color: var(--color-income);
+.week__times {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.week__times small {
+  margin-left: 2px;
+  color: var(--color-muted);
+  font-size: 11px;
+}
+.week__edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--color-primary);
+  font-size: 13px;
   font-weight: 700;
 }
 .week__row + .week__row {
@@ -1226,18 +1338,6 @@ function goTo(step) {
   border-color: var(--color-primary);
   background: var(--color-primary);
   color: #fff;
-}
-.chip--cleaning {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  border-style: dashed;
-}
-.chip--cleaning.is-selected {
-  border-style: solid;
-  border-color: var(--color-income);
-  background: var(--color-income-soft);
-  color: var(--color-income);
 }
 .setup__offday {
   display: flex;
@@ -1407,5 +1507,78 @@ function goTo(step) {
   line-height: 1.5;
   list-style: none;
   text-align: left;
+}
+.day-sheet__body {
+  max-height: 85dvh;
+  overflow-y: auto;
+  padding: 20px var(--page-inset) calc(16px + env(safe-area-inset-bottom, 0px));
+}
+.day-sheet__body h3 {
+  margin: 0 0 12px;
+  font-size: 17px;
+  color: var(--color-heading);
+}
+.day-sheet__label {
+  margin: 12px 0 6px;
+  color: var(--color-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+.day-sheet__days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+.day-sheet__day {
+  min-height: var(--touch-target);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  color: var(--color-muted);
+  font: inherit;
+  font-weight: 800;
+}
+.day-sheet__day.is-selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+}
+.day-sheet__shifts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.day-sheet__times {
+  margin-top: 14px;
+}
+.day-sheet__attribution {
+  display: flex;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-medium);
+  background: var(--color-primary-soft);
+  color: var(--color-heading);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.day-sheet__reset {
+  margin-top: 8px;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  color: var(--color-primary);
+  font: inherit;
+  font-size: 13px;
+  text-decoration: underline;
+}
+.day-sheet__note {
+  margin: 12px 0 0;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+.day-sheet__apply {
+  margin-top: 14px;
+  height: var(--page-button-height);
 }
 </style>

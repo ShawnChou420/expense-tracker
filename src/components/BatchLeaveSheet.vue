@@ -4,6 +4,7 @@ import { computed, ref, watch } from 'vue'
 import { showToast } from 'vant'
 import { LEAVE_TYPES, planBatchLeave } from '../domain/leaveTypes.js'
 import { addDays, daysBetweenInclusive } from '../domain/visaJourney.js'
+import { formatLocalDate, parseLocalDate } from '../domain/date.js'
 
 const props = defineProps({
   show: Boolean,
@@ -18,6 +19,9 @@ const start = ref('')
 const end = ref('')
 const leaveType = ref('HOLIDAY')
 const conflictMode = ref('SKIP')
+// 日曆重新開啟時重設選取狀態
+const calendarKey = ref(0)
+const calendarOpen = ref(false)
 
 watch(
   () => props.show,
@@ -27,9 +31,44 @@ watch(
     end.value = props.defaultDate
     leaveType.value = 'HOLIDAY'
     conflictMode.value = 'SKIP'
+    calendarOpen.value = false
   },
   { immediate: true },
 )
+
+// 日曆：點開始日、再點結束日（同一天點兩次＝單日）
+const calendarDefault = computed(() => {
+  const date = parseLocalDate(props.defaultDate) ?? new Date()
+  return [date, date]
+})
+const calendarMin = computed(() => {
+  const date = parseLocalDate(props.defaultDate) ?? new Date()
+  return new Date(date.getFullYear() - 1, date.getMonth(), 1)
+})
+const calendarMax = computed(() => {
+  const date = parseLocalDate(props.defaultDate) ?? new Date()
+  return new Date(date.getFullYear() + 1, date.getMonth() + 1, 0)
+})
+function onCalendarConfirm(value) {
+  const [first, second] = Array.isArray(value) ? value : [value]
+  start.value = first ? formatLocalDate(first) : ''
+  end.value = second ? formatLocalDate(second) : start.value
+  calendarOpen.value = false
+}
+const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六']
+const rangeLabel = computed(() => {
+  const label = (/** @type {string} */ text) => {
+    const date = parseLocalDate(text)
+    return date
+      ? `${date.getMonth() + 1}/${date.getDate()}（${WEEKDAY_LABELS[date.getDay()]}）`
+      : ''
+  }
+  if (!start.value) return ''
+  const days = daysBetweenInclusive(start.value, end.value)
+  return start.value === end.value
+    ? `${label(start.value)}，1 天`
+    : `${label(start.value)} – ${label(end.value)}，共 ${days} 天`
+})
 
 const rangeError = computed(() => {
   if (!start.value || !end.value) return '請選擇日期'
@@ -72,10 +111,29 @@ function apply() {
   >
     <div class="leave-sheet__body">
       <h2>請假</h2>
-      <van-cell-group inset>
-        <van-field v-model="start" type="date" label="開始日期" />
-        <van-field v-model="end" type="date" label="結束日期" />
-      </van-cell-group>
+      <button type="button" class="leave-range" @click="calendarOpen = true">
+        <van-icon name="calendar-o" />
+        <span class="leave-range__text">{{ rangeLabel || '選擇日期' }}</span>
+        <span class="leave-range__action">選擇起訖日</span>
+      </button>
+      <van-calendar
+        v-model:show="calendarOpen"
+        :key="calendarKey"
+        type="range"
+        teleport="body"
+        title="選擇請假日期"
+        :subtitle="undefined"
+        allow-same-day
+        :default-date="calendarDefault"
+        :min-date="calendarMin"
+        :max-date="calendarMax"
+        :max-range="MAX_DAYS"
+        :range-prompt="`一次最多 ${MAX_DAYS} 天`"
+        confirm-text="確定"
+        confirm-disabled-text="請再點結束日"
+        @confirm="onCalendarConfirm"
+      />
+      <p class="leave-sheet__hint">點開始日、再點結束日；只請一天就點同一天兩次。</p>
       <p v-if="rangeError" class="leave-sheet__error">{{ rangeError }}</p>
 
       <h3>請假類型</h3>
@@ -93,9 +151,7 @@ function apply() {
           {{ type.label }}
         </button>
       </div>
-      <p class="leave-sheet__note">
-        請假一律無薪，不產生工時與薪資，也不計入集簽工作天。
-      </p>
+      <p class="leave-sheet__note">請假一律無薪，不產生工時與薪資，也不計入集簽工作天。</p>
 
       <div v-if="dates.length" class="leave-plan">
         <span>新增 {{ plan.create.length }} 天</span>
@@ -106,14 +162,22 @@ function apply() {
       </div>
       <div v-if="plan.conflicts.length" class="leave-conflict" role="alert">
         <strong>這些日期已有工作紀錄：</strong>
-        <p>{{ plan.conflicts.map((record) => `${record.workDate.slice(5)} ${record.startTime}–${record.endTime}`).join('、') }}</p>
+        <p>
+          {{
+            plan.conflicts
+              .map((record) => `${record.workDate.slice(5)} ${record.startTime}–${record.endTime}`)
+              .join('、')
+          }}
+        </p>
         <van-radio-group v-model="conflictMode" class="leave-conflict__options">
           <van-radio name="SKIP">保留工作紀錄，只把其他日期設為請假（建議）</van-radio>
           <van-radio name="REPLACE">這些日期也改成請假（原本的時間會保留，之後可以恢復）</van-radio>
         </van-radio-group>
       </div>
 
-      <van-button block type="primary" class="leave-sheet__primary" @click="apply">套用請假</van-button>
+      <van-button block type="primary" class="leave-sheet__primary" @click="apply"
+        >套用請假</van-button
+      >
     </div>
   </van-popup>
 </template>
@@ -160,6 +224,34 @@ h3 {
   color: var(--color-muted);
   font-size: var(--font-caption);
   line-height: 1.5;
+}
+.leave-sheet__hint {
+  margin: 8px 0 0;
+  color: var(--color-muted);
+  font-size: var(--font-caption);
+}
+.leave-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 14px;
+  border: 1.5px solid var(--color-primary);
+  border-radius: var(--radius-medium);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font: inherit;
+  text-align: left;
+}
+.leave-range__text {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 700;
+}
+.leave-range__action {
+  font-size: 13px;
+  text-decoration: underline;
 }
 .leave-sheet__error {
   margin: 6px 16px;

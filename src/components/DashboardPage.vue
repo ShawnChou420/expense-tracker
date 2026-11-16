@@ -13,7 +13,6 @@ import {
 } from '../domain/dashboard.js'
 import {
   dollarsToCents,
-  formatAud,
   formatCentsInput,
   signedDollarsToCents,
 } from '../domain/money.js'
@@ -45,6 +44,7 @@ import {
   tripRepository,
 } from '../repositories/appRepositories.js'
 import VisaJourneyCard from './VisaJourneyCard.vue'
+import { formatCentsIn } from '../domain/displayCurrency.js'
 const IncomeTrendChart = defineAsyncComponent(() => import('./IncomeTrendChart.vue'))
 const ExpenseDonutChart = defineAsyncComponent(() => import('./ExpenseDonutChart.vue'))
 
@@ -63,6 +63,8 @@ const props = defineProps({
   // 集簽設定（null＝尚未設定）與 getVisaJourneyProgress() 的估算結果
   visaJourney: { type: Object, default: null },
   visaProgress: { type: Object, default: null },
+  // 顯示幣別（resolveDisplayCurrency 的結果）；金額仍以 AUD 計算，只在顯示時換算
+  displayCurrency: { type: Object, default: () => ({ code: 'AUD', rate: 1, flag: '🇦🇺', fallback: false }) },
 })
 const emit = defineEmits([
   'mark-work-date',
@@ -73,7 +75,10 @@ const emit = defineEmits([
   'work-setup',
   'visa-setup',
   'import-history',
+  'change-currency',
 ])
+/** AUD cents → 目前顯示幣別的金額文字 */
+const money = (/** @type {number} */ cents) => formatCentsIn(cents, props.displayCurrency)
 
 const today = formatLocalDate(new Date())
 const period = ref('week')
@@ -148,7 +153,7 @@ const taxProgressHint = computed(() => {
   if (!progress) return ''
   if (progress.crossed) return '已超過第一級距，之後稅率較高。'
   if (progress.projectedWithinYear && progress.projectedCrossDate) {
-    return `照最近 4 週平均 ${formatAud(progress.recentWeeklyAverageCents)}／週，預計 ${progress.projectedCrossDate} 左右超過。`
+    return `照最近 4 週平均 ${money(progress.recentWeeklyAverageCents)}／週，預計 ${progress.projectedCrossDate} 左右超過。`
   }
   if (progress.recentWeeklyAverageCents > 0) return '照最近 4 週推算，今年不會超過。'
   return '最近 4 週沒有班表，無法預估。'
@@ -189,8 +194,8 @@ const weekBalance = computed(() =>
 )
 const pendingFares = computed(() => getPendingFareSummary(trips.value))
 const heroItems = computed(() => [
-  { label: '稅前薪資', value: formatAud(weeklyPay.value.grossCents) },
-  { label: '預估預扣', value: formatAud(weeklyPay.value.taxCents) },
+  { label: '稅前薪資', value: money(weeklyPay.value.grossCents) },
+  { label: '預估預扣', value: money(weeklyPay.value.taxCents) },
 ])
 const heroMeta = computed(() => {
   const flags = weeklyPay.value.rateFlags
@@ -434,6 +439,14 @@ async function saveTarget() {
       </div>
       <button
         type="button"
+        class="home-header__currency"
+        :aria-label="`顯示幣別：${displayCurrency.code}，點擊切換`"
+        @click="emit('change-currency')"
+      >
+        {{ displayCurrency.flag }} {{ displayCurrency.code }}
+      </button>
+      <button
+        type="button"
         class="home-header__account"
         :aria-label="authToken ? `帳號：${authEmail}` : '訪客模式，登入或註冊'"
         @click="emit('open-account')"
@@ -443,6 +456,12 @@ async function saveTarget() {
         <i v-if="!authToken" class="home-header__dot" aria-hidden="true"></i>
       </button>
     </header>
+    <p v-if="displayCurrency.code !== 'AUD'" class="currency-note">
+      金額依今日匯率換算為 {{ displayCurrency.code }} 顯示，僅供參考；記帳與目標仍以 AUD 保存。
+    </p>
+    <p v-else-if="displayCurrency.fallback" class="currency-note">
+      暫時取得不到 {{ displayCurrency.requested }} 匯率，先以 AUD 顯示。
+    </p>
     <button v-if="!authToken" type="button" class="guest-banner" @click="emit('open-account')">
       <van-icon name="info-o" aria-hidden="true" />
       <span>訪客模式：資料重新整理後會消失</span>
@@ -451,8 +470,8 @@ async function saveTarget() {
 
     <HeroCard
       label="本週預估實領"
-      :amount="formatAud(weeklyPay.netCents)"
-      unit="AUD"
+      :amount="money(weeklyPay.netCents)"
+      :unit="displayCurrency.code"
       :meta="heroMeta"
       :items="heroItems"
       :empty="heroEmpty !== null"
@@ -466,6 +485,7 @@ async function saveTarget() {
 
     <LatestPayslipCard
       v-if="latestPayslip"
+      :format="money"
       class="home-block"
       :payslip="latestPayslip"
       :schedule-ready="setup.scheduleReady"
@@ -487,7 +507,7 @@ async function saveTarget() {
       </span>
       <span v-if="todayShift.status === 'work'" class="today-strip__pay">
         <small>預估稅前</small>
-        <strong>{{ formatAud(todayShift.grossCents) }}</strong>
+        <strong>{{ money(todayShift.grossCents) }}</strong>
       </span>
       <van-icon v-else name="arrow" class="today-strip__arrow" aria-hidden="true" />
     </button>
@@ -496,15 +516,15 @@ async function saveTarget() {
       <StatCard
         label="本週預估結餘"
         badge="預估"
-        :value="formatAud(weekBalance.balanceCents)"
-        :hint="`已扣本週支出 ${formatAud(weekBalance.expenseCents)}`"
+        :value="money(weekBalance.balanceCents)"
+        :hint="`已扣本週支出 ${money(weekBalance.expenseCents)}`"
         :tone="weekBalance.balanceCents < 0 ? 'expense' : 'income'"
         clickable
         @click="emit('navigate', 'expenses')"
       />
       <StatCard
         label="車資待收"
-        :value="formatAud(pendingFares.pendingCents)"
+        :value="money(pendingFares.pendingCents)"
         :hint="pendingFares.chargeCount > 0 ? `${pendingFares.chargeCount} 筆待收款` : '目前沒有待收款'"
         :tone="pendingFares.chargeCount > 0 ? 'pending' : 'default'"
         clickable
@@ -581,14 +601,14 @@ async function saveTarget() {
       class="home-block"
       title="存款挑戰"
       :subtitle="savingGoal ? `${savingGoal.name} · 依已記錄的實際收支` : ''"
-      :current="formatAud(saving?.currentCents ?? 0)"
-      :target="savingGoal ? formatAud(savingGoal.targetCents) : ''"
+      :current="money(saving?.currentCents ?? 0)"
+      :target="savingGoal ? money(savingGoal.targetCents) : ''"
       :percent="saving?.progressPercent ?? 0"
       :foot-left="`已完成 ${saving?.percent ?? 0}%`"
       :foot-right="
         (saving?.excessCents ?? 0) > 0
-          ? `超出 ${formatAud(saving?.excessCents ?? 0)} 🎉`
-          : `還差 ${formatAud(saving?.remainingCents ?? 0)}`
+          ? `超出 ${money(saving?.excessCents ?? 0)} 🎉`
+          : `還差 ${money(saving?.remainingCents ?? 0)}`
       "
       tone="income"
     >
@@ -635,14 +655,14 @@ async function saveTarget() {
       title="年度稅務追蹤"
       :badge="{ payslip: '薪資單 YTD', actual: '實際入帳', estimated: '預估' }[incomeYearProgress.basis]"
       :subtitle="`${incomeYearProgress.incomeYear.label} 財年 · 稅前收入累計`"
-      :current="formatAud(incomeYearProgress.ytdGrossCents)"
-      :target="formatAud(incomeYearProgress.limitCents)"
+      :current="money(incomeYearProgress.ytdGrossCents)"
+      :target="money(incomeYearProgress.limitCents)"
       :percent="incomeYearProgress.percent"
       :foot-left="`已達 ${Math.round(incomeYearProgress.percent)}%`"
       :foot-right="
         incomeYearProgress.crossed
           ? '已超過第一級距'
-          : `距第一級距上限 ${formatAud(incomeYearProgress.remainingCents)}`
+          : `距第一級距上限 ${money(incomeYearProgress.remainingCents)}`
       "
       :tone="incomeYearProgress.percent >= 85 ? 'warning' : 'primary'"
     >
@@ -687,18 +707,18 @@ async function saveTarget() {
         <div class="summary-tile app-page__card">
           <span>已記錄收入</span
           ><strong>{{
-            summary.hasActualIncomeInRange ? formatAud(summary.actualIncomeCents) : '本期尚無入帳'
+            summary.hasActualIncomeInRange ? money(summary.actualIncomeCents) : '本期尚無入帳'
           }}</strong
           ><small>依實際收款日期，不含預估薪資</small>
         </div>
         <div class="summary-tile app-page__card">
-          <span>已支付支出</span><strong>{{ formatAud(summary.paidExpenseCents) }}</strong
+          <span>已支付支出</span><strong>{{ money(summary.paidExpenseCents) }}</strong
           ><small>房租及生活支出，未付不計入</small>
         </div>
         <div class="summary-tile summary-tile--net app-page__card">
           <span>已記錄淨結餘</span
           ><strong>{{
-            summary.hasActualTransactions ? formatAud(summary.netCents) : '尚無實際收支'
+            summary.hasActualTransactions ? money(summary.netCents) : '尚無實際收支'
           }}</strong
           ><small>僅計入已記錄的收支，不代表帳戶餘額</small>
         </div>
@@ -710,7 +730,7 @@ async function saveTarget() {
             : authToken
               ? '還沒有記錄薪資入帳。'
               : '訪客模式尚無實際薪資入帳資料。'
-        }}{{ summary.pendingFareCents > 0 ? `另有 ${formatAud(summary.pendingFareCents)} 車資待收，未計入收入。` : '' }}
+        }}{{ summary.pendingFareCents > 0 ? `另有 ${money(summary.pendingFareCents)} 車資待收，未計入收入。` : '' }}
       </p>
 
       <section v-if="authToken" class="dashboard-section salary-card app-page__card" aria-label="薪資入帳紀錄">
@@ -738,11 +758,11 @@ async function saveTarget() {
                   薪資期間 {{ deposit.periodStart || '未填起日' }} ～ {{ deposit.periodEnd || '未填迄日' }}
                 </small>
               </div>
-              <div class="salary-entry__amount"><small>稅後入帳</small><strong>{{ formatAud(deposit.amountCents) }}</strong></div>
+              <div class="salary-entry__amount"><small>稅後入帳</small><strong>{{ money(deposit.amountCents) }}</strong></div>
             </div>
             <p v-if="deposit.grossCents != null || deposit.taxCents != null" class="salary-entry__extra">
-              <span v-if="deposit.grossCents != null">稅前 {{ formatAud(deposit.grossCents) }}</span>
-              <span v-if="deposit.taxCents != null">扣稅 {{ formatAud(deposit.taxCents) }}</span>
+              <span v-if="deposit.grossCents != null">稅前 {{ money(deposit.grossCents) }}</span>
+              <span v-if="deposit.taxCents != null">扣稅 {{ money(deposit.taxCents) }}</span>
             </p>
             <div class="salary-entry__actions">
               <van-button size="small" plain type="primary" @click="openSalaryEditor(deposit)">編輯</van-button>
@@ -788,6 +808,7 @@ async function saveTarget() {
             }}
           </p>
           <IncomeTrendChart
+            :format="money"
             v-if="summary.hasActualIncomeRecords || summary.hasEstimatedWorkRecords"
             :points="summary.days"
             :mode="incomeMode"
@@ -799,11 +820,11 @@ async function saveTarget() {
             {{ selectedIncomePoint.date }} ·
             {{
               incomeMode === 'actual'
-                ? formatAud(selectedIncomePoint.actualCents)
-                : formatAud(selectedIncomePoint.estimatedCents)
+                ? money(selectedIncomePoint.actualCents)
+                : money(selectedIncomePoint.estimatedCents)
             }}（{{
               incomeMode === 'actual'
-                ? `已收車資 ${formatAud(selectedIncomePoint.tripCents)}${hasSalaryDeposits ? `、薪資入帳 ${formatAud(selectedIncomePoint.salaryCents)}` : ''}`
+                ? `已收車資 ${money(selectedIncomePoint.tripCents)}${hasSalaryDeposits ? `、薪資入帳 ${money(selectedIncomePoint.salaryCents)}` : ''}`
                 : '工作預估'
             }}）
           </p>
@@ -822,7 +843,7 @@ async function saveTarget() {
               >
                 <span>{{ point.date }}</span>
                 <strong>{{
-                  formatAud(incomeMode === 'actual' ? point.actualCents : point.estimatedCents)
+                  money(incomeMode === 'actual' ? point.actualCents : point.estimatedCents)
                 }}</strong>
               </button>
             </van-collapse-item>
@@ -841,6 +862,7 @@ async function saveTarget() {
             所選期間已付的支出。
           </p>
           <ExpenseDonutChart
+            :format="money"
             v-if="summary.distribution.totalCents > 0"
             :distribution="summary.distribution"
             :active="active"
@@ -848,7 +870,7 @@ async function saveTarget() {
           />
           <p v-else class="empty-copy">這段期間尚無已支付支出。</p>
           <p v-if="selectedExpenseGroup" class="chart-selection">
-            {{ selectedExpenseGroup.label }} · {{ formatAud(selectedExpenseGroup.amountCents) }}
+            {{ selectedExpenseGroup.label }} · {{ money(selectedExpenseGroup.amountCents) }}
           </p>
           <div v-if="summary.distribution.detail.length" class="category-list">
             <button
@@ -860,7 +882,7 @@ async function saveTarget() {
               <span class="category-name"
                 ><i :style="{ background: entry.color }"></i>{{ entry.label }}</span
               >
-              <span>{{ formatAud(entry.amountCents) }} · {{ entry.percent }}%</span>
+              <span>{{ money(entry.amountCents) }} · {{ entry.percent }}%</span>
             </button>
           </div>
         </section>
@@ -982,6 +1004,25 @@ async function saveTarget() {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 14px;
+}
+.home-header__currency {
+  flex: none;
+  min-height: 40px;
+  margin-right: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-heading);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.currency-note {
+  margin: -4px 0 12px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 .home-header__titles {
   min-width: 0;

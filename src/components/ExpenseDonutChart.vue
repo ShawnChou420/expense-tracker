@@ -5,7 +5,12 @@ import { formatAud } from '../domain/money.js'
 
 Chart.register(ArcElement, DoughnutController, Legend, Tooltip)
 
-const props = defineProps({ distribution: { type: Object, required: true }, active: Boolean })
+const props = defineProps({
+  distribution: { type: Object, required: true },
+  active: Boolean,
+  // 金額顯示方式（首頁可切換幣別）；預設 AUD
+  format: { type: Function, default: formatAud },
+})
 const emit = defineEmits(['select'])
 const canvas = ref(null)
 let chart = null
@@ -38,7 +43,7 @@ function renderChart() {
       plugins: {
         legend: { display: false },
         tooltip: {
-          callbacks: { label: (context) => `${context.label} ${formatAud(context.parsed)}` },
+          callbacks: { label: (context) => `${context.label} ${props.format(context.parsed)}` },
         },
       },
     },
@@ -63,7 +68,7 @@ watch(
   <div class="donut-frame">
     <canvas ref="canvas" aria-label="已支付支出環形圖，點擊區塊查看金額" role="img"></canvas>
     <div class="donut-center">
-      <small>已支付</small><strong>{{ formatAud(distribution.totalCents) }}</strong>
+      <small>已支付</small><strong>{{ format(distribution.totalCents) }}</strong>
     </div>
   </div>
 </template>

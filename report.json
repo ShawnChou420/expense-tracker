@@ -1,0 +1,91 @@
+[
+  {
+    "target": "before",
+    "width": 320,
+    "horizontalOverflowPx": 0,
+    "errors": [],
+    "checks": {}
+  },
+  {
+    "target": "before",
+    "width": 375,
+    "horizontalOverflowPx": 0,
+    "errors": [],
+    "checks": {}
+  },
+  {
+    "target": "before",
+    "width": 390,
+    "horizontalOverflowPx": 0,
+    "errors": [],
+    "checks": {}
+  },
+  {
+    "target": "before",
+    "width": 430,
+    "horizontalOverflowPx": 0,
+    "errors": [],
+    "checks": {}
+  },
+  {
+    "target": "before",
+    "width": 1280,
+    "horizontalOverflowPx": 0,
+    "errors": [],
+    "checks": {}
+  },
+  {
+    "target": "after",
+    "width": 320,
+    "horizontalOverflowPx": 11,
+    "errors": [],
+    "checks": {
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('.week__row').first().getByRole('button', { name: '晚班', exact: true })\n"
+    }
+  },
+  {
+    "target": "after",
+    "width": 375,
+    "horizontalOverflowPx": 0,
+    "errors": [],
+    "checks": {
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('.week__row').first().getByRole('button', { name: '晚班', exact: true })\n"
+    }
+  },
+  {
+    "target": "after",
+    "width": 390,
+    "horizontalOverflowPx": 0,
+    "errors": [],
+    "checks": {
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('.week__row').first().getByRole('button', { name: '晚班', exact: true })\n",
+      "advancedOpened": true,
+      "expenseFormOpened": true,
+      "payslip": {
+        "wrongPasswordRejected": true,
+        "netPayShown": true,
+        "paygLabel": true,
+        "wizardOpenedAtShifts": true,
+        "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('.week__row').first().getByRole('button', { name: '早班', exact: true })\n"
+      }
+    }
+  },
+  {
+    "target": "after",
+    "width": 430,
+    "horizontalOverflowPx": 0,
+    "errors": [],
+    "checks": {
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('.week__row').first().getByRole('button', { name: '晚班', exact: true })\n"
+    }
+  },
+  {
+    "target": "after",
+    "width": 1280,
+    "horizontalOverflowPx": 0,
+    "errors": [],
+    "checks": {
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('.week__row').first().getByRole('button', { name: '晚班', exact: true })\n"
+    }
+  }
+]

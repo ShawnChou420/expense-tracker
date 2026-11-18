@@ -279,7 +279,13 @@ for (const viewport of [{ width: 360, height: 780 }, { width: 430, height: 932 }
   await shot(page, 'card-progress')
   check(`noHorizontalScroll${viewport.width}`, await noHorizontalScroll(page))
   await page.locator('.van-tabbar-item', { hasText: '薪資' }).click()
-  await page.getByRole('button', { name: '補登歷史' }).click()
+  // 新版：補登歷史收在月份操作的「⋯」選單
+  const historyButton = page.getByRole('button', { name: '補登歷史', exact: true })
+  if (await historyButton.count()) await historyButton.click()
+  else {
+    await page.getByRole('button', { name: '更多班表操作' }).click()
+    await page.getByRole('button', { name: '補登歷史班表' }).click()
+  }
   await page.locator('.history-wizard input[type=date]').nth(0).fill('2026-09-28')
   await page.locator('.history-wizard input[type=date]').nth(1).fill('2026-10-11')
   await footer(page).getByRole('button', { name: '產生班表草稿' }).click()

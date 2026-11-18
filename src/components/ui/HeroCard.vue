@@ -1,5 +1,8 @@
 <script setup>
 // 首頁主卡：藍底白字，最大的數字放在最上層；沒有資料時顯示空狀態與行動按鈕。
+// 右上角可放額外按鈕（slot「corner」，例如幣別），不會觸發整張卡的點擊。
+import { useSlots } from 'vue'
+const slots = useSlots()
 defineProps({
   label: { type: String, required: true },
   amount: { type: String, default: '' },
@@ -16,7 +19,8 @@ const emit = defineEmits(['open', 'action'])
 </script>
 
 <template>
-  <section class="hero-card" :class="{ 'hero-card--empty': empty }">
+  <section class="hero-card" :class="{ 'hero-card--empty': empty, 'hero-card--has-corner': slots.corner }">
+    <div v-if="slots.corner" class="hero-card__corner"><slot name="corner" /></div>
     <template v-if="!empty">
       <button type="button" class="hero-card__tap" @click="emit('open')">
         <span class="hero-card__label">{{ label }}</span>
@@ -136,6 +140,20 @@ const emit = defineEmits(['open', 'action'])
   top: 22px;
   right: 18px;
   color: rgba(255, 255, 255, 0.75);
+}
+/* 右上角放了按鈕時，箭頭移到右側中間，內容留出箭頭的位置 */
+.hero-card--has-corner .hero-card__tap {
+  padding-right: 40px;
+}
+.hero-card--has-corner .hero-card__arrow {
+  top: 50%;
+  transform: translateY(-50%);
+}
+.hero-card__corner {
+  position: absolute;
+  z-index: 1;
+  top: 14px;
+  right: 14px;
 }
 .hero-card__empty {
   display: grid;

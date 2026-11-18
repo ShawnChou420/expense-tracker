@@ -11,6 +11,7 @@ import AuthPanel from './components/AuthPanel.vue'
 import AccountPage from './components/AccountPage.vue'
 import PrivacyPage from './components/PrivacyPage.vue'
 import { accountRepository } from './repositories/accountRepository.js'
+import { ensureBackGuard, registerPageBack } from './services/backNavigation.js'
 import { authEmail, authToken, signOut, clearSession, apiRequest, restoreSavedSession, serverSlow, wakeServer, reportEvent, isSuperAdmin } from './services/authSession.js'
 import { startPerfPhase } from './services/perfTrace.js'
 import { useWorkRecordsPersistence } from './composables/useWorkRecordsPersistence.js'
@@ -516,6 +517,24 @@ watch(isSuperAdmin, (admin) => {
   if (!admin && activeTab.value === 'admin') activeTab.value = 'more'
   if (admin && window.location.hash === ADMIN_HASH) activeTab.value = 'admin'
 })
+// 返回鍵：子頁面回上一層、其他分頁回首頁；首頁再按返回才離開 App
+// 薪資頁有未儲存的單日修改時先提醒，取消就留在原地
+registerPageBack({
+  canGoBack: () => activeTab.value !== 'dashboard',
+  back: () => {
+    const target = ['shopping', 'admin'].includes(activeTab.value) ? 'more' : 'dashboard'
+    if (activeTab.value === 'dashboard') return false
+    if (activeTab.value === 'payroll') {
+      confirmLeaveDayEditor().then((proceed) => {
+        if (proceed) activeTab.value = target
+      })
+      return true
+    }
+    activeTab.value = target
+    return true
+  },
+})
+watch(activeTab, () => nextTick(ensureBackGuard))
 const payBreakdownOpen = ref([])
 const advancedRatesOpen = ref([])
 const visibleMonth = ref(workDate.value.slice(0, 7))

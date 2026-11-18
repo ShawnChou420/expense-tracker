@@ -6,9 +6,13 @@ import Vant from 'vant'
 import 'vant/lib/index.css'
 import './assets/base.css'
 import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core'
+import { installBackNavigation } from './services/backNavigation.js'
 
 Locale.use('zh-TW', zhTW)
-createApp(App).use(Vant).mount('#app')
+const app = createApp(App).use(Vant)
+// 返回鍵先關彈窗、回首頁，最後才離開 App
+installBackNavigation(app)
+app.mount('#app')
 
 if (Capacitor.getPlatform() === 'android') {
   // Light system bars use dark icons against the app's pale background.

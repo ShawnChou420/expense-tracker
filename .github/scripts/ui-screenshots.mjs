@@ -159,16 +159,11 @@ async function guestSetupFlow(page, shot) {
   await page.getByText('點選常見班別加入').waitFor({ timeout: 5000 })
   await page.getByRole('button', { name: /^晚班 23:50/ }).click()
   await page.getByRole('button', { name: /^早班 06:00/ }).click()
-  const rows = page.locator('.week__row')
-  for (const [index, name] of [
-    [0, '晚班'],
-    [1, '早班'],
-    [2, '晚班'],
-    [3, '晚班'],
-    [4, '晚班'],
-  ]) {
-    await rows.nth(index).getByRole('button', { name, exact: true }).click()
-  }
+  // 每週班表：整週快速設定（預設週一到週五）→ 晚班 → 套用
+  await page.getByRole('button', { name: /整週快速設定/ }).click()
+  await page.locator('.day-sheet__shifts').getByRole('button', { name: '晚班', exact: true }).click()
+  await page.getByRole('button', { name: /套用到 \d+ 天/ }).click()
+  await page.waitForTimeout(400)
   await capture('wizard-2-shifts')
   if (shot) {
     await page.locator('.setup__body').evaluate((el) => el.scrollTo(0, el.scrollHeight))
@@ -212,7 +207,7 @@ async function guestSetupFlow(page, shot) {
     await page.locator('.van-calendar__selected-day').first().click()
     await page.waitForTimeout(500)
     await shot('day-sheet')
-    await page.locator('.day-sheet__close').click()
+    await page.locator('.pday__close').click()
     await page.waitForTimeout(400)
     await payrollView(page, '設定')
     await page.locator('.work-setup-card').scrollIntoViewIfNeeded()

@@ -1737,9 +1737,9 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       round
       safe-area-inset-bottom
       teleport="body"
-      class="day-sheet"
+      class="payroll-day-sheet"
     >
-      <div class="day-sheet__body">
+      <div class="pday__body">
           <div class="calendar-day-actions">
             <div class="calendar-day-actions__heading">
               <div>
@@ -1755,7 +1755,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
               <strong v-if="selectedRecord && selectedRecord.shiftType !== 'leave'" class="calendar-day-actions__pay">
                 {{ currencySymbol }}{{ formatDisplayMoney(selectedRecord.grossPay * currentExchangeRate) }}
               </strong>
-              <button type="button" class="day-sheet__close" aria-label="關閉" @click="daySheetOpen = false">
+              <button type="button" class="pday__close" aria-label="關閉" @click="daySheetOpen = false">
                 <van-icon name="cross" />
               </button>
             </div>
@@ -1919,7 +1919,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
           </van-collapse>
         </div>
       </div>
-      <div class="day-sheet__footer">
+      <div class="pday__footer">
         <van-button v-if="isEditingRecord" plain type="default" @click="cancelEditingRecord">還原</van-button>
         <van-button type="primary" block @click="saveDayFromSheet">
           {{ shiftType === 'leave' ? '儲存休假' : isEditingRecord ? '儲存修改' : '儲存這天' }}
@@ -2290,13 +2290,13 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 .payroll-views button.is-active { background: var(--color-surface); color: var(--color-primary); box-shadow: 0 1px 4px rgba(16, 42, 67, 0.12); }
 .week-toolbar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
 /* 當天面板 */
-.day-sheet { display: flex; flex-direction: column; max-height: 90dvh; background: var(--color-background, #f5f7fa); }
-.day-sheet__body { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 16px 0 8px; }
-.day-sheet__body > .calendar-day-actions { margin: 0 var(--page-inset, 16px) 8px; }
-.day-sheet__close { display: grid; flex: none; place-items: center; width: 40px; height: 40px; margin: -6px -8px 0 4px; border: 0; border-radius: 50%; background: transparent; color: var(--color-muted); font-size: 18px; }
-.day-sheet__footer { display: flex; gap: 10px; padding: 10px var(--page-inset, 16px); border-top: 1px solid var(--color-border); background: var(--color-surface); }
-.day-sheet__footer .van-button { min-height: var(--touch-target); border-radius: var(--radius-button); font-weight: 700; }
-.day-sheet__footer .van-button--block { flex: 1; }
+.payroll-day-sheet { display: flex; flex-direction: column; max-height: 90dvh; background: var(--color-background, #f5f7fa); }
+.pday__body { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 16px 0 8px; }
+.pday__body > .calendar-day-actions { margin: 0 var(--page-inset, 16px) 8px; }
+.pday__close { display: grid; flex: none; place-items: center; width: 40px; height: 40px; margin: -6px -8px 0 4px; border: 0; border-radius: 50%; background: transparent; color: var(--color-muted); font-size: 18px; }
+.pday__footer { display: flex; gap: 10px; padding: 10px var(--page-inset, 16px); border-top: 1px solid var(--color-border); background: var(--color-surface); }
+.pday__footer .van-button { min-height: var(--touch-target); border-radius: var(--radius-button); font-weight: 700; }
+.pday__footer .van-button--block { flex: 1; }
 /* 工作設定卡片 */
 .work-setup-card { margin: 0 0 var(--page-section-gap); padding: 16px; border: 1px solid var(--color-border); border-radius: var(--page-card-radius); background: var(--color-surface); box-shadow: var(--shadow-card); }
 .work-setup-card--todo { border-color: var(--color-primary); background: linear-gradient(180deg, var(--color-primary-soft), var(--color-surface) 70%); }

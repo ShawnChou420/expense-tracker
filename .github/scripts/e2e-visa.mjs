@@ -11,11 +11,11 @@ const { chromium } = require('playwright')
 
 // 新版薪資頁：當天的操作在點日期後滑出的面板裡
 async function openDaySheet(page) {
-  if (await page.locator('.day-sheet').isVisible()) return
+  if (await page.locator('.payroll-day-sheet').isVisible()) return
   const selected = page.locator('.van-calendar__selected-day').first()
   if (await selected.count()) {
     await selected.click()
-    await page.locator('.day-sheet').waitFor()
+    await page.locator('.payroll-day-sheet').waitFor()
   }
 }
 

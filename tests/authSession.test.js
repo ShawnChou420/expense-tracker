@@ -167,14 +167,14 @@ describe('restoreSavedSession', () => {
   /** @type {Map<string, string>} */
   let store
   beforeEach(() => {
+    clearSession()
+    sessionExpired.value = false
     store = new Map([['expense-tracker.session', JSON.stringify({ token: 'old-token', email: 'a@example.com' })]])
     vi.stubGlobal('localStorage', {
       getItem: (key) => store.get(key) ?? null,
       setItem: (key, value) => store.set(key, value),
       removeItem: (key) => store.delete(key),
     })
-    clearSession()
-    sessionExpired.value = false
   })
   afterEach(() => vi.unstubAllGlobals())
 

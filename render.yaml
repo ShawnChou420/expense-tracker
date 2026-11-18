@@ -1,4 +1,4 @@
-# Render Blueprint：後端 API（免費方案）+ 網頁版前端（免費靜態網站）。
+# Render Blueprint：後端 API（付費 0.5c-512mb，不休眠）+ 網頁版前端（免費靜態網站）。
 # 資料庫使用外部的 Neon Postgres（免費方案）。
 # 使用方式與注意事項見 backend/DEPLOY_RENDER.md。
 # 不要在這個檔案寫入任何密碼、token 或連線字串。
@@ -11,9 +11,10 @@ services:
     dockerfilePath: ./backend/Dockerfile
     dockerContext: .
     region: singapore
-    # 免費方案：閒置 15 分鐘會休眠，下一次請求要等它喚醒（約 1 分鐘）。
-    # 使用者變多、不想等待時改成付費的 0.5c-512mb（不休眠），資料庫不受影響。
-    plan: free
+    # 付費 0.5c-512mb（0.5 CPU／512 MB，2026-11 顯示 US$7/月）：不休眠，開 App 不用等喚醒。
+    # 改回 free 會在閒置 15 分鐘後休眠（喚醒約 1 分鐘）。不要開 Autoscaling：
+    # 登入失敗次數等限制與每日清除排程都只在單一執行個體的記憶體／排程中。
+    plan: 0.5c-512mb
     branch: main
     healthCheckPath: /api/health
     autoDeployTrigger: commit

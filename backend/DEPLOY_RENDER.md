@@ -10,7 +10,7 @@
    └──────────────────────────────┬──────────────────────────┘
    │ HTTPS + Bearer token
    ▼
-Render Web Service「expense-tracker-api」（新加坡，Docker，Java 21，免費方案）
+Render Web Service「expense-tracker-api」（新加坡，Docker，Java 21，付費 0.5c-512mb）
    │ 公開網路 + SSL（DATABASE_URL，由你在 Render 後台貼上）
    ▼
 Neon Postgres（AWS ap-southeast-1 新加坡，PostgreSQL 17，免費方案）
@@ -24,7 +24,7 @@ Neon Postgres（AWS ap-southeast-1 新加坡，PostgreSQL 17，免費方案）
 
 | 項目 | 方案 | 說明 |
 | --- | --- | --- |
-| Render Web Service | `free` | 閒置 15 分鐘休眠，之後第一次打開 App 要等它喚醒（約 1 分鐘，Java 在免費 CPU 上可能更久）。想要不休眠就把 `plan` 改成 `0.5c-512mb`（2026-11 顯示 US$7/月）。 |
+| Render Web Service | `0.5c-512mb` | 0.5 CPU／512 MB，2026-11 顯示 US$7/月，不休眠。改回 `free` 會在閒置 15 分鐘後休眠，之後第一次打開 App 要等約 1 分鐘。**Autoscaling 保持關閉**（登入嘗試限制、每日清除排程只在單一執行個體）。記憶體長期超過約 80% 或常變慢時再考慮 `1c-2g`。 |
 | Neon Postgres | Free | 儲存空間約 0.5 GB（記帳資料足夠），閒置幾分鐘後自動暫停、下次連線自動喚醒。**可還原的時間範圍很短**，必須自己定期匯出備份（見下方）。 |
 
 額度與限制以 Render、Neon 官網目前的方案頁為準。**不要使用 Render 的免費資料庫**：30 天後到期、沒有任何備份。
@@ -71,7 +71,7 @@ Neon Postgres（AWS ap-southeast-1 新加坡，PostgreSQL 17，免費方案）
    ```
 2. 重新建置並同步到 Android：`npm run android:sync`，再用 `npm run android:open` 安裝到手機測試註冊、登入、新增班表。
 3. **Web build 成功不代表手機已更新**，一定要實機確認。
-4. 後端休眠時，第一次登入會等比較久，這是免費方案的正常現象。
+4. 後端使用付費方案、不會休眠；若改回 `free`，閒置後第一次登入會等比較久。
 
 > `VITE_*` 變數會被打包進 App，任何人都能從 APK 取出。只能放 API 網址這類公開資訊，絕對不要放 API key、密碼或 token。
 
@@ -111,9 +111,8 @@ docker build -f backend/Dockerfile -t expense-tracker-api .
 ## 尚未完成（上線後仍需處理）
 
 - Email 驗證、忘記密碼、刪除帳號（Google Play 上架要求）。
-- 登入失敗次數仍存在伺服器記憶體，每次重新部署或休眠後會歸零。
+- 登入失敗次數仍存在伺服器記憶體，每次重新部署後會歸零。
 - 前端 token 只放記憶體，重開 App 要重新登入。
 - 沒有監控與告警（可先使用 Render 的 Notifications 設定部署失敗通知）。
 - `server.forward-headers-strategy: native` 在 Render 代理後面能否取得正確的使用者 IP，**尚未在正式環境驗證**。
 - 過期的 `auth_session` 紀錄不會自動清除。
-- Render 免費方案搭配 Neon 的實際啟動時間與連線，**尚未在正式環境驗證**。

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { createExpense, getExpenseOccurrences, getExpenseSummary } from '../src/domain/expenses.js'
+import {
+  createExpense,
+  getExpenseOccurrences,
+  getExpenseSummary,
+  getQuickCategories,
+} from '../src/domain/expenses.js'
 import { createInMemoryExpenseRepository } from '../src/repositories/inMemoryExpenseRepository.js'
 
 const base = {
@@ -141,5 +146,22 @@ describe('expense records', () => {
     expect((await repository.list())[0].amountCents).toBe(2000)
     await repository.remove(record.id)
     expect(await repository.list()).toEqual([])
+  })
+
+  it('suggests recently used categories first, then defaults, without duplicates', () => {
+    expect(getQuickCategories([]).map((item) => item.label)).toEqual([
+      '採買',
+      '吃飯',
+      '加油',
+      '房租',
+      '咖啡飲料',
+    ])
+    const recent = getQuickCategories([
+      { group: 'LIFE', category: 'PHONE', createdAt: '2026-11-10T00:00:00Z' },
+      { group: 'TRANSPORT', category: 'FUEL', createdAt: '2026-11-12T00:00:00Z' },
+      { group: 'TRANSPORT', category: 'FUEL', createdAt: '2026-11-11T00:00:00Z' },
+      { group: 'NOPE', category: 'NOPE', createdAt: '2026-11-13T00:00:00Z' },
+    ])
+    expect(recent.map((item) => item.label)).toEqual(['加油', '手機網路', '採買', '吃飯', '房租'])
   })
 })

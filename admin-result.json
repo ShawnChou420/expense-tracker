@@ -1,0 +1,31 @@
+{
+  "result": {
+    "newAccountHasNoRole": true,
+    "memberDeniedAllAdminApis": true,
+    "anonymousDenied": true,
+    "foundOwnerSeq": true,
+    "ownerHasSuperAdminRole": true,
+    "memberSeesNoAdminEntry": true,
+    "adminHash": true,
+    "overviewShowsPayslipFailures": true,
+    "noHorizontalScroll390": true,
+    "memberEventsShowSequence": true,
+    "memberEventsNoSecrets": true,
+    "disabledMemberCannotLogin": true,
+    "disabledMemberSessionRevoked": true,
+    "deletedMemberGone": true,
+    "audit:授予管理員": true,
+    "audit:編輯基本資料": true,
+    "audit:停用會員": true,
+    "audit:恢復會員": true,
+    "audit:刪除會員": true,
+    "auditHasFailedAttempt": true,
+    "noHorizontalScroll360": true,
+    "logsNoHorizontalScroll360": true,
+    "noHorizontalScroll430": true,
+    "logsNoHorizontalScroll430": true,
+    "auditNotDeletable": true,
+    "noPageErrors": true
+  },
+  "errors": []
+}

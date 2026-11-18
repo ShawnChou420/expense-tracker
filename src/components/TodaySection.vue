@@ -29,22 +29,26 @@ const refreshing = ref(false)
 const progress = computed(() => getTaskProgress(tasks.value))
 const isMember = computed(() => Boolean(authToken.value))
 
+// 每次載入的序號：登入狀態或日期在載入途中改變時，只採用最後一次的結果（避免舊請求的錯誤蓋掉新結果）
+let loadSeq = 0
+
 async function load() {
+  const seq = ++loadSeq
   loading.value = true
   loadError.value = ''
-  const identity = authToken.value
   try {
     const data = await todayRepository.load(props.today)
-    if (identity !== authToken.value) return
+    if (seq !== loadSeq) return
     tasks.value = data.tasks || []
     overdue.value = data.overdue || []
     quote.value = data.quote
     quoteFailed.value = !data.quote
     applyJournal(data.journal)
   } catch (error) {
+    if (seq !== loadSeq) return
     loadError.value = error.message || '暫時無法載入'
   } finally {
-    loading.value = false
+    if (seq === loadSeq) loading.value = false
   }
 }
 

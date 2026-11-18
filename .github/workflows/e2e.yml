@@ -125,7 +125,7 @@ jobs:
             "SELECT account_status, count(*) FROM user_info GROUP BY 1;" -c \
             "SELECT count(*) AS super_admins FROM user_role WHERE role = 'SUPER_ADMIN';" -c \
             "SELECT category, event_type, status, count(*) FROM user_activity_event GROUP BY 1, 2, 3 ORDER BY 1, 2, 3;" -c \
-            "SELECT action, result, admin_seq IS NULL AS via_cli FROM admin_audit_log ORDER BY occurred_at; -c \
+            "SELECT action, result, admin_seq IS NULL AS via_cli FROM admin_audit_log ORDER BY occurred_at;" -c \
             "SELECT category, count(*) FROM daily_quote GROUP BY 1 ORDER BY 1;" -c \
             "SELECT user_seq, quote_date, count(*) FROM user_daily_quote GROUP BY 1, 2 HAVING count(*) > 1;" -c \
             "SELECT repeat_type, is_completed, count(*) FROM daily_task GROUP BY 1, 2 ORDER BY 1, 2;" -c \

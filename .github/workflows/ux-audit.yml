@@ -1,0 +1,50 @@
+# 暫時性的 UX 稽核：在 iPhone（WebKit）與 Android（Chromium）手機尺寸下截圖主要頁面與彈窗，
+# 並量測觸控區域、彈窗高度與底部遮擋。截圖推到 ui-screenshots/ux-audit 分支。只在 audit/** 分支執行。
+name: UX Audit
+
+on:
+  push:
+    branches: ['audit/**']
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Build
+        run: npm ci --no-audit --no-fund && npm run build
+      - name: Start preview
+        run: |
+          nohup npx vite preview --host 127.0.0.1 --port 4174 --strictPort > preview.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:4174 > /dev/null && break; sleep 1; done
+      - name: Install Playwright
+        run: |
+          mkdir -p shot && cd shot && npm init -y > /dev/null
+          npm i --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps chromium webkit
+      - name: Audit
+        working-directory: shot
+        run: node ../.github/scripts/ux-audit.mjs
+        env:
+          OUT_DIR: ${{ github.workspace }}/ux-audit
+      - name: Publish
+        if: always()
+        working-directory: ux-audit
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          echo '{ "git": { "deploymentEnabled": false } }' > vercel.json
+          git init -q -b screenshots
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "UX audit screenshots (${GITHUB_SHA})"
+          git push -q -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/ui-screenshots/ux-audit"

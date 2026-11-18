@@ -23,7 +23,6 @@ import {
   formatRangeLabel,
   getEstimatedWeekBalance,
   getPendingFareSummary,
-  getTodayShift,
 } from '../domain/home.js'
 import { getExpenseSummary } from '../domain/expenses.js'
 import { getWeekRange } from '../domain/date.js'
@@ -44,6 +43,9 @@ import {
   tripRepository,
 } from '../repositories/appRepositories.js'
 import VisaJourneyCard from './VisaJourneyCard.vue'
+import TodayShiftCard from './TodayShiftCard.vue'
+import TodaySection from './TodaySection.vue'
+import { getFocusShift, getGreeting } from '../domain/today.js'
 import { formatCentsIn } from '../domain/displayCurrency.js'
 const IncomeTrendChart = defineAsyncComponent(() => import('./IncomeTrendChart.vue'))
 const ExpenseDonutChart = defineAsyncComponent(() => import('./ExpenseDonutChart.vue'))
@@ -81,6 +83,17 @@ const emit = defineEmits([
 const money = (/** @type {number} */ cents) => formatCentsIn(cents, props.displayCurrency)
 
 const today = formatLocalDate(new Date())
+// 「今天」區塊用的即時時間：每分鐘更新，跨午夜時自動換成新的一天
+const now = ref(new Date())
+const liveToday = computed(() => formatLocalDate(now.value))
+let clockTimer = null
+const greeting = computed(() =>
+  getGreeting(now.value, getFocusShift(props.workRecords, now.value).kind === 'current'),
+)
+const liveDateLabel = computed(() => {
+  const date = now.value
+  return `${date.getMonth() + 1} 月 ${date.getDate()} 日 星期${weekdayNames[date.getDay()]}`
+})
 const period = ref('week')
 const anchor = ref(today)
 const trips = ref([])
@@ -125,11 +138,6 @@ const isCurrentPeriod = computed(() => range.value?.start === currentRange.value
 
 // --- 首頁重點：今天、本週、年度稅務、簽證工作日 ---
 const weekdayNames = ['日', '一', '二', '三', '四', '五', '六']
-const todayLabel = computed(() => {
-  const date = parseLocalDate(today)
-  return date ? `${today.slice(5).replace('-', '/')}（${weekdayNames[date.getDay()]}）` : today
-})
-const todayShift = computed(() => getTodayShift(props.workRecords, today))
 const weeklyPay = computed(() => getWeeklyPaySummary(props.workRecords, today, props.payrollRates))
 const thisWeekSummary = computed(() =>
   getDashboardSummary({
@@ -246,10 +254,6 @@ const quickActions = [
   { key: 'trip', label: '記錄車資', icon: 'logistics' },
 ]
 
-function formatTodayRange(shift) {
-  return `${shift.startTime}–${shift.endTime}${shift.crossesMidnight ? '（隔天）' : ''}`
-}
-
 function movePeriod(direction) {
   const date = parseLocalDate(anchor.value)
   if (period.value === 'week') date.setDate(date.getDate() + direction * 7)
@@ -342,10 +346,14 @@ async function refreshDashboardData() {
 
 let unsubscribe = null
 onMounted(() => {
+  clockTimer = setInterval(() => (now.value = new Date()), 60_000)
   unsubscribe = subscribeToLedgerChanges(() => refreshDashboardData().catch((error) => showToast(error.message)))
   refreshDashboardData().catch((error) => showToast(error.message))
 })
-onUnmounted(() => unsubscribe?.())
+onUnmounted(() => {
+  unsubscribe?.()
+  clearInterval(clockTimer)
+})
 watch(authToken, async () => {
   trips.value = []
   expenses.value = []
@@ -433,9 +441,9 @@ async function saveTarget() {
   <main class="dashboard-page app-page">
     <header class="home-header">
       <div class="home-header__titles">
-        <span class="home-header__eyebrow">WORK &amp; SAVE</span>
-        <h1>我的澳打生活 🇦🇺</h1>
-        <p>{{ weekLabel }}</p>
+        <span class="home-header__eyebrow">{{ liveDateLabel }}</span>
+        <h1>{{ greeting }}</h1>
+        <p>我的澳打生活 🇦🇺</p>
       </div>
       <button
         type="button"
@@ -460,6 +468,21 @@ async function saveTarget() {
       <strong>登入保存</strong>
     </button>
 
+    <TodayShiftCard
+      :records="workRecords"
+      :now="now"
+      :pay-ready="setup.payReady"
+      :money="money"
+      :currency="displayCurrency.code"
+      @open-payroll="emit('navigate', 'payroll')"
+      @import-payslip="emit('import-payslip')"
+      @work-setup="emit('work-setup', 1)"
+      @add-shift="emit('quick-action', 'shift')"
+    />
+
+    <TodaySection :today="liveToday" />
+
+    <h2 class="home-section-title">本週財務 <small>{{ weekLabel }}</small></h2>
     <HeroCard
       label="本週預估實領"
       :amount="money(weeklyPay.netCents)"
@@ -498,23 +521,6 @@ async function saveTarget() {
       @open-payroll="emit('navigate', 'payroll')"
       @import-payslip="emit('import-payslip')"
     />
-
-    <button type="button" class="today-strip app-page__card" @click="emit('navigate', 'payroll')">
-      <span class="today-strip__icon" aria-hidden="true">
-        <van-icon :name="todayShift.status === 'work' ? 'clock-o' : todayShift.status === 'leave' ? 'smile-o' : 'calendar-o'" />
-      </span>
-      <span class="today-strip__text">
-        <small>今天 {{ todayLabel }}</small>
-        <strong v-if="todayShift.status === 'work'">{{ formatTodayRange(todayShift) }}</strong>
-        <strong v-else-if="todayShift.status === 'leave'">今天休假</strong>
-        <strong v-else>今天沒有排班</strong>
-      </span>
-      <span v-if="todayShift.status === 'work'" class="today-strip__pay">
-        <small>預估稅前</small>
-        <strong>{{ money(todayShift.grossCents) }}</strong>
-      </span>
-      <van-icon v-else name="arrow" class="today-strip__arrow" aria-hidden="true" />
-    </button>
 
     <section class="home-stats home-block" aria-label="本週財務摘要">
       <StatCard
@@ -1104,59 +1110,19 @@ async function saveTarget() {
 .home-block {
   margin-top: 14px;
 }
-.today-strip {
+.home-section-title {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  min-height: 64px;
-  margin: 10px 0 0;
-  padding: 12px 16px;
-  border: 1px solid var(--color-border);
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
+  align-items: baseline;
+  gap: 8px;
+  margin: 24px 2px 10px;
+  color: var(--color-heading);
+  font-size: 16px;
+  font-weight: 800;
 }
-.today-strip__icon {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
-  font-size: 19px;
-}
-.today-strip__text,
-.today-strip__pay {
-  display: grid;
-  gap: 1px;
-  min-width: 0;
-}
-.today-strip__text {
-  flex: 1;
-}
-.today-strip small {
+.home-section-title small {
   color: var(--color-muted);
   font-size: 12px;
-}
-.today-strip strong {
-  color: var(--color-heading);
-  font-size: 15px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
-.today-strip__pay {
-  text-align: right;
-}
-.today-strip__pay strong {
-  color: var(--color-primary);
-}
-.today-strip__arrow {
-  flex: none;
-  color: #9aa8b8;
+  font-weight: 500;
 }
 .home-stats {
   display: grid;

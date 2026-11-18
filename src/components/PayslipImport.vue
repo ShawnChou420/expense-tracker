@@ -285,17 +285,16 @@ function confirmImport() {
 <template>
   <van-popup
     :show="show"
-    position="bottom"
-    round
+    position="right"
     safe-area-inset-bottom
-    class="payslip-sheet"
+    class="payslip-sheet full-page-popup"
     @update:show="emit('update:show', $event)"
   >
     <div class="payslip">
-      <header class="payslip__header">
+      <header class="payslip__header full-page__header">
         <h2>{{ step === 'review' ? '確認薪資單內容' : '匯入薪資單' }}</h2>
-        <button type="button" class="payslip__close" aria-label="關閉" @click="close">
-          <van-icon name="cross" />
+        <button type="button" class="payslip__close full-page__back" aria-label="返回" @click="close">
+          <van-icon name="arrow-left" />
         </button>
       </header>
 

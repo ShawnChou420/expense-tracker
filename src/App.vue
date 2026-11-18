@@ -2292,8 +2292,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 .payroll-day-sheet { display: flex; flex-direction: column; max-height: 90dvh; background: var(--color-background, #f5f7fa); }
 .pday__body { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 16px 0 8px; }
 .pday__body > .calendar-day-actions { margin: 0 var(--page-inset, 16px) 8px; }
-.pday__body > .section { padding: 0 var(--page-inset, 16px); }
-.pday__body > .section > h2 { margin-top: 12px; }
+.pday__body > .section > h2 { margin-top: 12px; padding: 0 var(--page-inset, 16px); }
 .pday__close { display: grid; flex: none; place-items: center; width: 40px; height: 40px; margin: -6px -8px 0 4px; border: 0; border-radius: 50%; background: transparent; color: var(--color-muted); font-size: 18px; }
 .pday__footer { display: flex; gap: 10px; padding: 10px var(--page-inset, 16px); border-top: 1px solid var(--color-border); background: var(--color-surface); }
 .pday__footer .van-button { min-height: var(--touch-target); border-radius: var(--radius-button); font-weight: 700; }

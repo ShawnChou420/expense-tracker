@@ -11,6 +11,7 @@ on:
       - '.github/scripts/e2e-member.mjs'
       - '.github/scripts/e2e-visa.mjs'
       - '.github/scripts/e2e-admin.mjs'
+      - '.github/scripts/e2e-today.mjs'
       - '.github/fixtures/**'
       - '.github/workflows/e2e.yml'
   workflow_dispatch:
@@ -102,6 +103,12 @@ jobs:
         env:
           OUT_DIR: ${{ github.workspace }}/e2e-screenshots
           REPO_ROOT: ${{ github.workspace }}
+      # 首頁「今天」：每日小語固定分配／換一句／並發、待辦（含重複）、備註心情、越權與未登入
+      - name: Today flow
+        working-directory: e2e
+        run: node ../.github/scripts/e2e-today.mjs
+        env:
+          OUT_DIR: ${{ github.workspace }}/e2e-screenshots
       - name: Check database
         if: always()
         run: |
@@ -118,7 +125,11 @@ jobs:
             "SELECT account_status, count(*) FROM user_info GROUP BY 1;" -c \
             "SELECT count(*) AS super_admins FROM user_role WHERE role = 'SUPER_ADMIN';" -c \
             "SELECT category, event_type, status, count(*) FROM user_activity_event GROUP BY 1, 2, 3 ORDER BY 1, 2, 3;" -c \
-            "SELECT action, result, admin_seq IS NULL AS via_cli FROM admin_audit_log ORDER BY occurred_at;"
+            "SELECT action, result, admin_seq IS NULL AS via_cli FROM admin_audit_log ORDER BY occurred_at; -c \
+            "SELECT category, count(*) FROM daily_quote GROUP BY 1 ORDER BY 1;" -c \
+            "SELECT user_seq, quote_date, count(*) FROM user_daily_quote GROUP BY 1, 2 HAVING count(*) > 1;" -c \
+            "SELECT repeat_type, is_completed, count(*) FROM daily_task GROUP BY 1, 2 ORDER BY 1, 2;" -c \
+            "SELECT count(*) AS journals, count(mood) AS moods FROM daily_journal;"
       - name: Logs
         if: failure()
         run: tail -100 backend.log; tail -30 frontend.log

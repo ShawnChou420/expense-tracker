@@ -59,6 +59,8 @@ public class SecurityConfig {
                     "/api/auth/email-code", "/api/auth/reset-password").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/auth/config").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/health").permitAll() // Render 健康檢查
+                // 訪客首頁的每日小語：只讀共用語錄，依日期固定一句，不寫資料庫
+                .requestMatchers(HttpMethod.GET, "/api/daily-quotes/sample").permitAll()
                 // 管理後台：每個請求都依登入 token 重新查角色（TokenFilter），不是 SUPER_ADMIN 一律 403
                 .requestMatchers("/api/admin/**").hasRole(AuthService.SUPER_ADMIN)
                 .anyRequest().authenticated())
@@ -70,7 +72,7 @@ public class SecurityConfig {
     CorsConfigurationSource corsConfigurationSource(@Value("${app.cors-origins}") String origins) {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(Arrays.stream(origins.split(",")).map(String::trim).toList());
-        config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "X-Request-Id"));
         config.setAllowCredentials(false);
         // 量測期間讓前端讀得到伺服器端耗時拆解（見 RequestTimingFilter，預設不送出此標頭）

@@ -10,7 +10,7 @@ import AuthPanel from './components/AuthPanel.vue'
 import AccountPage from './components/AccountPage.vue'
 import PrivacyPage from './components/PrivacyPage.vue'
 import { accountRepository } from './repositories/accountRepository.js'
-import { authEmail, authToken, signOut, clearSession, apiRequest, restoreSavedSession, serverSlow, wakeServer } from './services/authSession.js'
+import { authEmail, authToken, signOut, clearSession, apiRequest, restoreSavedSession, wakeServer } from './services/authSession.js'
 import { startPerfPhase } from './services/perfTrace.js'
 import { useWorkRecordsPersistence } from './composables/useWorkRecordsPersistence.js'
 import { getGuestLedgerSnapshot, notifyLedgerChanged, passengerRepository, tripRepository, expenseRepository, salaryDepositRepository } from './repositories/appRepositories.js'
@@ -1397,16 +1397,6 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 
 <template>
   <div class="page">
-    <!-- 免費方案閒置後第一次連線要等伺服器啟動；明確告知，避免使用者重複點擊或以為壞掉 -->
-    <van-notice-bar
-      v-if="serverSlow"
-      class="server-waking"
-      role="status"
-      left-icon="clock-o"
-      wrapable
-      :scrollable="false"
-      text="伺服器啟動中，第一次連線約需 1 分鐘。請稍候，不需要重新整理或重複送出。"
-    />
     <div v-if="activeTab !== 'dashboard'" class="account-shell">
       <div class="account-card" :class="{ 'account-card--shopping-guest': !authToken && activeTab === 'shopping' }">
         <span class="account-card__avatar" aria-hidden="true">
@@ -1977,7 +1967,6 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 </template>
 
 <style scoped>
-.server-waking { position: fixed; top: env(safe-area-inset-top, 0px); left: 0; right: 0; z-index: 3000; }
 .page { min-height: 100vh; background: #f5f7fa; }
 .account-shell { max-width: 820px; margin-inline: auto; padding: calc(10px + env(safe-area-inset-top, 0px)) max(var(--page-inset), env(safe-area-inset-right, 0px)) 0 max(var(--page-inset), env(safe-area-inset-left, 0px)); }
 .account-card { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 58px; padding: 8px 10px; box-sizing: border-box; border: 1px solid var(--color-border); border-radius: 16px; background: var(--color-surface); box-shadow: 0 6px 18px rgba(29, 66, 106, .05); }

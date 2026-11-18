@@ -169,7 +169,9 @@ describe('restoreSavedSession', () => {
   beforeEach(() => {
     clearSession()
     sessionExpired.value = false
-    store = new Map([['expense-tracker.session', JSON.stringify({ token: 'old-token', email: 'a@example.com' })]])
+    store = new Map([
+      ['expense-tracker.session', JSON.stringify({ token: 'old-token', email: 'a@example.com' })],
+    ])
     vi.stubGlobal('localStorage', {
       getItem: (key) => store.get(key) ?? null,
       setItem: (key, value) => store.set(key, value),
@@ -230,7 +232,10 @@ describe('401 handling', () => {
     const request = apiRequest('/expenses')
     authToken.value = 'fresh'
     pending.resolve(json({}, 401))
-    await expect(request).rejects.toMatchObject({ code: 'SESSION_EXPIRED', message: '登入已失效，請重新登入' })
+    await expect(request).rejects.toMatchObject({
+      code: 'SESSION_EXPIRED',
+      message: '登入已失效，請重新登入',
+    })
     // 新的登入不受舊請求影響
     expect(authToken.value).toBe('fresh')
   })

@@ -41,6 +41,11 @@ const popupOverflow = (page) =>
         .filter((value) => value > 1 && value < 2000),
     ),
   )
+// 薪資頁分段（新版才有）：沒有分段時什麼都不做，前後版本都能跑
+async function payrollView(page, name) {
+  const view = page.getByRole('tab', { name, exact: true })
+  if (await view.count()) await view.click()
+}
 const tab = (page, name) => page.locator('.van-tabbar-item', { hasText: name }).click()
 const toastGone = (page) =>
   page.locator('.van-toast').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
@@ -69,6 +74,7 @@ for (const target of targets) {
 
     if (target.name === 'before') {
       await tab(page, '薪資')
+      await payrollView(page, '本週')
       await page.getByRole('button', { name: '填滿本週' }).click()
       await page.waitForTimeout(500)
       // 基準版本若已有工作設定閘門，關掉彈窗再截首頁
@@ -133,6 +139,7 @@ async function guestSetupFlow(page, shot) {
   await tab(page, '薪資')
   await page.waitForTimeout(300)
   if (shot) await shot('payroll-not-configured')
+  await payrollView(page, '本週')
   await page.getByRole('button', { name: '填滿本週' }).click()
   await page.getByText('你還沒有設定薪資費率或預設班別').waitFor({ timeout: 5000 })
   result.gateShown = true
@@ -193,12 +200,21 @@ async function guestSetupFlow(page, shot) {
   result.weekRecords = await page.locator('.calendar-wrapper .record-work-day').count()
 
   // 7. 再按一次填滿本週：已有紀錄的日期不會被覆蓋
+  await payrollView(page, '本週')
   await page.getByRole('button', { name: '填滿本週' }).click()
   await page.getByText('沒有需要新增的班表').waitFor({ timeout: 5000 })
   result.noOverwrite = true
   await page.getByRole('button', { name: '關閉' }).click()
   await page.waitForTimeout(300)
   if (shot) {
+    await shot('payroll-week')
+    await payrollView(page, '班表')
+    await page.locator('.van-calendar__selected-day').first().click()
+    await page.waitForTimeout(500)
+    await shot('day-sheet')
+    await page.locator('.day-sheet__close').click()
+    await page.waitForTimeout(400)
+    await payrollView(page, '設定')
     await page.locator('.work-setup-card').scrollIntoViewIfNeeded()
     await shot('payroll-configured')
   }
@@ -337,6 +353,7 @@ async function payslipFlow(page) {
     result.taxBadge = await page.getByText('薪資單 YTD').first().isVisible()
     await shot('8-dashboard-tax')
     await tab(page, '薪資')
+    await payrollView(page, '設定')
     await page.locator('.work-setup-card').scrollIntoViewIfNeeded()
     await shot('9-payroll-setup-card')
     result.rateStatusShown = await page.getByText(/薪資單確認/).first().isVisible()

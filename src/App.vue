@@ -487,6 +487,16 @@ watch(authToken, async (token) => {
   }
 })
 const activeTab = ref('dashboard')
+// 薪資頁分成三段：班表（日曆）、本週（結算與明細）、設定（費率、班別、匯出）
+const PAYROLL_VIEWS = [
+  { id: 'schedule', label: '班表' },
+  { id: 'week', label: '本週' },
+  { id: 'settings', label: '設定' },
+]
+const payrollView = ref('schedule')
+// 點日曆日期時打開的當天面板
+const daySheetOpen = ref(false)
+const monthMenuOpen = ref(false)
 // 採買清單從「更多」進入，底部分頁仍亮在「更多」
 const tabbarActive = computed(() => (['shopping', 'admin'].includes(activeTab.value) ? 'more' : activeTab.value))
 
@@ -678,6 +688,20 @@ const onDateSelect = async (date) => {
   workDate.value = nextDate
   visibleMonth.value = `${year}-${month}`
   loadSelectedDate()
+  daySheetOpen.value = true
+}
+
+// 從當天面板打開其他表單時，先收起面板，不疊兩層彈窗
+function openFromDaySheet(open) {
+  daySheetOpen.value = false
+  open()
+}
+
+function saveDayFromSheet() {
+  const before = records.value
+  addTodayRecordToList()
+  // 有存進去就收起面板；被設定閘門擋下時也收起，讓閘門不疊在面板上
+  if (records.value !== before || workSetup.gate.value.show) daySheetOpen.value = false
 }
 
 // --- 填滿本週／本月：先檢查設定 → 預覽 → 使用者確認後才寫入 ---
@@ -1192,6 +1216,18 @@ async function saveVisaJourney(settings) {
   }
 }
 
+// 「⋯」選單：不常用或有風險的月份操作
+const monthMenuActions = computed(() => [
+  { name: '填滿本週', run: () => fillCurrentWeek() },
+  { name: '補登歷史班表', run: () => openHistoryWizard() },
+  {
+    name: '清除此月班表',
+    color: '#ee0a24',
+    disabled: displayedMonthRecords.value.length === 0,
+    run: () => clearCurrentMonth(),
+  },
+])
+
 function openHistoryWizard() {
   // 補登要依使用者自己的班別與排班；還沒設定就先完成工作設定
   if (!workSetup.requireSetup({ type: 'HISTORY_IMPORT', label: '補登歷史工作' })) return
@@ -1316,7 +1352,7 @@ const restoreSelectedDateShift = () => {
 }
 
 const openSelectedDateEditor = () => {
-  nextTick(() => workInputSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  daySheetOpen.value = true
 }
 
 // --- 本週總結加總：只計算目前選取日期所在的週（週一至週日）---
@@ -1449,7 +1485,7 @@ const editRecord = async (record) => {
   loadSelectedDate()
   scheduleSections.value = []
   expandedRecordId.value = ''
-  nextTick(() => workInputSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  daySheetOpen.value = true
 }
 
 const cancelEditingRecord = () => {
@@ -1595,7 +1631,21 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       <p>排班與薪資預估</p>
     </div>
 
-    <section class="work-setup-card" :class="{ 'work-setup-card--todo': !setupState.ready }" aria-labelledby="work-setup-title">
+    <div class="payroll-views" role="tablist" aria-label="薪資頁內容">
+      <button
+        v-for="view in PAYROLL_VIEWS"
+        :key="view.id"
+        type="button"
+        role="tab"
+        :aria-selected="payrollView === view.id"
+        :class="{ 'is-active': payrollView === view.id }"
+        @click="payrollView = view.id"
+      >
+        {{ view.label }}
+      </button>
+    </div>
+
+    <section v-if="payrollView === 'settings' || !setupState.ready" class="work-setup-card" :class="{ 'work-setup-card--todo': !setupState.ready }" aria-labelledby="work-setup-title">
       <div class="work-setup-card__head">
         <span class="work-setup-card__icon" aria-hidden="true">
           <van-icon :name="setupState.ready ? 'passed' : 'setting-o'" />
@@ -1637,16 +1687,15 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       </van-button>
     </section>
 
-    <div class="section calendar-section">
+    <div v-show="payrollView === 'schedule'" class="section calendar-section">
       <div class="calendar-intro">
         <p class="calendar-help">點日期可設休假、記禁休或編輯工時</p>
       </div>
       <div class="calendar-month-actions">
         <span>目前顯示 {{ visibleMonth }}</span>
-        <van-button size="small" plain type="primary" @click="fillCurrentMonth">填滿此月</van-button>
+        <van-button size="small" type="primary" icon="calendar-o" @click="fillCurrentMonth">填滿此月</van-button>
         <van-button size="small" plain type="warning" @click="batchLeaveOpen = true">請假區間</van-button>
-        <van-button size="small" plain type="primary" @click="openHistoryWizard">補登歷史</van-button>
-        <van-button size="small" plain type="danger" :disabled="displayedMonthRecords.length === 0" @click="clearCurrentMonth">清除此月班表</van-button>
+        <van-button size="small" plain icon="ellipsis" aria-label="更多班表操作" @click="monthMenuOpen = true" />
       </div>
       <div class="calendar-wrapper">
         <van-calendar
@@ -1662,36 +1711,8 @@ const markDesignatedWorkDate = ({ date, marked }) => {
           @panel-change="onCalendarPanelChange"
         />
       </div>
-      <div class="calendar-day-actions">
-        <div class="calendar-day-actions__heading">
-          <div>
-            <strong>{{ workDate }} <small>{{ getDayOfWeek(workDate) }}</small></strong>
-            <p v-if="selectedRecord?.shiftType === 'leave'">{{ getLeaveLabel(selectedRecord) }} · 無薪，不計工時與薪資</p>
-            <p v-else-if="selectedRecord">已排班 · {{ selectedRecord.startTime }}–{{ selectedRecord.endTime }}</p>
-            <p v-else>尚未加入班表</p>
-            <button v-for="notice in selectedNotices" :key="notice.id" type="button" class="calendar-day-actions__blackout" @click="openBlackoutEditor">
-              禁休公告{{ notice.title ? `：${notice.title}` : '' }} <span>查看</span>
-            </button>
-            <p v-if="selectedRecord?.source === 'HISTORICAL_USER_CONFIRMED'" class="calendar-day-actions__source">使用者補登</p>
-          </div>
-          <strong v-if="selectedRecord && selectedRecord.shiftType !== 'leave'" class="calendar-day-actions__pay">
-            {{ currencySymbol }}{{ formatDisplayMoney(selectedRecord.grossPay * currentExchangeRate) }}
-          </strong>
-        </div>
-        <div class="calendar-day-actions__buttons">
-          <van-button v-if="selectedRecord?.shiftType === 'leave'" block plain type="primary" @click="restoreSelectedDateShift">{{ selectedDateHasDefaultShift ? `恢復${selectedPlannedShift.name}` : '設定出勤時間' }}</van-button>
-          <van-button v-else block plain type="danger" @click="batchLeaveOpen = true">請假…</van-button>
-          <van-button v-if="selectedRecord?.replacedWork" block plain type="primary" @click="restoreReplacedWork">恢復原本班表 {{ selectedRecord.replacedWork.startTime }}–{{ selectedRecord.replacedWork.endTime }}</van-button>
-          <van-button v-if="canToggleCleaning" block plain type="success" @click="toggleSelectedDateCleaning">{{ selectedDayIsCleaning ? '取消清潔日' : '設為清潔日' }}</van-button>
-          <van-button block plain type="default" @click="openSelectedDateEditor">{{ selectedRecord ? '編輯當天工時' : '新增當天班表' }}</van-button>
-          <van-button block plain type="warning" class="calendar-day-actions__blackout-button" @click="openBlackoutEditor">
-            {{ selectedNotices.length ? '查看禁休公告' : '新增禁休公告' }}
-          </van-button>
-        </div>
-        <p v-if="selectedRecord?.shiftType === 'leave'" class="calendar-day-actions__hint">{{ selectedDateHasDefaultShift ? `恢復為 ${selectedPlannedShift.startTime}–${selectedPlannedShift.endTime}` : '請設定上下班時間' }}</p>
-        <p class="calendar-day-actions__hint">僅供提醒，不影響班表與薪資。</p>
-      </div>
     </div>
+
 
     <BlackoutNoticeSheet
       v-model:show="showBlackoutEditor"
@@ -1702,101 +1723,209 @@ const markDesignatedWorkDate = ({ date, marked }) => {
     />
     <BatchLeaveSheet v-model:show="batchLeaveOpen" :records="records" :default-date="workDate" @apply="applyLeave" />
 
-    <div ref="workInputSection" class="section">
-      <h2>出勤與時間</h2>
-      
-      <van-cell-group inset style="margin-bottom: 12px;">
-        <div style="padding: 14px 16px;">
-          <div style="font-size: 14px; color: #646566; margin-bottom: 12px; font-weight: bold;">當日出勤狀態：</div>
-          <van-radio-group v-model="shiftType" direction="horizontal">
-            <van-radio name="normal">正常出勤</van-radio>
-            <van-radio name="leave">請假休假</van-radio>
-          </van-radio-group>
-        </div>
-      </van-cell-group>
-
-      <van-cell-group inset>
-        <van-cell title="當前選取日期" :value="`${workDate} (${getDayOfWeek(workDate)})`" size="large" title-style="font-weight: bold;" />
-        <van-cell v-if="selectedHolidayLabel" title="🔥 澳洲國定假日" :value="selectedHolidayLabel" value-class="holiday-text" />
-        <van-cell v-if="!selectedRecord && selectedPlannedShift" title="依你的排班" :value="`${selectedPlannedShift.name} ${selectedPlannedShift.startTime}–${selectedPlannedShift.endTime}`" />
-        
-<!-- 找到這個區塊，在 endTime 下方加入開關 -->
-        <template v-if="shiftType !== 'leave'">
-          <div v-if="dayShiftTemplates.length" class="day-shift">
-            <span class="day-shift__label">班別</span>
-            <div class="day-shift__chips" role="group" aria-label="套用班別時間">
-              <button
-                v-for="template in dayShiftTemplates"
-                :key="template.id"
-                type="button"
-                class="day-shift__chip"
-                :class="{ 'is-selected': selectedShiftTemplate?.id === template.id }"
-                @click="applyShiftTemplate(template)"
-              >
-                {{ template.name }}
-                <small>{{ getTemplateTimes(template, isCleaningDay).startTime }}</small>
+    <van-action-sheet
+      v-model:show="monthMenuOpen"
+      :actions="monthMenuActions"
+      cancel-text="取消"
+      close-on-click-action
+      @select="(action) => action.run()"
+    />
+    <!-- 當天面板：點日曆上的日期就從底部滑出，班別、時間、請假、預估都在這裡完成 -->
+    <van-popup
+      v-model:show="daySheetOpen"
+      position="bottom"
+      round
+      safe-area-inset-bottom
+      teleport="body"
+      class="day-sheet"
+    >
+      <div class="day-sheet__body">
+          <div class="calendar-day-actions">
+            <div class="calendar-day-actions__heading">
+              <div>
+                <strong>{{ workDate }} <small>{{ getDayOfWeek(workDate) }}</small></strong>
+                <p v-if="selectedRecord?.shiftType === 'leave'">{{ getLeaveLabel(selectedRecord) }} · 無薪，不計工時與薪資</p>
+                <p v-else-if="selectedRecord">已排班 · {{ selectedRecord.startTime }}–{{ selectedRecord.endTime }}</p>
+                <p v-else>尚未加入班表</p>
+                <button v-for="notice in selectedNotices" :key="notice.id" type="button" class="calendar-day-actions__blackout" @click="openFromDaySheet(openBlackoutEditor)">
+                  禁休公告{{ notice.title ? `：${notice.title}` : '' }} <span>查看</span>
+                </button>
+                <p v-if="selectedRecord?.source === 'HISTORICAL_USER_CONFIRMED'" class="calendar-day-actions__source">使用者補登</p>
+              </div>
+              <strong v-if="selectedRecord && selectedRecord.shiftType !== 'leave'" class="calendar-day-actions__pay">
+                {{ currencySymbol }}{{ formatDisplayMoney(selectedRecord.grossPay * currentExchangeRate) }}
+              </strong>
+              <button type="button" class="day-sheet__close" aria-label="關閉" @click="daySheetOpen = false">
+                <van-icon name="cross" />
               </button>
             </div>
-          </div>
-          <van-cell center title="清潔日" :label="isCleaningDay ? '已換成清潔日時間' : '這天有清潔再打開'">
-            <template #right-icon>
-              <van-switch :model-value="isCleaningDay" size="20px" @update:model-value="setCleaningDay" />
-            </template>
-          </van-cell>
-          <TimeTextField
-            :key="`start-${timeFieldKey}`"
-            v-model="startTime"
-            label="預估上班時間"
-            @update:invalid="timeInputInvalid.start = $event"
-            @open-picker="showStartTimePicker = true"
-          />
-          <div v-if="startTime" class="time-nudge" role="group" aria-label="上班時間微調">
-            <button v-for="step in TIME_NUDGES" :key="step" type="button" @click="nudgeTime('start', step)">
-              {{ step > 0 ? `+${step} 分` : `−${-step} 分` }}
-            </button>
-          </div>
-          <TimeTextField
-            :key="`end-${timeFieldKey}`"
-            v-model="endTime"
-            label="預估下班時間"
-            @update:invalid="timeInputInvalid.end = $event"
-            @open-picker="showEndTimePicker = true"
-          />
-          <div v-if="endTime" class="time-nudge" role="group" aria-label="下班時間微調">
-            <button v-for="step in TIME_NUDGES" :key="step" type="button" @click="nudgeTime('end', step)">
-              {{ step > 0 ? `+${step} 分` : `−${-step} 分` }}
-            </button>
-          </div>
-          <!-- 這裡放入新的換裝時間開關 -->
-          <van-cell center title="提早 5 分鐘換裝打卡">
-            <template #right-icon>
-              <van-switch v-model="enablePrepTime" size="20px" />
-            </template>
-          </van-cell>
-          <van-cell center title="這天 Smoko 次數" :label="smokoCountOverride === null ? '依工作設定' : '只套用這一天，不改工作設定'">
-            <template #right-icon>
-              <van-stepper :model-value="displayedSmokoCount" :min="0" :max="3" integer theme="round" button-size="28px" disable-input @change="(val) => { if (Number(val) !== displayedSmokoCount) smokoCountOverride = Number(val) }" />
-            </template>
-          </van-cell>
-        </template>
-
-        <van-cell v-else>
-          <template #title>
-            <div style="color: #ee0a24; text-align: center; font-size: 14px; padding: 10px 0; font-weight: bold;">
-              休假，這天不計薪。
+            <div class="calendar-day-actions__buttons">
+              <van-button v-if="selectedRecord?.shiftType === 'leave'" block plain type="primary" @click="restoreSelectedDateShift">{{ selectedDateHasDefaultShift ? `恢復${selectedPlannedShift.name}` : '設定出勤時間' }}</van-button>
+              <van-button v-else block plain type="danger" @click="openFromDaySheet(() => (batchLeaveOpen = true))">請假…</van-button>
+              <van-button v-if="selectedRecord?.replacedWork" block plain type="primary" @click="restoreReplacedWork">恢復原本班表 {{ selectedRecord.replacedWork.startTime }}–{{ selectedRecord.replacedWork.endTime }}</van-button>
+              <van-button v-if="canToggleCleaning" block plain type="success" @click="toggleSelectedDateCleaning">{{ selectedDayIsCleaning ? '取消清潔日' : '設為清潔日' }}</van-button>
+              <van-button block plain type="warning" class="calendar-day-actions__blackout-button" @click="openFromDaySheet(openBlackoutEditor)">
+                {{ selectedNotices.length ? '查看禁休公告' : '新增禁休公告' }}
+              </van-button>
             </div>
-          </template>
-        </van-cell>
+            <p v-if="selectedRecord?.shiftType === 'leave'" class="calendar-day-actions__hint">{{ selectedDateHasDefaultShift ? `恢復為 ${selectedPlannedShift.startTime}–${selectedPlannedShift.endTime}` : '請設定上下班時間' }}</p>
+            <p class="calendar-day-actions__hint">僅供提醒，不影響班表與薪資。</p>
+          </div>
+        <div ref="workInputSection" class="section">
+          <h2>出勤與時間</h2>
+      
+          <van-cell-group inset style="margin-bottom: 12px;">
+            <div style="padding: 14px 16px;">
+              <div style="font-size: 14px; color: #646566; margin-bottom: 12px; font-weight: bold;">當日出勤狀態：</div>
+              <van-radio-group v-model="shiftType" direction="horizontal">
+                <van-radio name="normal">正常出勤</van-radio>
+                <van-radio name="leave">請假休假</van-radio>
+              </van-radio-group>
+            </div>
+          </van-cell-group>
 
-        <van-field
-          v-model="remark"
-          label="自訂備註說明"
-          placeholder="選填（如：今天提早下班、感冒等）"
-          input-align="right"
-          clearable
-        />
-      </van-cell-group>
-    </div>
+          <van-cell-group inset>
+            <van-cell title="當前選取日期" :value="`${workDate} (${getDayOfWeek(workDate)})`" size="large" title-style="font-weight: bold;" />
+            <van-cell v-if="selectedHolidayLabel" title="🔥 澳洲國定假日" :value="selectedHolidayLabel" value-class="holiday-text" />
+            <van-cell v-if="!selectedRecord && selectedPlannedShift" title="依你的排班" :value="`${selectedPlannedShift.name} ${selectedPlannedShift.startTime}–${selectedPlannedShift.endTime}`" />
+        
+    <!-- 找到這個區塊，在 endTime 下方加入開關 -->
+            <template v-if="shiftType !== 'leave'">
+              <div v-if="dayShiftTemplates.length" class="day-shift">
+                <span class="day-shift__label">班別</span>
+                <div class="day-shift__chips" role="group" aria-label="套用班別時間">
+                  <button
+                    v-for="template in dayShiftTemplates"
+                    :key="template.id"
+                    type="button"
+                    class="day-shift__chip"
+                    :class="{ 'is-selected': selectedShiftTemplate?.id === template.id }"
+                    @click="applyShiftTemplate(template)"
+                  >
+                    {{ template.name }}
+                    <small>{{ getTemplateTimes(template, isCleaningDay).startTime }}</small>
+                  </button>
+                </div>
+              </div>
+              <van-cell center title="清潔日" :label="isCleaningDay ? '已換成清潔日時間' : '這天有清潔再打開'">
+                <template #right-icon>
+                  <van-switch :model-value="isCleaningDay" size="20px" @update:model-value="setCleaningDay" />
+                </template>
+              </van-cell>
+              <TimeTextField
+                :key="`start-${timeFieldKey}`"
+                v-model="startTime"
+                label="預估上班時間"
+                @update:invalid="timeInputInvalid.start = $event"
+                @open-picker="showStartTimePicker = true"
+              />
+              <div v-if="startTime" class="time-nudge" role="group" aria-label="上班時間微調">
+                <button v-for="step in TIME_NUDGES" :key="step" type="button" @click="nudgeTime('start', step)">
+                  {{ step > 0 ? `+${step} 分` : `−${-step} 分` }}
+                </button>
+              </div>
+              <TimeTextField
+                :key="`end-${timeFieldKey}`"
+                v-model="endTime"
+                label="預估下班時間"
+                @update:invalid="timeInputInvalid.end = $event"
+                @open-picker="showEndTimePicker = true"
+              />
+              <div v-if="endTime" class="time-nudge" role="group" aria-label="下班時間微調">
+                <button v-for="step in TIME_NUDGES" :key="step" type="button" @click="nudgeTime('end', step)">
+                  {{ step > 0 ? `+${step} 分` : `−${-step} 分` }}
+                </button>
+              </div>
+              <!-- 這裡放入新的換裝時間開關 -->
+              <van-cell center title="提早 5 分鐘換裝打卡">
+                <template #right-icon>
+                  <van-switch v-model="enablePrepTime" size="20px" />
+                </template>
+              </van-cell>
+              <van-cell center title="這天 Smoko 次數" :label="smokoCountOverride === null ? '依工作設定' : '只套用這一天，不改工作設定'">
+                <template #right-icon>
+                  <van-stepper :model-value="displayedSmokoCount" :min="0" :max="3" integer theme="round" button-size="28px" disable-input @change="(val) => { if (Number(val) !== displayedSmokoCount) smokoCountOverride = Number(val) }" />
+                </template>
+              </van-cell>
+            </template>
+
+            <van-cell v-else>
+              <template #title>
+                <div style="color: #ee0a24; text-align: center; font-size: 14px; padding: 10px 0; font-weight: bold;">
+                  休假，這天不計薪。
+                </div>
+              </template>
+            </van-cell>
+
+            <van-field
+              v-model="remark"
+              label="自訂備註說明"
+              placeholder="選填（如：今天提早下班、感冒等）"
+              input-align="right"
+              clearable
+            />
+          </van-cell-group>
+        </div>
+        <div v-if="shiftType !== 'leave' && !setupState.payReady" class="section">
+          <h2>當日薪資預估</h2>
+          <div class="section-card setup-needed">
+            <van-icon name="balance-o" aria-hidden="true" />
+            <div>
+              <strong>還沒有設定薪資費率</strong>
+              <p>設定時薪後顯示預估。</p>
+            </div>
+            <van-button size="small" type="primary" @click="openWorkSetup(1)">設定</van-button>
+          </div>
+        </div>
+        <div class="section" v-else-if="workSummary && shiftType !== 'leave'">
+          <h2>當日薪資預估 ({{ currentCurrency }})</h2>
+          <p v-if="todayRateFlags.provisional.length" class="rate-flag">
+            <van-icon name="info-o" aria-hidden="true" />含未確認費率，僅供參考（{{ todayRateFlags.provisional.join('、') }}）
+          </p>
+          <p v-if="todayRateFlags.excluded.length" class="rate-flag rate-flag--warn">
+            <van-icon name="warning-o" aria-hidden="true" />未含 {{ todayRateFlags.excluded.join('、') }}（費率未確認）
+          </p>
+          <van-cell-group inset style="margin-bottom: 12px;">
+            <van-cell title="實際計薪總工時" :value="`${formatHours(workSummary.paidMinutes)} 小時`" value-class="highlight-blue" />
+            <van-cell title="夜班津貼判定" :value="isNightShift ? '有符合' : '無符合'" />
+            <van-cell title="Smoko 次數" :value="`${workSummary.smokoCount} 次${workSetup.profile.value.smoko.paid ? '（照常計薪）' : ''}`" />
+          </van-cell-group>
+          <van-cell-group inset>
+            <van-cell title="當日總薪資 (稅前)" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.grossPay * currentExchangeRate)}`" class="gross-cell" />
+          </van-cell-group>
+          <van-collapse v-model="payBreakdownOpen" class="advanced-collapse">
+            <van-collapse-item name="breakdown" title="看加給明細">
+              <van-cell-group :border="false">
+                <van-cell title="Base Pay (基本)" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.basePay * currentExchangeRate)}`" />
+                <van-cell title="CASUAL LOADING 25%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.casualPay * currentExchangeRate)}`" />
+                <van-cell v-if="payBreakdown.shiftPay > 0" title="SHIFT 夜班 25%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.shiftPay * currentExchangeRate)}`" />
+                <van-cell v-if="payBreakdown.holidayPenaltyPay > 0" title="P/HOL 150%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.holidayPenaltyPay * currentExchangeRate)}`" />
+                <van-cell title="SAT ORD 50%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.satOrdPay * currentExchangeRate)}`" />
+                <van-cell title="T/Half (1.5倍)" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.timeHalfPay * currentExchangeRate)}`" />
+                <van-cell title="Double (2倍)" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.doublePay * currentExchangeRate)}`" />
+                <van-cell title="SUN ORD 75%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.sunOrdPay * currentExchangeRate)}`" />
+              </van-cell-group>
+              <dl class="term-glossary">
+                <div><dt>Casual 25%</dt><dd>臨時工加給（沒有年假、病假的補償）</dd></div>
+                <div><dt>夜班 25%</dt><dd>符合夜班條件的工時加給</dd></div>
+                <div><dt>SAT ORD 50%</dt><dd>週六一般時段加給</dd></div>
+                <div><dt>T/Half · Double</dt><dd>1.5 倍、2 倍時薪，依你的週六規則套用</dd></div>
+                <div><dt>SUN ORD 75%</dt><dd>週日加給</dd></div>
+                <div><dt>P/HOL 150%</dt><dd>國定假日加給（NSW 假日）</dd></div>
+                <div><dt>Smoko</dt><dd>班中的帶薪休息時間</dd></div>
+              </dl>
+              <p class="section-note section-note--compact">以雇主薪資單為準。</p>
+            </van-collapse-item>
+          </van-collapse>
+        </div>
+      </div>
+      <div class="day-sheet__footer">
+        <van-button v-if="isEditingRecord" plain type="default" @click="cancelEditingRecord">還原</van-button>
+        <van-button type="primary" block @click="saveDayFromSheet">
+          {{ shiftType === 'leave' ? '儲存休假' : isEditingRecord ? '儲存修改' : '儲存這天' }}
+        </van-button>
+      </div>
+    </van-popup>
 
     <van-popup v-model:show="showStartTimePicker" position="bottom" round>
       <van-time-picker title="預估上班時間" :model-value="(startTime || '06:00').split(':')" :filter="startPickerFilter" @confirm="onStartTimeConfirm" @cancel="showStartTimePicker = false" />
@@ -1817,120 +1946,48 @@ const markDesignatedWorkDate = ({ date, marked }) => {
     />
 
     <div class="workflow">
-      
-      <div class="section">
-        <h2>儲存班表</h2>
-        <div class="section-card">
-          <p class="section-note">修改時間或備註後按儲存。</p>
-          <div class="weekly-actions">
-            <!-- 單日儲存按鈕 -->
-            <van-button block type="primary" :icon="isEditingRecord ? 'edit' : 'plus'" @click="addTodayRecordToList">
-              {{ isEditingRecord ? '儲存修改' : '加入本週班表' }}
-            </van-button>
-            
-            <van-button block plain type="primary" @click="fillCurrentWeek">填滿本週</van-button>
-            
-            <van-button v-if="isEditingRecord" block plain type="default" @click="cancelEditingRecord">還原未儲存變更</van-button>
-          </div>
-        </div>
+      <div v-show="payrollView === 'week'" class="week-toolbar">
+        <van-button size="small" plain type="primary" icon="calendar-o" @click="fillCurrentWeek">填滿本週</van-button>
       </div>
-
-      <div v-if="shiftType !== 'leave' && !setupState.payReady" class="section">
-        <h2>當日薪資預估</h2>
-        <div class="section-card setup-needed">
-          <van-icon name="balance-o" aria-hidden="true" />
-          <div>
-            <strong>還沒有設定薪資費率</strong>
-            <p>設定時薪後顯示預估。</p>
-          </div>
-          <van-button size="small" type="primary" @click="openWorkSetup(1)">設定</van-button>
-        </div>
-      </div>
-      <div class="section" v-else-if="workSummary && shiftType !== 'leave'">
-        <h2>當日薪資預估 ({{ currentCurrency }})</h2>
-        <p v-if="todayRateFlags.provisional.length" class="rate-flag">
-          <van-icon name="info-o" aria-hidden="true" />含未確認費率，僅供參考（{{ todayRateFlags.provisional.join('、') }}）
+      <div v-show="payrollView === 'week'" class="section">
+        <h2>本週結算預估<span v-if="weeklyRangeLabel" class="weekly-summary__range">（{{ weeklyRangeLabel }}）</span></h2>
+        <p v-if="weeklyPaySummary.rateFlags.provisional.length" class="rate-flag">
+          <van-icon name="info-o" aria-hidden="true" />含未確認費率，僅供參考
         </p>
-        <p v-if="todayRateFlags.excluded.length" class="rate-flag rate-flag--warn">
-          <van-icon name="warning-o" aria-hidden="true" />未含 {{ todayRateFlags.excluded.join('、') }}（費率未確認）
+        <p v-if="weeklyPaySummary.rateFlags.excluded.length" class="rate-flag rate-flag--warn">
+          <van-icon name="warning-o" aria-hidden="true" />未含 {{ weeklyPaySummary.rateFlags.excluded.join('、') }}（費率未確認）
         </p>
-        <van-cell-group inset style="margin-bottom: 12px;">
-          <van-cell title="實際計薪總工時" :value="`${formatHours(workSummary.paidMinutes)} 小時`" value-class="highlight-blue" />
-          <van-cell title="夜班津貼判定" :value="isNightShift ? '有符合' : '無符合'" />
-          <van-cell title="Smoko 次數" :value="`${workSummary.smokoCount} 次${workSetup.profile.value.smoko.paid ? '（照常計薪）' : ''}`" />
-        </van-cell-group>
-        <van-cell-group inset>
-          <van-cell title="當日總薪資 (稅前)" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.grossPay * currentExchangeRate)}`" class="gross-cell" />
-        </van-cell-group>
-        <van-collapse v-model="payBreakdownOpen" class="advanced-collapse">
-          <van-collapse-item name="breakdown" title="看加給明細">
-            <van-cell-group :border="false">
-              <van-cell title="Base Pay (基本)" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.basePay * currentExchangeRate)}`" />
-              <van-cell title="CASUAL LOADING 25%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.casualPay * currentExchangeRate)}`" />
-              <van-cell v-if="payBreakdown.shiftPay > 0" title="SHIFT 夜班 25%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.shiftPay * currentExchangeRate)}`" />
-              <van-cell v-if="payBreakdown.holidayPenaltyPay > 0" title="P/HOL 150%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.holidayPenaltyPay * currentExchangeRate)}`" />
-              <van-cell title="SAT ORD 50%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.satOrdPay * currentExchangeRate)}`" />
-              <van-cell title="T/Half (1.5倍)" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.timeHalfPay * currentExchangeRate)}`" />
-              <van-cell title="Double (2倍)" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.doublePay * currentExchangeRate)}`" />
-              <van-cell title="SUN ORD 75%" :value="`${currencySymbol}${formatDisplayMoney(payBreakdown.sunOrdPay * currentExchangeRate)}`" />
-            </van-cell-group>
-            <dl class="term-glossary">
-              <div><dt>Casual 25%</dt><dd>臨時工加給（沒有年假、病假的補償）</dd></div>
-              <div><dt>夜班 25%</dt><dd>符合夜班條件的工時加給</dd></div>
-              <div><dt>SAT ORD 50%</dt><dd>週六一般時段加給</dd></div>
-              <div><dt>T/Half · Double</dt><dd>1.5 倍、2 倍時薪，依你的週六規則套用</dd></div>
-              <div><dt>SUN ORD 75%</dt><dd>週日加給</dd></div>
-              <div><dt>P/HOL 150%</dt><dd>國定假日加給（NSW 假日）</dd></div>
-              <div><dt>Smoko</dt><dd>班中的帶薪休息時間</dd></div>
-            </dl>
-            <p class="section-note section-note--compact">以雇主薪資單為準。</p>
-          </van-collapse-item>
-        </van-collapse>
-      </div>
-
-      <div class="section">
-        <h2>我的費率 · {{ currentCurrency }}{{ currentCurrency === 'AUD' ? '' : ' 參考換算' }}</h2>
-        <button type="button" class="payslip-entry" @click="payslipImportOpen = true">
-          <span class="payslip-entry__icon" aria-hidden="true"><van-icon name="description-o" /></span>
-          <span class="payslip-entry__text">
-            <strong>{{ workSetup.latestPayslip.value ? '上傳新的薪資單' : '從薪資單匯入費率' }}</strong>
-            <small>自動讀出時薪與加給</small>
-          </span>
-          <van-icon name="arrow" aria-hidden="true" />
-        </button>
-        <template v-if="setupState.payReady">
-          <p v-if="!hasCurrentExchangeRate" class="section-note">尚未取得 {{ currentCurrency }} 匯率，暫不顯示參考換算。</p>
-          <div v-else class="rate-preview section-card">
-            <div v-for="rate in ratePreviewItems" :key="rate.label" class="rate-preview__row">
-              <span>
-                {{ rate.label }}
-                <small v-if="rateStatus[rate.key] === 'PROVISIONAL'" class="rate-preview__status rate-preview__status--provisional">暫估</small>
-                <small v-else-if="rateStatus[rate.key] === 'EXCLUDED'" class="rate-preview__status rate-preview__status--excluded">{{ isOvertimeKey(rate.key) ? '未含加成' : '未計入' }}</small>
-              </span>
-              <strong>{{ hidesRate(rate.key) ? '—' : `${currencySymbol}${formatDisplayMoney(rate.value * currentExchangeRate)} ${currentCurrency}${rate.unit}` }}</strong>
+        <div class="section-card weekly-summary-card">
+          <div class="weekly-summary__row">
+            <span class="weekly-summary__label">本週班表薪資小計 ({{ currentCurrency }})</span>
+            <span class="weekly-summary__value">{{ currencySymbol }}{{ formatDisplayMoney(weeklySubtotal * currentExchangeRate) }}</span>
+          </div>
+          <div class="weekly-summary__row">
+            <span class="weekly-summary__label">PPE 工具補助津貼 ({{ currentCurrency }})</span>
+            <span class="weekly-summary__value">{{ currencySymbol }}{{ formatDisplayMoney(weeklyPPE * currentExchangeRate) }}</span>
+          </div>
+          <div class="weekly-summary__row" style="margin-top: 8px; border-top: 1px dashed #ebedf0; padding-top: 8px;">
+            <span class="weekly-summary__label" style="font-size: 13px; color: #646566;">本週預估總薪資（稅前）({{ currentCurrency }})</span>
+            <span class="weekly-summary__value" style="font-size: 14px; color: #646566; font-weight: 500;">{{ currencySymbol }}{{ formatDisplayMoney(weeklyTotal * currentExchangeRate) }}</span>
+          </div>
+          <div class="weekly-summary__row weekly-summary__row--tax" style="margin-bottom: 8px;">
+            <span class="weekly-summary__label">預估預扣 {{ weeklyTaxRateLabel }}{{ workSetup.profile.value.taxRateSource?.type === 'PAYSLIP_PERIOD' ? '（依最近一期實際比例）' : '' }} ({{ currentCurrency }})</span>
+            <span class="weekly-summary__value weekly-summary__value--tax">-{{ currencySymbol }}{{ formatDisplayMoney(weeklyTaxEstimate * currentExchangeRate) }}</span>
+          </div>
+          <div class="weekly-summary__total weekly-summary__total--net">
+            <div class="weekly-summary__total-label">本週實領預估（稅後淨所得）</div>
+            <div class="weekly-summary__total-value weekly-summary__total-value--net">
+              <span style="margin-right: 4px;">{{ currencyFlag }}</span>
+              {{ currencySymbol }}{{ formatDisplayMoney(convertedNetTotal) }}
+              <span style="font-size: 14px; font-weight: normal; color: #15803d; margin-left: 2px;">{{ currentCurrency }}</span>
+            </div>
+            <div v-if="currentCurrency !== 'AUD'" style="font-size: 12px; color: #15803d; margin-top: 6px; font-weight: normal; text-align: right; opacity: 0.8;">
+              匯率即時參考: 1 AUD = {{ exchangeRates[currentCurrency] }} {{ currentCurrency }}
             </div>
           </div>
-          <van-collapse v-model="advancedRatesOpen" class="advanced-collapse">
-            <van-collapse-item name="rates" title="費率來源與說明">
-              <van-cell-group :border="false">
-                <van-cell v-for="rate in ratePreviewItems.slice(1, 7)" :key="rate.key" :title="rate.label" :value="hidesRate(rate.key) ? '—' : formatRate(rate.value)" :label="rateSourceLabel(rate.key)" />
-              </van-cell-group>
-              <p class="section-note section-note--compact">未確認的加給要在工作設定同意暫估才會計入。修改費率不會改到已存的班表。</p>
-              <van-button size="small" plain type="primary" class="rate-reset-btn" @click="openWorkSetup(1, { manual: true })">手動修改費率</van-button>
-            </van-collapse-item>
-          </van-collapse>
-        </template>
-        <div v-else class="section-card setup-needed">
-          <van-icon name="info-o" aria-hidden="true" />
-          <div>
-            <strong>尚未設定費率</strong>
-            <p>上傳 Payslip 或手動輸入。</p>
-          </div>
-          <van-button size="small" type="primary" @click="openWorkSetup(1, { manual: true })">手動設定</van-button>
         </div>
       </div>
-
-      <div class="section">
+      <div v-show="payrollView === 'week'" class="section">
         <h2>班表明細</h2>
         <div class="schedule-month-nav" aria-label="班表月份">
           <button type="button" aria-label="班表上月" @click="moveScheduleMonth(-1)"><van-icon name="arrow-left" /></button>
@@ -1976,48 +2033,48 @@ const markDesignatedWorkDate = ({ date, marked }) => {
           </van-collapse-item>
         </van-collapse>
       </div>
-
-      <div class="section">
-        <h2>本週結算預估<span v-if="weeklyRangeLabel" class="weekly-summary__range">（{{ weeklyRangeLabel }}）</span></h2>
-        <p v-if="weeklyPaySummary.rateFlags.provisional.length" class="rate-flag">
-          <van-icon name="info-o" aria-hidden="true" />含未確認費率，僅供參考
-        </p>
-        <p v-if="weeklyPaySummary.rateFlags.excluded.length" class="rate-flag rate-flag--warn">
-          <van-icon name="warning-o" aria-hidden="true" />未含 {{ weeklyPaySummary.rateFlags.excluded.join('、') }}（費率未確認）
-        </p>
-        <div class="section-card weekly-summary-card">
-          <div class="weekly-summary__row">
-            <span class="weekly-summary__label">本週班表薪資小計 ({{ currentCurrency }})</span>
-            <span class="weekly-summary__value">{{ currencySymbol }}{{ formatDisplayMoney(weeklySubtotal * currentExchangeRate) }}</span>
-          </div>
-          <div class="weekly-summary__row">
-            <span class="weekly-summary__label">PPE 工具補助津貼 ({{ currentCurrency }})</span>
-            <span class="weekly-summary__value">{{ currencySymbol }}{{ formatDisplayMoney(weeklyPPE * currentExchangeRate) }}</span>
-          </div>
-          <div class="weekly-summary__row" style="margin-top: 8px; border-top: 1px dashed #ebedf0; padding-top: 8px;">
-            <span class="weekly-summary__label" style="font-size: 13px; color: #646566;">本週預估總薪資（稅前）({{ currentCurrency }})</span>
-            <span class="weekly-summary__value" style="font-size: 14px; color: #646566; font-weight: 500;">{{ currencySymbol }}{{ formatDisplayMoney(weeklyTotal * currentExchangeRate) }}</span>
-          </div>
-          <div class="weekly-summary__row weekly-summary__row--tax" style="margin-bottom: 8px;">
-            <span class="weekly-summary__label">預估預扣 {{ weeklyTaxRateLabel }}{{ workSetup.profile.value.taxRateSource?.type === 'PAYSLIP_PERIOD' ? '（依最近一期實際比例）' : '' }} ({{ currentCurrency }})</span>
-            <span class="weekly-summary__value weekly-summary__value--tax">-{{ currencySymbol }}{{ formatDisplayMoney(weeklyTaxEstimate * currentExchangeRate) }}</span>
-          </div>
-          <div class="weekly-summary__total weekly-summary__total--net">
-            <div class="weekly-summary__total-label">本週實領預估（稅後淨所得）</div>
-            <div class="weekly-summary__total-value weekly-summary__total-value--net">
-              <span style="margin-right: 4px;">{{ currencyFlag }}</span>
-              {{ currencySymbol }}{{ formatDisplayMoney(convertedNetTotal) }}
-              <span style="font-size: 14px; font-weight: normal; color: #15803d; margin-left: 2px;">{{ currentCurrency }}</span>
-            </div>
-            <div v-if="currentCurrency !== 'AUD'" style="font-size: 12px; color: #15803d; margin-top: 6px; font-weight: normal; text-align: right; opacity: 0.8;">
-              匯率即時參考: 1 AUD = {{ exchangeRates[currentCurrency] }} {{ currentCurrency }}
+      <div v-show="payrollView === 'settings'" class="section">
+        <h2>我的費率 · {{ currentCurrency }}{{ currentCurrency === 'AUD' ? '' : ' 參考換算' }}</h2>
+        <button type="button" class="payslip-entry" @click="payslipImportOpen = true">
+          <span class="payslip-entry__icon" aria-hidden="true"><van-icon name="description-o" /></span>
+          <span class="payslip-entry__text">
+            <strong>{{ workSetup.latestPayslip.value ? '上傳新的薪資單' : '從薪資單匯入費率' }}</strong>
+            <small>自動讀出時薪與加給</small>
+          </span>
+          <van-icon name="arrow" aria-hidden="true" />
+        </button>
+        <template v-if="setupState.payReady">
+          <p v-if="!hasCurrentExchangeRate" class="section-note">尚未取得 {{ currentCurrency }} 匯率，暫不顯示參考換算。</p>
+          <div v-else class="rate-preview section-card">
+            <div v-for="rate in ratePreviewItems" :key="rate.label" class="rate-preview__row">
+              <span>
+                {{ rate.label }}
+                <small v-if="rateStatus[rate.key] === 'PROVISIONAL'" class="rate-preview__status rate-preview__status--provisional">暫估</small>
+                <small v-else-if="rateStatus[rate.key] === 'EXCLUDED'" class="rate-preview__status rate-preview__status--excluded">{{ isOvertimeKey(rate.key) ? '未含加成' : '未計入' }}</small>
+              </span>
+              <strong>{{ hidesRate(rate.key) ? '—' : `${currencySymbol}${formatDisplayMoney(rate.value * currentExchangeRate)} ${currentCurrency}${rate.unit}` }}</strong>
             </div>
           </div>
+          <van-collapse v-model="advancedRatesOpen" class="advanced-collapse">
+            <van-collapse-item name="rates" title="費率來源與說明">
+              <van-cell-group :border="false">
+                <van-cell v-for="rate in ratePreviewItems.slice(1, 7)" :key="rate.key" :title="rate.label" :value="hidesRate(rate.key) ? '—' : formatRate(rate.value)" :label="rateSourceLabel(rate.key)" />
+              </van-cell-group>
+              <p class="section-note section-note--compact">未確認的加給要在工作設定同意暫估才會計入。修改費率不會改到已存的班表。</p>
+              <van-button size="small" plain type="primary" class="rate-reset-btn" @click="openWorkSetup(1, { manual: true })">手動修改費率</van-button>
+            </van-collapse-item>
+          </van-collapse>
+        </template>
+        <div v-else class="section-card setup-needed">
+          <van-icon name="info-o" aria-hidden="true" />
+          <div>
+            <strong>尚未設定費率</strong>
+            <p>上傳 Payslip 或手動輸入。</p>
+          </div>
+          <van-button size="small" type="primary" @click="openWorkSetup(1, { manual: true })">手動設定</van-button>
         </div>
       </div>
-
-
-      <div class="section">
+      <div v-show="payrollView === 'settings'" class="section">
         <h2>資料管理</h2>
         <van-collapse v-model="dataManagementSections" class="data-management-collapse">
           <van-collapse-item name="data-management" title="打開 匯出備份操作區">
@@ -2030,7 +2087,6 @@ const markDesignatedWorkDate = ({ date, marked }) => {
           </van-collapse-item>
         </van-collapse>
       </div>
-
     </div>
     <!-- 首頁與薪資頁共用；放到 body，在首頁也能打開 -->
     <van-popup v-model:show="showCurrencyPicker" position="bottom" round teleport="body">
@@ -2228,6 +2284,19 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 .term-glossary dd { margin: 0; color: #4b5b6b; font-size: 12px; line-height: 1.45; }
 .sub-page-back { max-width: 820px; margin: 8px auto -4px; padding: 0 max(var(--page-inset), env(safe-area-inset-left, 0px)); }
 .sub-page-back button { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 6px 10px; border: 1px solid var(--color-border); border-radius: 11px; background: #fff; color: #166dd1; font: inherit; font-size: 13px; font-weight: 700; }
+/* 薪資頁分段 */
+.payroll-views { position: sticky; top: 0; z-index: 5; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 0 0 var(--page-section-gap); padding: 4px; border-radius: 14px; background: #e9eef5; }
+.payroll-views button { min-height: 40px; border: 0; border-radius: 11px; background: transparent; color: var(--color-muted); font: inherit; font-size: 15px; font-weight: 700; }
+.payroll-views button.is-active { background: var(--color-surface); color: var(--color-primary); box-shadow: 0 1px 4px rgba(16, 42, 67, 0.12); }
+.week-toolbar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+/* 當天面板 */
+.day-sheet { display: flex; flex-direction: column; max-height: 90dvh; background: var(--color-background, #f5f7fa); }
+.day-sheet__body { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 16px 0 8px; }
+.day-sheet__body > .calendar-day-actions { margin: 0 var(--page-inset, 16px) 8px; }
+.day-sheet__close { display: grid; flex: none; place-items: center; width: 40px; height: 40px; margin: -6px -8px 0 4px; border: 0; border-radius: 50%; background: transparent; color: var(--color-muted); font-size: 18px; }
+.day-sheet__footer { display: flex; gap: 10px; padding: 10px var(--page-inset, 16px); border-top: 1px solid var(--color-border); background: var(--color-surface); }
+.day-sheet__footer .van-button { min-height: var(--touch-target); border-radius: var(--radius-button); font-weight: 700; }
+.day-sheet__footer .van-button--block { flex: 1; }
 /* 工作設定卡片 */
 .work-setup-card { margin: 0 0 var(--page-section-gap); padding: 16px; border: 1px solid var(--color-border); border-radius: var(--page-card-radius); background: var(--color-surface); box-shadow: var(--shadow-card); }
 .work-setup-card--todo { border-color: var(--color-primary); background: linear-gradient(180deg, var(--color-primary-soft), var(--color-surface) 70%); }

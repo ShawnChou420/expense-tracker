@@ -186,6 +186,19 @@ class TodayFeaturesTest {
         for (int i = 0; i < 20; i++) assertNotEquals(2L, service.pick(7, DAY, 2L));
     }
 
+    @Test
+    void productionCodeOnlyUsesRandomFromJavaBase() throws Exception {
+        // 正式環境是精簡 JRE：RandomGenerator.getDefault()/of() 需要 jdk.random 模組，缺少時服務無法啟動
+        try (var files = Files.walk(Path.of("src/main/java"))) {
+            for (Path file : files.filter(path -> path.toString().endsWith(".java")).toList()) {
+                String source = Files.readString(file);
+                assertFalse(source.contains("RandomGenerator.getDefault") || source.contains("RandomGenerator.of("),
+                    file + " 使用了需要 jdk.random 模組的亂數產生器");
+            }
+        }
+        new DailyQuoteService(db); // 預設建構子可在只有 java.base 的環境建立
+    }
+
     @SuppressWarnings("unchecked")
     @Test
     void sameDayReturnsTheStoredQuoteWithoutPickingAgain() {

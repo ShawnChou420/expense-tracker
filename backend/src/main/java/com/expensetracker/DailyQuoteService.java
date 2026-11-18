@@ -32,7 +32,9 @@ public class DailyQuoteService {
 
     @Autowired
     DailyQuoteService(JdbcTemplate db) {
-        this(db, RandomGenerator.getDefault());
+        // SecureRandom 在 java.base，正式環境的精簡 JRE 一定有；
+        // 預設的 L32X64MixRandom 在 jdk.random 模組，容器裡可能沒有，會讓整個服務啟動失敗
+        this(db, new java.security.SecureRandom());
     }
 
     DailyQuoteService(JdbcTemplate db, RandomGenerator random) {

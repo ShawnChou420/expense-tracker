@@ -7,6 +7,19 @@ import { isPerfTraceEnabled, parseServerTiming, recordRequest } from './perfTrac
 export const authToken = ref(null)
 export const authEmail = ref('')
 export const isAuthenticated = computed(() => Boolean(authToken.value))
+/** 登入者的角色（後端回傳）；只用來決定是否顯示管理後台入口，權限一律由後端驗證 */
+/** @type {import('vue').Ref<string[]>} */
+export const authRoles = ref([])
+export const isSuperAdmin = computed(() => authRoles.value.includes('SUPER_ADMIN'))
+
+/** 每個請求一個 ID（X-Request-Id），出錯時可以用它對照伺服器紀錄 */
+function newRequestId() {
+  try {
+    return globalThis.crypto.randomUUID().slice(0, 13)
+  } catch {
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  }
+}
 
 // 登入狀態保存在這台裝置上：重新整理或關掉 App 都不會登出，直到主動登出或登入過期（後端 30 天、使用中會自動延長）
 const SESSION_KEY = 'expense-tracker.session'
@@ -55,6 +68,17 @@ export function wakeServer() {
   }
 }
 
+/**
+ * 回報只有前端知道的事件（例如薪資單 PDF 在瀏覽器解析失敗）。只送事件類型、錯誤代碼與數字；
+ * 訪客不送；失敗也不影響畫面。
+ * @param {'PAYSLIP_IMPORT_FAILED' | 'FILL_MONTH_COMPLETED'} type
+ * @param {{ status?: 'SUCCESS' | 'FAILURE', errorCode?: string, details?: Record<string, number | boolean | string> }} [info]
+ */
+export function reportEvent(type, info = {}) {
+  if (!authToken.value) return
+  apiRequest('/events', { method: 'POST', body: { type, ...info } }).catch(() => {})
+}
+
 /** 請求超過這個時間仍未回應，就顯示「伺服器啟動中」提示（免費方案閒置後喚醒約需 1 分鐘） */
 export const SLOW_REQUEST_MS = 4000
 /** 超過這個時間放棄等待；冷啟動通常在這之內完成 */
@@ -86,6 +110,7 @@ export function apiRequest(path, { method = 'GET', body } = {}) {
 /** @param {string} path @param {string} method @param {unknown} body */
 async function send(path, method, body) {
   let response
+  const requestId = newRequestId()
   const startedAt = performance.now()
   const trace = (/** @type {number} */ status) => {
     if (!isPerfTraceEnabled()) return
@@ -113,6 +138,7 @@ async function send(path, method, body) {
         signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
+          'X-Request-Id': requestId,
           ...(authToken.value ? { Authorization: `Bearer ${authToken.value}` } : {}),
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -133,7 +159,9 @@ async function send(path, method, body) {
     }
     if (!response.ok) {
       const error = await response.json().catch(() => ({}))
-      throw new Error(error.detail || error.message || `操作失敗（${response.status}）`)
+      const failure = new Error(error.detail || error.message || `操作失敗（${response.status}）`)
+      Object.assign(failure, { status: response.status, requestId: response.headers?.get?.('X-Request-Id') || requestId })
+      throw failure
     }
     return response.status === 204 ? null : await response.json()
   } finally {
@@ -158,6 +186,7 @@ export async function signIn(mode, email, password, code) {
   })
   authToken.value = result.token
   authEmail.value = result.email
+  authRoles.value = Array.isArray(result.roles) ? result.roles : []
   saveSession(result)
   return result
 }
@@ -184,6 +213,7 @@ export async function restoreSavedSession() {
   try {
     const me = await apiRequest('/auth/me')
     authEmail.value = me.email
+    authRoles.value = Array.isArray(me.roles) ? me.roles : []
     return true
   } catch (/** @type {any} */ error) {
     // 網路暫時不通時保留登入，讓使用者稍後重試；只有後端明確拒絕才登出
@@ -230,4 +260,5 @@ export function clearSession() {
   forgetSession()
   authToken.value = null
   authEmail.value = ''
+  authRoles.value = []
 }

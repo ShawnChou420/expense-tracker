@@ -10,6 +10,7 @@ on:
       - 'backend/**'
       - '.github/scripts/e2e-member.mjs'
       - '.github/scripts/e2e-visa.mjs'
+      - '.github/scripts/e2e-admin.mjs'
       - '.github/fixtures/**'
       - '.github/workflows/e2e.yml'
   workflow_dispatch:
@@ -93,6 +94,14 @@ jobs:
         run: node ../.github/scripts/e2e-visa.mjs
         env:
           OUT_DIR: ${{ github.workspace }}/e2e-screenshots
+      # 管理後台：用初始化工具（CLI）授予管理員，一般會員打所有 Admin API 都被拒絕，
+      # 管理員編輯／停用／恢復／刪除測試會員並留下稽核紀錄（只動這次 E2E 建立的帳號）
+      - name: Admin flow
+        working-directory: e2e
+        run: node ../.github/scripts/e2e-admin.mjs
+        env:
+          OUT_DIR: ${{ github.workspace }}/e2e-screenshots
+          REPO_ROOT: ${{ github.workspace }}
       - name: Check database
         if: always()
         run: |
@@ -105,7 +114,11 @@ jobs:
             "SELECT count(*) AS blackout_notices FROM leave_blackout_notice;" -c \
             "SELECT record_json->>'source' AS source, record_json->>'leaveType' AS leave_type, count(*) FROM work_shift_info GROUP BY 1, 2 ORDER BY 1, 2;" -c \
             "SELECT email_verified_at IS NOT NULL AS verified FROM user_info WHERE email_normalized LIKE 'e2e-%';" -c \
-            "SELECT purpose, attempts, consumed_at IS NOT NULL AS used FROM email_verification_code ORDER BY id;"
+            "SELECT purpose, attempts, consumed_at IS NOT NULL AS used FROM email_verification_code ORDER BY id;" -c \
+            "SELECT account_status, count(*) FROM user_info GROUP BY 1;" -c \
+            "SELECT count(*) AS super_admins FROM user_role WHERE role = 'SUPER_ADMIN';" -c \
+            "SELECT category, event_type, status, count(*) FROM user_activity_event GROUP BY 1, 2, 3 ORDER BY 1, 2, 3;" -c \
+            "SELECT action, result, admin_seq IS NULL AS via_cli FROM admin_audit_log ORDER BY occurred_at;"
       - name: Logs
         if: failure()
         run: tail -100 backend.log; tail -30 frontend.log

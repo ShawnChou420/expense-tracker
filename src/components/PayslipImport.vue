@@ -3,6 +3,7 @@
 // PDF 與密碼只存在這個元件的記憶體裡，關閉時清除，不上傳、不寫入 log。
 import { computed, ref, watch } from 'vue'
 import { formatAud } from '../domain/money.js'
+import { reportEvent } from '../services/authSession.js'
 import { PAY_ITEM_LABELS } from '../domain/payslip/classify.js'
 import { parsePayslipLines, validatePayslip } from '../domain/payslip/parsePayslip.js'
 import { getRateProposals, getRatesToApply } from '../domain/payslip/rates.js'
@@ -71,11 +72,13 @@ async function onPdfSelected(event) {
   if (file.size > MAX_PAYSLIP_BYTES) {
     errorMessage.value = '檔案超過 5MB，請確認是單一薪資單 PDF'
     step.value = 'error'
+    reportEvent('PAYSLIP_IMPORT_FAILED', { status: 'FAILURE', errorCode: 'FILE_TOO_LARGE' })
     return
   }
   if (file.type && file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) {
     errorMessage.value = '請選擇 PDF 檔案'
     step.value = 'error'
+    reportEvent('PAYSLIP_IMPORT_FAILED', { status: 'FAILURE', errorCode: 'NOT_PDF' })
     return
   }
   fileBuffer = await file.arrayBuffer()
@@ -91,17 +94,22 @@ async function readFile(withPassword) {
     password.value = ''
     if (!result.hasText) {
       step.value = 'noText'
+      reportEvent('PAYSLIP_IMPORT_FAILED', { status: 'FAILURE', errorCode: 'NO_TEXT' })
       return
     }
     loadParsed(parsePayslipLines(result.lines))
   } catch (error) {
     if (error instanceof PayslipPasswordError) {
       passwordError.value = error.reason === 'WRONG_PASSWORD' ? error.message : ''
+      // 只記「密碼錯誤」；第一次要求輸入密碼不算失敗。密碼本身絕不送出
+      if (error.reason === 'WRONG_PASSWORD')
+        reportEvent('PAYSLIP_IMPORT_FAILED', { status: 'FAILURE', errorCode: 'WRONG_PASSWORD' })
       step.value = 'password'
       return
     }
     errorMessage.value = error.message || '讀取失敗，請再試一次'
     step.value = 'error'
+    reportEvent('PAYSLIP_IMPORT_FAILED', { status: 'FAILURE', errorCode: 'READ_FAILED' })
   }
 }
 

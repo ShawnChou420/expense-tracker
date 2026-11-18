@@ -1,10 +1,12 @@
 <script setup>
 // 「更多」：放採買清單等延伸功能，讓底部分頁專注在收支。只列出已經能用的功能。
+import { computed } from 'vue'
 import { CONTACT_EMAIL, FEEDBACK_URL } from '../config/beta.js'
+import { isSuperAdmin } from '../services/authSession.js'
 
 const emit = defineEmits(['navigate'])
 
-const tools = [
+const baseTools = [
   {
     name: 'work-setup',
     icon: 'setting-o',
@@ -37,6 +39,14 @@ const tools = [
   },
 ]
 
+
+// 管理後台入口只在 SUPER_ADMIN 登入時顯示；後端每個管理 API 仍會重新驗證權限
+const tools = computed(() => [
+  ...(isSuperAdmin.value
+    ? [{ name: 'admin', icon: 'manager-o', title: '管理後台', description: '會員、操作紀錄與稽核（管理員）' }]
+    : []),
+  ...baseTools,
+])
 </script>
 
 <template>

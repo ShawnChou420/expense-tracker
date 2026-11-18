@@ -29,9 +29,22 @@ public class LedgerController {
     private final JdbcTemplate db;
     private final ObjectMapper json;
 
+    /** 活動事件紀錄；單元測試可以不提供 */
+    private final ActivityLog activity;
+
     LedgerController(JdbcTemplate db, ObjectMapper json) {
+        this(db, json, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    LedgerController(JdbcTemplate db, ObjectMapper json, ActivityLog activity) {
         this.db = db;
         this.json = json;
+        this.activity = activity;
+    }
+
+    private void event(long userSeq, String type, Map<String, ?> details) {
+        if (activity != null) activity.success(userSeq, type, details);
     }
 
     static long owner(Authentication auth) {
@@ -103,7 +116,8 @@ public class LedgerController {
     @Transactional
     Map<String, Object> saveWorkRecord(Authentication auth, @PathVariable String id,
                                        @RequestBody Map<String, Object> body) {
-        upsertWorkRecord(owner(auth), id, body);
+        boolean created = upsertWorkRecord(owner(auth), id, body);
+        event(owner(auth), created ? "SHIFT_CREATED" : "SHIFT_UPDATED", Map.of("count", 1));
         return body;
     }
 
@@ -122,11 +136,21 @@ public class LedgerController {
             if (record == null || !ids.add(String.valueOf(record.get("id"))))
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "批次中有重複的紀錄 ID");
         }
-        for (Map<String, Object> record : records) upsertWorkRecord(userSeq, String.valueOf(record.get("id")), record);
+        int created = 0;
+        for (Map<String, Object> record : records)
+            if (upsertWorkRecord(userSeq, String.valueOf(record.get("id")), record)) created += 1;
+        // 全部是補登的歷史班表 → 記成集簽補登；其他批次記新增／更新筆數
+        boolean history = records.stream().allMatch(record -> "HISTORICAL_USER_CONFIRMED".equals(record.get("source")));
+        if (history) event(userSeq, "VISA_HISTORY_IMPORTED", Map.of("count", records.size(), "created", created));
+        else {
+            if (created > 0) event(userSeq, "SHIFT_CREATED", Map.of("count", created));
+            if (records.size() > created) event(userSeq, "SHIFT_UPDATED", Map.of("count", records.size() - created));
+        }
         return Map.of("saved", records.size());
     }
 
-    private void upsertWorkRecord(long userSeq, String rawId, Map<String, Object> body) {
+    /** 新增或更新一筆班表；回傳是否為新增 */
+    private boolean upsertWorkRecord(long userSeq, String rawId, Map<String, Object> body) {
         String id = clientId(rawId);
         if (body == null || !id.equals(String.valueOf(body.get("id"))))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "紀錄 ID 不一致");
@@ -144,7 +168,7 @@ public class LedgerController {
         if (grossCents < 0) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "薪資不可為負");
         int totalMinutes = ((Number) body.getOrDefault("totalMinutes", 0)).intValue();
         int smokoCount = ((Number) body.getOrDefault("smokoCount", 0)).intValue();
-        db.update("""
+        Boolean inserted = db.queryForObject("""
             INSERT INTO work_shift_info(user_seq, client_id, work_date, start_time, end_time,
               total_minutes, smoko_count, gross_pay, gross_cents, record_json, designated_work, currency)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, 'AUD')
@@ -154,9 +178,11 @@ public class LedgerController {
               smoko_count=EXCLUDED.smoko_count, gross_pay=EXCLUDED.gross_pay,
               gross_cents=EXCLUDED.gross_cents, record_json=EXCLUDED.record_json,
               designated_work=EXCLUDED.designated_work, update_time=now()
-            """, userSeq, id, workDate, start, end, totalMinutes, smokoCount,
+            RETURNING (xmax = 0) AS inserted
+            """, Boolean.class, userSeq, id, workDate, start, end, totalMinutes, smokoCount,
             BigDecimal.valueOf(grossCents, 2), grossCents, json.writeValueAsString(body),
             Boolean.TRUE.equals(body.get("designatedWork")));
+        return Boolean.TRUE.equals(inserted);
     }
 
     @DeleteMapping("/work-records/{id}")
@@ -209,7 +235,7 @@ public class LedgerController {
         if (!List.of("PAID", "PLANNED").contains(status) ||
             !List.of("NONE", "WEEKLY", "BIWEEKLY", "MONTHLY", "CUSTOM").contains(frequency))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "無效支出狀態或頻率");
-        Long expenseSeq = db.queryForObject("""
+        Object[] saved = db.queryForObject("""
             INSERT INTO expense_record(user_seq, client_id, expense_date, category, amount,
               amount_cents, group_code, status_code, frequency_code, record_json, remark, currency)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, 'AUD')
@@ -219,9 +245,12 @@ public class LedgerController {
               group_code=EXCLUDED.group_code, status_code=EXCLUDED.status_code,
               frequency_code=EXCLUDED.frequency_code, record_json=EXCLUDED.record_json,
               remark=EXCLUDED.remark, update_time=now()
-            RETURNING seq
-            """, Long.class, owner(auth), id, expenseDate, category, BigDecimal.valueOf(amount, 2),
+            RETURNING seq, (xmax = 0) AS inserted
+            """, (rs, row) -> new Object[] { rs.getLong(1), rs.getBoolean(2) }, owner(auth), id, expenseDate, category, BigDecimal.valueOf(amount, 2),
             amount, group, status, frequency, json.writeValueAsString(body), body.get("note"));
+        Long expenseSeq = (Long) saved[0];
+        event(owner(auth), Boolean.TRUE.equals(saved[1]) ? "EXPENSE_CREATED" : "EXPENSE_UPDATED",
+            Map.of("frequency", frequency, "status", status));
         List<LocalDate> desired = new ArrayList<>();
         if (frequency.equals("NONE")) {
             if (status.equals("PAID")) desired.add(expenseDate);

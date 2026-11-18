@@ -59,6 +59,7 @@ public class SecurityConfig {
                     "/api/auth/email-code", "/api/auth/reset-password").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/auth/config").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/health").permitAll() // Render 健康檢查
+                .requestMatchers(HttpMethod.GET, "/api/ready").permitAll() // App 開啟時等待後端與資料庫就緒
                 // 訪客首頁的每日小語：只讀共用語錄，依日期固定一句，不寫資料庫
                 .requestMatchers(HttpMethod.GET, "/api/daily-quotes/sample").permitAll()
                 // 管理後台：每個請求都依登入 token 重新查角色（TokenFilter），不是 SUPER_ADMIN 一律 403

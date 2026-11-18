@@ -8,6 +8,8 @@ package com.expensetracker;
 final class RequestTiming {
     private static final ThreadLocal<RequestTiming> CURRENT = new ThreadLocal<>();
 
+    /** 這個請求的 ID（回傳在 X-Request-Id），用來把前端錯誤、事件紀錄與伺服器 log 對起來 */
+    String requestId;
     long sqlNanos;
     int sqlCount;
     long checkoutNanos;
@@ -16,9 +18,20 @@ final class RequestTiming {
     private RequestTiming() {}
 
     static RequestTiming start() {
+        return start(null);
+    }
+
+    static RequestTiming start(String requestId) {
         RequestTiming timing = new RequestTiming();
+        timing.requestId = requestId;
         CURRENT.set(timing);
         return timing;
+    }
+
+    /** 目前請求的 ID；不在請求內時為 null */
+    static String currentRequestId() {
+        RequestTiming timing = CURRENT.get();
+        return timing == null ? null : timing.requestId;
     }
 
     static void clear() {

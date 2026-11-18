@@ -30,21 +30,21 @@ class AuthPerformanceTest {
 
     @SuppressWarnings("unchecked")
     private void sessionRow(Object[] row) {
-        when(db.query(startsWith("SELECT user_seq, expires_at"), any(RowMapper.class), any(), any()))
+        when(db.query(startsWith("SELECT s.user_seq"), any(RowMapper.class), any(), any()))
             .thenReturn(row == null ? List.of() : List.<Object>of((Object) row));
     }
 
     @Test
     void validTokenThatDoesNotNeedRenewalUsesOneQuery() {
-        sessionRow(new Object[] { 7L, false });
-        assertEquals(7L, auth.findUserForToken(TOKEN));
+        sessionRow(new Object[] { 7L, false, false });
+        assertEquals(new AuthService.SessionUser(7L, false), auth.findUserForToken(TOKEN));
         verify(db, never()).update(anyString(), any(), any(), any());
     }
 
     @Test
     void tokenNearExpiryIsRenewed() {
-        sessionRow(new Object[] { 7L, true });
-        assertEquals(7L, auth.findUserForToken(TOKEN));
+        sessionRow(new Object[] { 7L, true, true });
+        assertEquals(new AuthService.SessionUser(7L, true), auth.findUserForToken(TOKEN));
         verify(db, times(1)).update(startsWith("UPDATE auth_session SET expires_at"),
             eq(AuthService.SESSION_DAYS), anyString(), eq(AuthService.SESSION_DAYS - 1));
     }

@@ -32,9 +32,26 @@ public class PayslipImportController {
     private final JdbcTemplate db;
     private final ObjectMapper json;
 
+    private final ActivityLog activity;
+
     PayslipImportController(JdbcTemplate db, ObjectMapper json) {
+        this(db, json, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    PayslipImportController(JdbcTemplate db, ObjectMapper json, ActivityLog activity) {
         this.db = db;
         this.json = json;
+        this.activity = activity;
+    }
+
+    /** 匯入失敗的原因代碼（不含薪資單內容） */
+    static String failureCode(ResponseStatusException exception) {
+        String reason = String.valueOf(exception.getReason());
+        if (reason.contains("匯入過")) return "DUPLICATE_FILE";
+        if (reason.contains("入帳")) return "DUPLICATE_DEPOSIT";
+        if (reason.contains("項目")) return "TOO_MANY_ITEMS";
+        return "INVALID_PAYSLIP";
     }
 
     @GetMapping
@@ -98,6 +115,21 @@ public class PayslipImportController {
     @SuppressWarnings("unchecked")
     Map<String, Object> create(Authentication auth, @RequestBody Map<String, Object> body) {
         long owner = LedgerController.owner(auth);
+        try {
+            Map<String, Object> result = createImport(owner, body);
+            if (activity != null) activity.success(owner, "PAYSLIP_IMPORT_SUCCESS", Map.of(
+                "items", body.get("items") instanceof List<?> list ? list.size() : 0,
+                "recordDeposit", Boolean.TRUE.equals(body.get("recordDeposit"))));
+            return result;
+        } catch (ResponseStatusException exception) {
+            if (activity != null)
+                activity.failure(owner, "PAYSLIP", "PAYSLIP_IMPORT_FAILED", failureCode(exception), null);
+            throw exception;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> createImport(long owner, Map<String, Object> body) {
         LocalDate payDate = LedgerController.date(body, "payDate");
         LocalDate start = body.get("periodStart") == null ? null : LedgerController.date(body, "periodStart");
         LocalDate end = body.get("periodEnd") == null ? null : LedgerController.date(body, "periodEnd");

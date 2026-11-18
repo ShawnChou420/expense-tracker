@@ -6,11 +6,12 @@ import ExpenseTracker from './components/ExpenseTracker.vue'
 import ShoppingList from './components/ShoppingList.vue'
 import DashboardPage from './components/DashboardPage.vue'
 import MorePage from './components/MorePage.vue'
+import AdminPage from './components/AdminPage.vue'
 import AuthPanel from './components/AuthPanel.vue'
 import AccountPage from './components/AccountPage.vue'
 import PrivacyPage from './components/PrivacyPage.vue'
 import { accountRepository } from './repositories/accountRepository.js'
-import { authEmail, authToken, signOut, clearSession, apiRequest, restoreSavedSession, serverSlow, wakeServer } from './services/authSession.js'
+import { authEmail, authToken, signOut, clearSession, apiRequest, restoreSavedSession, serverSlow, wakeServer, reportEvent, isSuperAdmin } from './services/authSession.js'
 import { startPerfPhase } from './services/perfTrace.js'
 import { useWorkRecordsPersistence } from './composables/useWorkRecordsPersistence.js'
 import { getGuestLedgerSnapshot, notifyLedgerChanged, passengerRepository, tripRepository, expenseRepository, salaryDepositRepository } from './repositories/appRepositories.js'
@@ -247,6 +248,7 @@ function handlePageNavigate(target) {
   else if (target === 'privacy') privacyOpen.value = true
   else if (target === 'work-setup') openWorkSetup()
   else if (target === 'visa') visaSetupOpen.value = true
+  else if (target === 'admin') openAdmin()
   else activeTab.value = target
 }
 const expenseTrackerRef = ref(null)
@@ -485,7 +487,24 @@ watch(authToken, async (token) => {
 })
 const activeTab = ref('dashboard')
 // 採買清單從「更多」進入，底部分頁仍亮在「更多」
-const tabbarActive = computed(() => (activeTab.value === 'shopping' ? 'more' : activeTab.value))
+const tabbarActive = computed(() => (['shopping', 'admin'].includes(activeTab.value) ? 'more' : activeTab.value))
+
+// --- 管理後台：網址 #/admin（靜態網站沒有伺服器轉址，所以用 hash）；權限由後端驗證 ---
+const ADMIN_HASH = '#/admin'
+function openAdmin() {
+  if (!isSuperAdmin.value) return
+  activeTab.value = 'admin'
+}
+watch(activeTab, (tab) => {
+  if (tab === 'admin' && window.location.hash !== ADMIN_HASH) window.history.replaceState(null, '', ADMIN_HASH)
+  if (tab !== 'admin' && window.location.hash === ADMIN_HASH)
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+})
+// 登出或失去管理員權限時離開管理後台
+watch(isSuperAdmin, (admin) => {
+  if (!admin && activeTab.value === 'admin') activeTab.value = 'more'
+  if (admin && window.location.hash === ADMIN_HASH) activeTab.value = 'admin'
+})
 const payBreakdownOpen = ref([])
 const advancedRatesOpen = ref([])
 const visibleMonth = ref(workDate.value.slice(0, 7))
@@ -661,6 +680,7 @@ function confirmFillPreview() {
   fillPreviewOpen.value = false
   loadSelectedDate()
   showToast(`已加入 ${additions.length} 筆紀錄`)
+  reportEvent('FILL_MONTH_COMPLETED', { details: { count: additions.length } })
 }
 
 function runFillAction(action) {
@@ -1961,6 +1981,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
     <TripTracker v-show="activeTab === 'trips'" ref="tripTrackerRef" />
     <ExpenseTracker v-show="activeTab === 'expenses'" ref="expenseTrackerRef" />
     <MorePage v-show="activeTab === 'more'" @navigate="handlePageNavigate" />
+    <AdminPage v-if="activeTab === 'admin' && isSuperAdmin" @back="activeTab = 'more'" />
     <div v-if="activeTab === 'shopping'" class="sub-page-back">
       <button type="button" @click="activeTab = 'more'"><van-icon name="arrow-left" /> 更多</button>
     </div>

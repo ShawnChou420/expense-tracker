@@ -30,7 +30,13 @@ public class AuthController {
     record Credentials(String email, String password) {}
     record RegisterRequest(String email, String password, String code) {}
     record CodeRequest(String email, String purpose) {}
-    record TokenResponse(String token, Instant expiresAt, String email) {}
+    record TokenResponse(String token, Instant expiresAt, String email, java.util.List<String> roles) {}
+
+    private TokenResponse response(AuthService.IssuedToken result) {
+        Long seq = auth.userSeqForEmail(result.email());
+        return new TokenResponse(result.token(), result.expiresAt(), result.email(),
+            seq == null ? java.util.List.of() : auth.rolesFor(seq));
+    }
 
     @ExceptionHandler(ResponseStatusException.class)
     ResponseEntity<Map<String, String>> safeAuthError(ResponseStatusException exception) {
@@ -111,7 +117,7 @@ public class AuthController {
             mail.sendInBackground(result.email(), "歡迎使用 WORK & SAVE",
                 "你的帳號 " + result.email() + " 已經建立完成。", MailService.welcomeHtml(result.email()));
         }
-        return new TokenResponse(result.token(), result.expiresAt(), result.email());
+        return response(result);
     }
 
     @PostMapping("/reset-password")
@@ -121,7 +127,7 @@ public class AuthController {
         validateNewPassword(new Credentials(request.email(), request.password()));
         codes.verify(AuthService.normalizeEmail(request.email()), EmailCodeService.Purpose.RESET_PASSWORD, request.code());
         var result = auth.resetPassword(request.email(), request.password());
-        return new TokenResponse(result.token(), result.expiresAt(), result.email());
+        return response(result);
     }
 
     @PostMapping("/login")
@@ -129,7 +135,7 @@ public class AuthController {
                         jakarta.servlet.http.HttpServletRequest request) {
         validate(credentials);
         var result = auth.login(credentials.email(), credentials.password(), request.getRemoteAddr());
-        return new TokenResponse(result.token(), result.expiresAt(), result.email());
+        return response(result);
     }
 
     @PostMapping("/logout")
@@ -138,8 +144,10 @@ public class AuthController {
         auth.logout((Long) authentication.getPrincipal(), header.substring(7));
     }
 
+    /** 目前登入的會員；roles 讓前端決定是否顯示管理後台（後端每個管理 API 仍會重新驗證） */
     @GetMapping("/me")
-    Map<String, String> me(Authentication authentication) {
-        return Map.of("email", auth.emailFor((Long) authentication.getPrincipal()));
+    Map<String, Object> me(Authentication authentication) {
+        long seq = (Long) authentication.getPrincipal();
+        return Map.of("email", auth.emailFor(seq), "roles", auth.rolesFor(seq));
     }
 }

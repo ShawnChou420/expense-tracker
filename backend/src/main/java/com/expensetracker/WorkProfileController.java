@@ -20,6 +20,13 @@ public class WorkProfileController {
     private final JdbcTemplate db;
     private final ObjectMapper json;
 
+    private ActivityLog activity;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setActivity(ActivityLog activity) {
+        this.activity = activity;
+    }
+
     WorkProfileController(JdbcTemplate db, ObjectMapper json) {
         this.db = db;
         this.json = json;
@@ -38,10 +45,19 @@ public class WorkProfileController {
     @PutMapping
     Map<String, Object> save(Authentication auth, @RequestBody Map<String, Object> body) {
         String text = validate(body, json.writeValueAsString(body));
+        long owner = LedgerController.owner(auth);
+        // 第一次完成設定（薪資已設定＋班表已設定）時記一筆 WORK_SETUP_COMPLETED
+        boolean wasComplete = !db.queryForList(
+            "SELECT 1 FROM work_profile WHERE user_seq = ? AND profile_json->>'scheduleStatus' = 'CONFIGURED' "
+                + "AND profile_json->>'payStatus' <> 'NOT_CONFIGURED'", Integer.class, owner).isEmpty();
+        boolean isComplete = "CONFIGURED".equals(body.get("scheduleStatus"))
+            && body.get("payStatus") != null && !"NOT_CONFIGURED".equals(body.get("payStatus"));
         db.update("""
             INSERT INTO work_profile(user_seq, profile_json) VALUES (?, ?::jsonb)
             ON CONFLICT (user_seq) DO UPDATE SET profile_json = EXCLUDED.profile_json, updated_at = now()
-            """, LedgerController.owner(auth), text);
+            """, owner, text);
+        if (activity != null && isComplete && !wasComplete)
+            activity.success(owner, "WORK_SETUP_COMPLETED", Map.of("payStatus", String.valueOf(body.get("payStatus"))));
         return Map.of("profile", body);
     }
 

@@ -35,3 +35,13 @@ tasks.register('baselineExisting', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.expensetracker.BaselineExisting'
 }
+
+// 受控的 SUPER_ADMIN 授權／撤銷工具（只在擁有者自己的電腦上執行，連線資訊用環境變數提供）
+// 例如：bash backend/gradlew adminRole --args="grant 12 --reason 初始化擁有者帳號"
+tasks.register('adminRole', JavaExec) {
+    group = 'database'
+    description = 'Grant, revoke or list SUPER_ADMIN by user_seq (asks to confirm the email)'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.expensetracker.AdminRoleTool'
+    standardInput = System.in
+}

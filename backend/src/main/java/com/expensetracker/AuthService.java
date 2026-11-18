@@ -27,11 +27,27 @@ public class AuthService {
     private final JdbcTemplate db;
     private final PasswordEncoder passwords;
     private final Map<String, Attempt> attempts = new ConcurrentHashMap<>();
+    /** 活動事件紀錄；單元測試可以不提供 */
+    private final ActivityLog activity;
 
     AuthService(JdbcTemplate db, PasswordEncoder passwords) {
+        this(db, passwords, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    AuthService(JdbcTemplate db, PasswordEncoder passwords, ActivityLog activity) {
         this.db = db;
         this.passwords = passwords;
+        this.activity = activity;
     }
+
+    private void event(Long userSeq, String type, boolean ok, String errorCode) {
+        if (activity != null) activity.record(userSeq, "USER", type, ok, errorCode, null);
+    }
+
+    /** 登入身分：會員編號與是否為 SUPER_ADMIN（每個請求由 TokenFilter 查一次） */
+    record SessionUser(long userSeq, boolean superAdmin) {}
+    static final String SUPER_ADMIN = "SUPER_ADMIN";
 
     private volatile String dummyHash;
 
@@ -63,6 +79,7 @@ public class AuthService {
                 Long.class, UUID.randomUUID().toString(), normalized, normalized, passwords.encode(password),
                 emailVerified);
             AuditLog.event("REGISTER", userSeq, normalized);
+            event(userSeq, "REGISTER_SUCCESS", true, null);
             return issue(userSeq, normalized);
         } catch (DuplicateKeyException exception) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "這個 Email 已經註冊過，請直接登入；忘記密碼可以重設");
@@ -94,11 +111,13 @@ public class AuthService {
         Attempt state = attempts.get(key);
         if (state != null && state.count >= 5 && state.until.isAfter(Instant.now())) {
             AuditLog.event("LOGIN_LOCKED", null, normalized);
+            event(null, "LOGIN_FAILED", false, "RATE_LIMITED");
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "請稍後再試");
         }
         var users = db.query(
-            "SELECT seq, password_hash FROM user_info WHERE email_normalized = ?",
-            (rs, row) -> new Object[] { rs.getLong("seq"), rs.getString("password_hash") }, normalized);
+            "SELECT seq, password_hash, account_status FROM user_info WHERE email_normalized = ?",
+            (rs, row) -> new Object[] { rs.getLong("seq"), rs.getString("password_hash"), rs.getString("account_status") },
+            normalized);
         // Email 不存在時也跑一次相同成本的密碼比對，讓回應時間不會透露帳號是否存在
         boolean valid;
         if (users.size() == 1) {
@@ -112,10 +131,17 @@ public class AuthService {
                 new Attempt(old == null || old.until.isBefore(Instant.now()) ? 1 : old.count + 1,
                     Instant.now().plus(15, ChronoUnit.MINUTES)));
             AuditLog.event("LOGIN_FAILED", users.size() == 1 ? (Long) users.get(0)[0] : null, normalized);
+            event(users.size() == 1 ? (Long) users.get(0)[0] : null, "LOGIN_FAILED", false, "BAD_CREDENTIALS");
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Email 或密碼不正確");
         }
         attempts.remove(key);
+        // 密碼正確才告知帳號已停用，避免透露帳號狀態給不知道密碼的人
+        if (!"ACTIVE".equals(users.get(0)[2])) {
+            event((Long) users.get(0)[0], "LOGIN_FAILED", false, "ACCOUNT_DISABLED");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "這個帳號已停用，如有疑問請聯絡我們");
+        }
         AuditLog.event("LOGIN", (Long) users.get(0)[0], null);
+        event((Long) users.get(0)[0], "LOGIN_SUCCESS", true, null);
         return issue((Long) users.get(0)[0], normalized);
     }
 
@@ -130,14 +156,16 @@ public class AuthService {
         return new IssuedToken(token, expires, email);
     }
 
-    Long findUserForToken(String token) {
+    SessionUser findUserForToken(String token) {
         if (token.length() < 40 || token.length() > 100) return null;
         String tokenHash = hash(token);
-        // 查詢時順便判斷是否需要延長，大多數請求只要 1 次 SQL
+        // 一次查出：是否需要延長、帳號是否啟用、是否為 SUPER_ADMIN（大多數請求只要 1 次 SQL）
         var sessions = db.query(
-            "SELECT user_seq, expires_at < now() + (? * interval '1 day') AS renew FROM auth_session "
-                + "WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > now()",
-            (rs, row) -> new Object[] { rs.getLong("user_seq"), rs.getBoolean("renew") },
+            "SELECT s.user_seq, s.expires_at < now() + (? * interval '1 day') AS renew, "
+                + "EXISTS (SELECT 1 FROM user_role r WHERE r.user_seq = s.user_seq AND r.role = 'SUPER_ADMIN') AS super_admin "
+                + "FROM auth_session s JOIN user_info u ON u.seq = s.user_seq "
+                + "WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > now() AND u.account_status = 'ACTIVE'",
+            (rs, row) -> new Object[] { rs.getLong("user_seq"), rs.getBoolean("renew"), rs.getBoolean("super_admin") },
             SESSION_DAYS - 1, tokenHash);
         if (sessions.isEmpty()) return null;
         // 滑動期限：最多一天延長一次，只有需要延長時才寫資料庫
@@ -146,13 +174,33 @@ public class AuthService {
                 + "WHERE token_hash = ? AND expires_at < now() + (? * interval '1 day')",
                 SESSION_DAYS, tokenHash, SESSION_DAYS - 1);
         }
-        return (Long) sessions.get(0)[0];
+        return new SessionUser((Long) sessions.get(0)[0], (Boolean) sessions.get(0)[2]);
+    }
+
+    /** 這位會員的角色（一般會員是空清單） */
+    java.util.List<String> rolesFor(long userSeq) {
+        return db.queryForList("SELECT role FROM user_role WHERE user_seq = ? ORDER BY role", String.class, userSeq);
+    }
+
+    /** 管理員執行敏感操作前再次驗證密碼（15 分鐘 5 次限制） */
+    void reauthenticate(long userSeq, String password) {
+        verifyCurrentPassword("admin-reauth:" + userSeq, userSeq, password == null ? "" : password);
+    }
+
+    /** 是否為最後一位 SUPER_ADMIN（避免被降權、停用或刪除後沒人能管理） */
+    boolean isLastSuperAdmin(long userSeq) {
+        Integer others = db.queryForObject(
+            "SELECT count(*) FROM user_role WHERE role = 'SUPER_ADMIN' AND user_seq <> ?", Integer.class, userSeq);
+        Integer self = db.queryForObject(
+            "SELECT count(*) FROM user_role WHERE role = 'SUPER_ADMIN' AND user_seq = ?", Integer.class, userSeq);
+        return self != null && self > 0 && (others == null || others == 0);
     }
 
     void logout(Long userSeq, String token) {
         db.update("UPDATE auth_session SET revoked_at = now() WHERE user_seq = ? AND token_hash = ?",
             userSeq, hash(token));
         AuditLog.event("LOGOUT", userSeq, null);
+        event(userSeq, "LOGOUT", true, null);
     }
 
     record AccountInfo(String email, String nickname, Instant createdAt) {}
@@ -209,6 +257,8 @@ public class AuthService {
         "DELETE FROM leave_blackout_notice WHERE user_seq = ?",
         "DELETE FROM visa_journey WHERE user_seq = ?",
         "DELETE FROM shopping_item WHERE user_seq = ?",
+        "DELETE FROM user_activity_event WHERE user_seq = ?",
+        "DELETE FROM user_role WHERE user_seq = ?",
         "DELETE FROM auth_session WHERE user_seq = ?",
         // 驗證碼以 Email 為鍵，不含 user_seq；一併刪除未過期的驗證碼
         "DELETE FROM email_verification_code WHERE email_normalized = (SELECT email_normalized FROM user_info WHERE seq = ?)",
@@ -221,6 +271,14 @@ public class AuthService {
     @Transactional
     void deleteAccount(Long userSeq, String password) {
         verifyCurrentPassword("account-delete:" + userSeq, userSeq, password);
+        if (isLastSuperAdmin(userSeq))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "你是最後一位管理員，請先授權其他管理員再刪除帳號");
+        deleteAccountData(userSeq);
+        event(userSeq, "ACCOUNT_DELETED", true, null);
+    }
+
+    /** 依外鍵由子到父刪除這位會員的所有私人資料與 session（呼叫端負責交易與權限檢查） */
+    void deleteAccountData(long userSeq) {
         for (String sql : ACCOUNT_DELETE_STATEMENTS) db.update(sql, userSeq);
         AuditLog.event("ACCOUNT_DELETE", userSeq, null);
     }
@@ -241,6 +299,11 @@ public class AuthService {
         }
         attempts.remove(key);
         return hash;
+    }
+
+    Long userSeqForEmail(String email) {
+        var rows = db.queryForList("SELECT seq FROM user_info WHERE email_normalized = ?", Long.class, normalizeEmail(email));
+        return rows.isEmpty() ? null : rows.get(0);
     }
 
     String emailFor(Long userSeq) {

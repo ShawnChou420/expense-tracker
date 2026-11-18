@@ -26,6 +26,13 @@ public class VisaJourneyController {
     static final List<String> STAGES = List.of("FIRST", "SECOND", "BRIDGING");
     private final JdbcTemplate db;
 
+    private ActivityLog activity;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setActivity(ActivityLog activity) {
+        this.activity = activity;
+    }
+
     VisaJourneyController(JdbcTemplate db) {
         this.db = db;
     }
@@ -57,6 +64,9 @@ public class VisaJourneyController {
     @PutMapping
     Map<String, Object> save(Authentication auth, @RequestBody Map<String, Object> body) {
         Journey journey = validate(body);
+        long owner = LedgerController.owner(auth);
+        var previous = db.queryForList("SELECT goal FROM visa_journey WHERE user_seq = ?", String.class, owner);
+        boolean wasTracking = !previous.isEmpty() && !"NONE".equals(previous.get(0));
         db.update("""
             INSERT INTO visa_journey(user_seq, goal, visa_subclass, visa_stage, stay_until, work_start,
               started, history_dismissed)
@@ -68,6 +78,9 @@ public class VisaJourneyController {
               updated_at = now()
             """, LedgerController.owner(auth), journey.goal, journey.subclass, journey.stage,
             journey.stayUntil, journey.workStart, journey.started, journey.historyDismissed);
+        if (activity != null && !"NONE".equals(journey.goal) && !wasTracking)
+            activity.success(owner, "VISA_TRACKING_ENABLED", Map.of("goal", journey.goal,
+                "subclass", journey.subclass == null ? "" : journey.subclass));
         return get(auth);
     }
 

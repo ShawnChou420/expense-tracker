@@ -55,7 +55,10 @@ public class RequestTimingFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
         long start = System.nanoTime();
-        RequestTiming timing = RequestTiming.start();
+        String requestId = requestId(request.getHeader("X-Request-Id"));
+        response.setHeader("X-Request-Id", requestId);
+        RequestTiming timing = RequestTiming.start(requestId);
+        org.slf4j.MDC.put("requestId", requestId);
         ContentCachingResponseWrapper buffered =
             serverTimingHeader ? new ContentCachingResponseWrapper(response) : null;
         try {
@@ -63,6 +66,7 @@ public class RequestTimingFilter extends OncePerRequestFilter {
         } finally {
             long total = System.nanoTime() - start;
             RequestTiming.clear();
+            org.slf4j.MDC.remove("requestId");
             if (buffered != null) {
                 if (!buffered.isCommitted()) buffered.setHeader("Server-Timing", serverTiming(timing, total));
                 buffered.copyBodyToResponse();
@@ -82,10 +86,16 @@ public class RequestTimingFilter extends OncePerRequestFilter {
         // 沒有對應到 controller（例如 401 在安全性 filter 就被擋下）時路徑可能含 ID，只保留前兩段
         String route = pattern != null ? pattern.toString() : coarse(request.getRequestURI());
         return String.format(Locale.ROOT,
-            "TIMING %s %s status=%d total=%.1fms db=%.1fms queries=%d conn=%.1fms checkouts=%d pool=%s uptime=%ds",
-            request.getMethod(), route, status, RequestTiming.millis(totalNanos),
+            "TIMING rid=%s %s %s status=%d total=%.1fms db=%.1fms queries=%d conn=%.1fms checkouts=%d pool=%s uptime=%ds",
+            timing.requestId, request.getMethod(), route, status, RequestTiming.millis(totalNanos),
             RequestTiming.millis(timing.sqlNanos), timing.sqlCount, RequestTiming.millis(timing.checkoutNanos),
             timing.checkoutCount, poolState(), ManagementFactory.getRuntimeMXBean().getUptime() / 1000);
+    }
+
+    /** 前端帶來的 ID 格式正確就沿用，否則產生新的（只允許英數與連字號，避免寫入奇怪內容） */
+    static String requestId(String header) {
+        if (header != null && header.matches("[A-Za-z0-9-]{8,40}")) return header;
+        return java.util.UUID.randomUUID().toString().substring(0, 13);
     }
 
     static String coarse(String uri) {

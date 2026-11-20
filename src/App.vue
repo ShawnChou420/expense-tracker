@@ -73,7 +73,6 @@ import {
 } from './utils/holidays.js'
 import {
   createWorkRecord,
-  normalizeWorkRecord,
 } from './utils/workRecord.js'
 import { clearRecordsInMonth, ensureUniqueRecordIds, getMissingScheduleDates, nextRecordId, recordsInMonth, upsertRecordForDate } from './utils/scheduleRecords.js'
 import { showConfirmDialog, showToast } from 'vant'
@@ -1292,23 +1291,6 @@ const exportWeeklyJson = () => {
   const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = 'weekly-records.json'; link.click(); URL.revokeObjectURL(url)
 }
 
-const importJsonFiles = async (payload) => {
-  const uploaderFiles = Array.isArray(payload) ? payload : [payload]
-  const eventFiles = Array.from(payload?.target?.files || [])
-  const files = eventFiles.length > 0 ? eventFiles : uploaderFiles.map((item) => item?.file || item).filter(Boolean)
-  const importedRecords = []
-  for (const file of files) {
-    const text = await file.text(); const jsonData = JSON.parse(text)
-    if (Array.isArray(jsonData)) {
-      importedRecords.push(...jsonData.map((record) => normalizeWorkRecord(record)).map((record) => { return buildWorkRecordFromInputs({ id: record.id, workDate: record.workDate, startTime: record.startTime, endTime: record.endTime, shiftType: record.shiftType || 'normal', isCleaningDay: record.isCleaningDay || false, remark: record.remark || '', designatedWork: record.designatedWork, prepMinutes: Number(record.prepMinutes) || 0 }) ?? record }))
-      continue
-    }
-    const normalizedRecord = normalizeWorkRecord(jsonData)
-    importedRecords.push(buildWorkRecordFromInputs({ id: normalizedRecord.id, workDate: normalizedRecord.workDate, startTime: normalizedRecord.startTime, endTime: normalizedRecord.endTime, shiftType: normalizedRecord.shiftType || 'normal', isCleaningDay: normalizedRecord.isCleaningDay || false, remark: normalizedRecord.remark || '', designatedWork: normalizedRecord.designatedWork, prepMinutes: Number(normalizedRecord.prepMinutes) || 0 }) ?? normalizedRecord)
-  }
-  records.value = ensureUniqueRecordIds(importedRecords.sort((a, b) => { if (a.workDate === b.workDate) return b.startTime.localeCompare(a.startTime); return b.workDate.localeCompare(a.workDate) }))
-}
-
 const exportWeeklyXlsx = () => {
   if (records.value.length === 0) return
   const sortedExportRecords = [...records.value].sort((a, b) => { if (a.workDate !== b.workDate) return a.workDate.localeCompare(b.workDate); return a.startTime.localeCompare(b.startTime) })
@@ -1955,16 +1937,11 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       <div class="section">
         <h2>資料管理</h2>
         <van-collapse v-model="dataManagementSections" class="data-management-collapse">
-          <van-collapse-item name="data-management" title="打開 匯入 / 匯出 備份操作區">
+          <van-collapse-item name="data-management" title="打開 匯出備份操作區">
             <div class="button-group">
-              <p class="section-note section-note--compact">備份成 JSON，或匯出 Excel 對帳單。</p>
+              <p class="section-note section-note--compact">匯出 JSON 備份或 Excel 對帳單。</p>
               <van-button block plain type="default" @click="exportTodayJson">匯出今日單日 JSON</van-button>
-              <div class="import-export-row">
-                <van-button block plain type="primary" :disabled="records.length === 0" @click="exportWeeklyJson">匯出本週 JSON</van-button>
-                <van-uploader class="import-uploader" :after-read="importJsonFiles" accept=".json,application/json" multiple>
-                  <van-button block plain type="danger" class="import-button">匯入備份 JSON</van-button>
-                </van-uploader>
-              </div>
+              <van-button block plain type="primary" style="margin-top: 12px" :disabled="records.length === 0" @click="exportWeeklyJson">匯出本週 JSON</van-button>
               <van-button block plain type="success" style="margin-top: 12px" :disabled="records.length === 0" @click="exportWeeklyXlsx">📊 匯出每週 XLSX (Excel 對帳單)</van-button>
             </div>
           </van-collapse-item>
@@ -2207,10 +2184,6 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 .weekly-summary__total--net { margin-top: 12px; padding: 16px; border-radius: 14px; background: linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%); border: 1px solid #bbf7d0; }
 .weekly-summary__total-label { font-size: 13px; color: #166534; font-weight: bold; }
 .weekly-summary__total-value--net { color: #15803d; font-size: 26px; font-weight: 800; margin-top: 4px; overflow-wrap: anywhere; }
-.import-export-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
-.import-uploader { display: block; }
-.import-uploader :deep(.van-uploader__wrapper) { display: block; }
-.import-button { border-style: dashed; background: #fef2f2; }
 .data-management-collapse { overflow: hidden; border-radius: 16px; background: #fff; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04); border: 1px solid #ebedf0; }
 :deep(.data-management-collapse .van-cell) { padding: 14px 16px; font-weight: bold; }
 :deep(.data-management-collapse .van-collapse-item__content) { padding: 14px 16px; background: #fafafa; }

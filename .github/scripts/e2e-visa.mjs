@@ -9,6 +9,16 @@ import { createRequire } from 'node:module'
 const require = createRequire(join(process.cwd(), 'package.json'))
 const { chromium } = require('playwright')
 
+// 新版薪資頁：當天的操作在點日期後滑出的面板裡
+async function openDaySheet(page) {
+  if (await page.locator('.payroll-day-sheet').isVisible()) return
+  const selected = page.locator('.van-calendar__selected-day').first()
+  if (await selected.count()) {
+    await selected.click()
+    await page.locator('.payroll-day-sheet').waitFor()
+  }
+}
+
 const appUrl = process.env.APP_URL || 'http://127.0.0.1:4174'
 const api = process.env.API_URL || 'http://127.0.0.1:8080/api'
 const mailApi = process.env.MAILPIT_URL || 'http://127.0.0.1:8025'
@@ -228,6 +238,7 @@ const member = await createMember('a')
 
   // 禁休公告：新增（多行）→ 查看 → 修改 → 不影響集簽
   const before = await page.evaluate(() => document.querySelector('.visa-card')?.innerText)
+  await openDaySheet(page)
   await page.getByRole('button', { name: '新增禁休公告' }).click()
   const notice = page.locator('.notice-sheet')
   await notice.locator('input[type=date]').nth(1).fill('2026-11-22')
@@ -236,6 +247,7 @@ const member = await createMember('a')
   await shot(page, 'notice-edit')
   await notice.getByRole('button', { name: '儲存公告' }).click()
   await notice.waitFor({ state: 'hidden' })
+  await openDaySheet(page)
   await page.locator('.calendar-day-actions__blackout').first().click()
   await notice.getByText('暫停所有休假申請。').waitFor()
   await shot(page, 'notice-view')
@@ -267,7 +279,13 @@ for (const viewport of [{ width: 360, height: 780 }, { width: 430, height: 932 }
   await shot(page, 'card-progress')
   check(`noHorizontalScroll${viewport.width}`, await noHorizontalScroll(page))
   await page.locator('.van-tabbar-item', { hasText: '薪資' }).click()
-  await page.getByRole('button', { name: '補登歷史' }).click()
+  // 新版：補登歷史收在月份操作的「⋯」選單
+  const historyButton = page.getByRole('button', { name: '補登歷史', exact: true })
+  if (await historyButton.count()) await historyButton.click()
+  else {
+    await page.getByRole('button', { name: '更多班表操作' }).click()
+    await page.getByRole('button', { name: '補登歷史班表' }).click()
+  }
   await page.locator('.history-wizard input[type=date]').nth(0).fill('2026-09-28')
   await page.locator('.history-wizard input[type=date]').nth(1).fill('2026-10-11')
   await footer(page).getByRole('button', { name: '產生班表草稿' }).click()

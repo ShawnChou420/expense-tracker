@@ -41,6 +41,11 @@ const popupOverflow = (page) =>
         .filter((value) => value > 1 && value < 2000),
     ),
   )
+// 薪資頁分段（新版才有）：沒有分段時什麼都不做，前後版本都能跑
+async function payrollView(page, name) {
+  const view = page.getByRole('tab', { name, exact: true })
+  if (await view.count()) await view.click()
+}
 const tab = (page, name) => page.locator('.van-tabbar-item', { hasText: name }).click()
 const toastGone = (page) =>
   page.locator('.van-toast').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
@@ -69,6 +74,7 @@ for (const target of targets) {
 
     if (target.name === 'before') {
       await tab(page, '薪資')
+      await payrollView(page, '本週')
       await page.getByRole('button', { name: '填滿本週' }).click()
       await page.waitForTimeout(500)
       // 基準版本若已有工作設定閘門，關掉彈窗再截首頁
@@ -136,6 +142,7 @@ async function guestSetupFlow(page, shot) {
   await tab(page, '薪資')
   await page.waitForTimeout(300)
   if (shot) await shot('payroll-not-configured')
+  await payrollView(page, '本週')
   await page.getByRole('button', { name: '填滿本週' }).click()
   await page.getByText('你還沒有設定薪資費率或預設班別').waitFor({ timeout: 5000 })
   result.gateShown = true
@@ -155,16 +162,11 @@ async function guestSetupFlow(page, shot) {
   await page.getByText('點選常見班別加入').waitFor({ timeout: 5000 })
   await page.getByRole('button', { name: /^晚班 23:50/ }).click()
   await page.getByRole('button', { name: /^早班 06:00/ }).click()
-  const rows = page.locator('.week__row')
-  for (const [index, name] of [
-    [0, '晚班'],
-    [1, '早班'],
-    [2, '晚班'],
-    [3, '晚班'],
-    [4, '晚班'],
-  ]) {
-    await rows.nth(index).getByRole('button', { name, exact: true }).click()
-  }
+  // 每週班表：整週快速設定（預設週一到週五）→ 晚班 → 套用
+  await page.getByRole('button', { name: /整週快速設定/ }).click()
+  await page.locator('.day-sheet__shifts').getByRole('button', { name: '晚班', exact: true }).click()
+  await page.getByRole('button', { name: /套用到 \d+ 天/ }).click()
+  await page.waitForTimeout(400)
   await capture('wizard-2-shifts')
   if (shot) {
     await page.locator('.setup__body').evaluate((el) => el.scrollTo(0, el.scrollHeight))
@@ -196,12 +198,21 @@ async function guestSetupFlow(page, shot) {
   result.weekRecords = await page.locator('.calendar-wrapper .record-work-day').count()
 
   // 7. 再按一次填滿本週：已有紀錄的日期不會被覆蓋
+  await payrollView(page, '本週')
   await page.getByRole('button', { name: '填滿本週' }).click()
   await page.getByText('沒有需要新增的班表').waitFor({ timeout: 5000 })
   result.noOverwrite = true
   await page.getByRole('button', { name: '關閉' }).click()
   await page.waitForTimeout(300)
   if (shot) {
+    await shot('payroll-week')
+    await payrollView(page, '班表')
+    await page.locator('.van-calendar__selected-day').first().click()
+    await page.waitForTimeout(500)
+    await shot('day-sheet')
+    await page.locator('.pday__close').click()
+    await page.waitForTimeout(400)
+    await payrollView(page, '設定')
     await page.locator('.work-setup-card').scrollIntoViewIfNeeded()
     await shot('payroll-configured')
   }
@@ -210,7 +221,7 @@ async function guestSetupFlow(page, shot) {
 
 /**
  * 薪資頁單日編輯器（#45）：時間直接輸入、未儲存提醒、資料管理只剩匯出。
- * 重新載入成全新訪客，用 11/15（沒有班表）；不需要費率。實際儲存由 e2e-member 驗證。
+ * 重新載入成全新訪客，在當天面板操作 11/15（沒有班表）；不需要費率。實際儲存由 e2e-member 驗證。
  * @param {import('playwright').Page} page
  */
 async function dayEditorFlow(page) {
@@ -218,8 +229,8 @@ async function dayEditorFlow(page) {
   const shot = (name) => page.screenshot({ path: join(outDir, `day-editor-${name}.png`) })
   const day = (n) =>
     page.locator('.calendar-wrapper .van-calendar__day').filter({ hasText: new RegExp(`^\\D*${n}(?!\\d)`) }).first()
-  const heading = page.locator('.calendar-day-actions__heading strong').first()
-  const times = page.locator('.time-text-field input')
+  const sheet = page.locator('.payroll-day-sheet')
+  const times = sheet.locator('.time-text-field input')
   const prompt = page.locator('.unsaved-prompt')
   try {
     await page.reload({ waitUntil: 'networkidle' })
@@ -227,11 +238,12 @@ async function dayEditorFlow(page) {
     await tab(page, '薪資')
     await toastGone(page)
     await day(15).click()
-    await page.waitForTimeout(300)
+    await sheet.waitFor()
+    await page.waitForTimeout(400)
     await times.nth(0).fill('900')
     await times.nth(0).press('Enter')
     await times.nth(1).fill('1730')
-    await page.getByText('→ 17:30').waitFor({ timeout: 3000 })
+    await sheet.getByText('→ 17:30').waitFor({ timeout: 3000 })
     result.liveHint = true
     await times.nth(1).scrollIntoViewIfNeeded()
     await shot('1-time-input')
@@ -241,33 +253,33 @@ async function dayEditorFlow(page) {
     // 無效時間：顯示錯誤
     await times.nth(0).fill('25:00')
     await times.nth(0).press('Enter')
-    result.invalidShown = await page.getByText('請輸入像 17:00 的時間').first().isVisible()
+    result.invalidShown = await sheet.getByText('請輸入像 17:00 的時間').isVisible()
     await times.nth(0).fill('09:00')
     await times.nth(0).press('Enter')
 
-    // 換日期 → 提醒；取消留在原地
-    await day(16).click()
+    // 關閉面板 → 提醒；取消留在面板
+    await sheet.locator('.pday__close').click()
     await prompt.getByText('這天還沒儲存').waitFor({ timeout: 3000 })
     await page.waitForTimeout(450)
     await shot('2-unsaved-prompt')
     await prompt.getByRole('button', { name: '取消' }).click()
     await page.waitForTimeout(400)
-    result.cancelStays = (await heading.textContent())?.includes('2026-11-15') && (await times.nth(1).inputValue()) === '17:30'
-    // 再換一次 → 不儲存 → 切到 11/16，11/15 沒有被寫入
-    await day(16).click()
-    await prompt.getByText('這天還沒儲存').waitFor({ timeout: 3000 })
+    result.cancelStays = (await sheet.isVisible()) && (await times.nth(1).inputValue()) === '17:30'
+    // 再關一次 → 不儲存 → 面板收起，11/15 沒有被寫入
+    await sheet.locator('.pday__close').click()
     await prompt.getByRole('button', { name: '不儲存', exact: true }).click()
-    await page.waitForTimeout(500)
-    result.discardMoves = (await heading.textContent())?.includes('2026-11-16')
+    await sheet.waitFor({ state: 'hidden', timeout: 3000 })
     await day(15).click()
+    await sheet.waitFor()
     await page.waitForTimeout(300)
-    result.discardNotSaved = await page.getByText('尚未加入班表').first().isVisible()
-    // 沒修改：換日期不提醒
-    await day(16).click()
-    await page.waitForTimeout(400)
-    result.noPromptWhenClean = (await heading.textContent())?.includes('2026-11-16')
+    result.discardNotSaved = (await sheet.getByText('尚未加入班表').isVisible()) && (await times.nth(1).inputValue()) === ''
+    // 沒修改：關閉不提醒
+    await sheet.locator('.pday__close').click()
+    await sheet.waitFor({ state: 'hidden', timeout: 3000 })
+    result.noPromptWhenClean = true
 
-    // 資料管理：沒有匯入
+    // 資料管理（設定段）：沒有匯入
+    await page.getByRole('tab', { name: '設定', exact: true }).click()
     await page.getByText('打開 匯出備份操作區').click()
     await page.waitForTimeout(400)
     const panel = page.locator('.data-management-collapse')
@@ -317,10 +329,11 @@ async function payslipFlow(page) {
     await toastGone(page)
     await shot('4-wizard-shifts')
     await page.getByRole('button', { name: /^早班 06:00/ }).click()
-    const rows = page.locator('.week__row')
-    for (const index of [0, 1, 2]) {
-      await rows.nth(index).getByRole('button', { name: '早班', exact: true }).click()
-    }
+    // 新版每週班表：整週快速設定（預設週一到週五）→ 早班 → 套用
+    await page.getByRole('button', { name: /整週快速設定/ }).click()
+    await page.locator('.day-sheet__shifts').getByRole('button', { name: '早班', exact: true }).click()
+    await page.getByRole('button', { name: /套用到 \d+ 天/ }).click()
+    await page.waitForTimeout(400)
     await page.getByRole('button', { name: '下一步', exact: true }).click()
     await page.getByText('以本週為例').waitFor({ timeout: 5000 })
     await page.getByRole('radio', { name: '1 次' }).click()
@@ -340,6 +353,7 @@ async function payslipFlow(page) {
     result.taxBadge = await page.getByText('薪資單 YTD').first().isVisible()
     await shot('8-dashboard-tax')
     await tab(page, '薪資')
+    await payrollView(page, '設定')
     await page.locator('.work-setup-card').scrollIntoViewIfNeeded()
     await shot('9-payroll-setup-card')
     result.rateStatusShown = await page.getByText(/薪資單確認/).first().isVisible()

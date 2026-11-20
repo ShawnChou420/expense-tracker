@@ -519,9 +519,10 @@ function openAdmin() {
   activeTab.value = 'admin'
 }
 watch(activeTab, (tab) => {
-  if (tab === 'admin' && window.location.hash !== ADMIN_HASH) window.history.replaceState(null, '', ADMIN_HASH)
+  // 保留 history.state，不清掉返回鍵的守門紀錄
+  if (tab === 'admin' && window.location.hash !== ADMIN_HASH) window.history.replaceState(window.history.state, '', ADMIN_HASH)
   if (tab !== 'admin' && window.location.hash === ADMIN_HASH)
-    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search)
 })
 // 登出或失去管理員權限時離開管理後台
 watch(isSuperAdmin, (admin) => {

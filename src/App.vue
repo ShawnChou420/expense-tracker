@@ -37,6 +37,8 @@ import PayslipImport from './components/PayslipImport.vue'
 import WorkSetupWizard from './components/WorkSetupWizard.vue'
 import WorkSetupGate from './components/WorkSetupGate.vue'
 import FillPreviewSheet from './components/FillPreviewSheet.vue'
+import TimeTextField from './components/TimeTextField.vue'
+import { timePickerFilter } from './domain/timeInput.js'
 import { useWorkSetup } from './composables/useWorkSetup.js'
 import { getGuestWorkSetup, payslipImportRepository, workProfileRepository } from './repositories/workSetupRepositories.js'
 import {
@@ -100,13 +102,12 @@ const remark = ref('') // ✨ 新增：當日自訂備註狀態
 const showStartTimePicker = ref(false)
 const showEndTimePicker = ref(false)
 
-// --- 過濾器，讓分鐘只顯示 5 的倍數 ---
-const filterTime = (type, options) => {
-  if (type === 'minute') {
-    return options.filter((option) => Number(option.value) % 5 === 0)
-  }
-  return options
-}
+// --- 滾輪分鐘只列 5 的倍數；手動輸入的其他分鐘（例如 17:07）也保留，打開時才不會錯位 ---
+const startPickerFilter = computed(() => timePickerFilter(startTime.value))
+const endPickerFilter = computed(() => timePickerFilter(endTime.value))
+// 手動輸入的時間格式錯誤時不能儲存
+const timeInputInvalid = ref({ start: false, end: false })
+const hasInvalidTimeInput = computed(() => timeInputInvalid.value.start || timeInputInvalid.value.end)
 
 const onStartTimeConfirm = ({ selectedValues }) => {
   startTime.value = selectedValues.join(':')
@@ -1324,6 +1325,10 @@ const getDayOfWeek = (dateStr) => {
 
 const addTodayRecordToList = () => {
   if (shiftType.value !== 'leave') {
+    if (hasInvalidTimeInput.value) {
+      showToast('請輸入像 17:00 的時間')
+      return
+    }
     if (!isValidTime(startTime.value) || !isValidTime(endTime.value)) {
       showToast('請先選擇上下班時間')
       return
@@ -1667,28 +1672,22 @@ const markDesignatedWorkDate = ({ date, marked }) => {
               <van-switch :model-value="isCleaningDay" size="20px" @update:model-value="setCleaningDay" />
             </template>
           </van-cell>
-          <van-field
+          <TimeTextField
             v-model="startTime"
-            is-link
-            readonly
             label="預估上班時間"
-            placeholder="請選擇時間"
-            input-align="right"
-            @click="showStartTimePicker = true"
+            @update:invalid="timeInputInvalid.start = $event"
+            @open-picker="showStartTimePicker = true"
           />
           <div v-if="startTime" class="time-nudge" role="group" aria-label="上班時間微調">
             <button v-for="step in TIME_NUDGES" :key="step" type="button" @click="nudgeTime('start', step)">
               {{ step > 0 ? `+${step} 分` : `−${-step} 分` }}
             </button>
           </div>
-          <van-field
+          <TimeTextField
             v-model="endTime"
-            is-link
-            readonly
             label="預估下班時間"
-            placeholder="請選擇時間"
-            input-align="right"
-            @click="showEndTimePicker = true"
+            @update:invalid="timeInputInvalid.end = $event"
+            @open-picker="showEndTimePicker = true"
           />
           <div v-if="endTime" class="time-nudge" role="group" aria-label="下班時間微調">
             <button v-for="step in TIME_NUDGES" :key="step" type="button" @click="nudgeTime('end', step)">
@@ -1727,10 +1726,10 @@ const markDesignatedWorkDate = ({ date, marked }) => {
     </div>
 
     <van-popup v-model:show="showStartTimePicker" position="bottom" round>
-      <van-time-picker title="預估上班時間" :model-value="(startTime || '06:00').split(':')" :filter="filterTime" @confirm="onStartTimeConfirm" @cancel="showStartTimePicker = false" />
+      <van-time-picker title="預估上班時間" :model-value="(startTime || '06:00').split(':')" :filter="startPickerFilter" @confirm="onStartTimeConfirm" @cancel="showStartTimePicker = false" />
     </van-popup>
     <van-popup v-model:show="showEndTimePicker" position="bottom" round>
-      <van-time-picker title="預估下班時間" :model-value="(endTime || '15:00').split(':')" :filter="filterTime" @confirm="onEndTimeConfirm" @cancel="showEndTimePicker = false" />
+      <van-time-picker title="預估下班時間" :model-value="(endTime || '15:00').split(':')" :filter="endPickerFilter" @confirm="onEndTimeConfirm" @cancel="showEndTimePicker = false" />
     </van-popup>
 
     <div class="workflow">

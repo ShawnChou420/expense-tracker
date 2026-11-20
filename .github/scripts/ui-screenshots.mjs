@@ -195,7 +195,7 @@ async function guestSetupFlow(page, shot) {
   // 5. Smoko 與預覽
   await page.getByText('以本週為例').waitFor({ timeout: 5000 })
   result.previewShifts = await page.locator('.preview__days li:not(.is-off)').count()
-  result.previewExcludedFlag = await page.getByText(/未含/).first().isVisible()
+  result.previewExcludedFlag = await page.locator('.van-popup').getByText(/未含/).first().isVisible()
   await capture('wizard-3-smoko')
   if (shot) {
     await page.locator('.setup__body').evaluate((el) => el.scrollTo(0, el.scrollHeight))

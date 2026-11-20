@@ -332,14 +332,13 @@ function goTo(step) {
 <template>
   <van-popup
     :show="show"
-    position="bottom"
-    round
+    position="right"
     safe-area-inset-bottom
-    class="setup-sheet"
+    class="setup-sheet full-page-popup"
     @update:show="emit('update:show', $event)"
   >
     <div class="setup">
-      <header class="setup__header">
+      <header class="setup__header full-page__header">
         <div>
           <span class="setup__eyebrow">工作設定</span>
           <h2>
@@ -354,8 +353,8 @@ function goTo(step) {
             }}
           </h2>
         </div>
-        <button type="button" class="setup__close" aria-label="關閉" @click="close">
-          <van-icon name="cross" />
+        <button type="button" class="setup__close full-page__back" aria-label="返回" @click="close">
+          <van-icon name="arrow-left" />
         </button>
       </header>
 

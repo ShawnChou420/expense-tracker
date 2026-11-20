@@ -22,6 +22,8 @@ let pageBack = () => false
 /** @type {() => boolean} 由 App 提供：目前是否在可以返回的頁面（非首頁或子頁面） */
 let pageCanGoBack = () => false
 let installed = false
+/** 推入守門紀錄時，下面那一筆的網址；按返回回到這個網址才是「離開守門紀錄」 */
+let guardBaseUrl = /** @type {string | null} */ (null)
 
 const hasWindow = typeof window !== 'undefined' && typeof history !== 'undefined'
 
@@ -33,10 +35,19 @@ function guardActive() {
 export function ensureBackGuard() {
   if (!hasWindow || guardActive()) return
   if (!overlays.length && !pageCanGoBack()) return
+  guardBaseUrl = location.href
   history.pushState({ ...(history.state || {}), [GUARD]: true }, '')
 }
 
 function onPopState() {
+  // 回到（或前進到）守門紀錄本身：不用處理
+  if (guardActive()) return
+  // 不是離開我們的守門紀錄（例如網址 hash 改成 #/admin、或沒有守門時的返回）：交給瀏覽器
+  if (guardBaseUrl === null || location.href !== guardBaseUrl) {
+    guardBaseUrl = null
+    return
+  }
+  guardBaseUrl = null
   // Vant 的確認視窗（showConfirmDialog）會自己在 popstate 時關閉，這次就只關它
   const dialogOpen = [...document.querySelectorAll('.van-dialog')].some(
     (el) => /** @type {HTMLElement} */ (el).offsetParent !== null,
@@ -114,6 +125,11 @@ const popupMixin = {
 export function installBackNavigation(app) {
   if (!hasWindow || installed) return
   installed = true
+  // 重新整理後歷史上可能還留著上次的守門紀錄；拿掉旗標，避免第一次返回沒有反應
+  if (guardActive()) {
+    const { [GUARD]: _stale, ...rest } = history.state
+    history.replaceState(Object.keys(rest).length ? rest : null, '')
+  }
   app.mixin(popupMixin)
   window.addEventListener('popstate', onPopState)
 }

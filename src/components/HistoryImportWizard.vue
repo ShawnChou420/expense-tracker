@@ -242,21 +242,20 @@ function close() {
 <template>
   <van-popup
     :show="show"
-    position="bottom"
-    round
+    position="right"
     safe-area-inset-bottom
-    class="history-wizard"
+    class="history-wizard full-page-popup"
     :close-on-click-overlay="step === 0 || step === 4"
     @update:show="emit('update:show', $event)"
   >
     <div class="history-wizard__panel">
-      <header class="history-wizard__header">
+      <header class="history-wizard__header full-page__header">
         <div>
           <p class="history-wizard__eyebrow">補登歷史工作</p>
           <h2>{{ step < 4 ? STEPS[step] : '已保存' }}</h2>
         </div>
-        <button type="button" class="history-wizard__close" aria-label="關閉" @click="close">
-          <van-icon name="cross" />
+        <button type="button" class="history-wizard__close full-page__back" aria-label="返回" @click="close">
+          <van-icon name="arrow-left" />
         </button>
       </header>
       <ol v-if="step < 4" class="history-steps" aria-label="步驟">

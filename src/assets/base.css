@@ -138,3 +138,30 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* 長流程（工作設定、薪資單匯入、補登歷史）以整頁畫面呈現：從右側滑入、左上角返回，不再是底部彈窗 */
+.van-popup.van-popup--right.full-page-popup {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  background: var(--color-background);
+}
+.van-popup.van-popup--right.full-page-popup > * {
+  max-height: none;
+  height: 100%;
+}
+.van-popup.full-page-popup .full-page__header {
+  display: flex;
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
+}
+.van-popup.full-page-popup .full-page__back {
+  flex: none;
+  margin-left: -8px;
+  background: transparent;
+  color: var(--color-heading);
+  font-size: 22px;
+}

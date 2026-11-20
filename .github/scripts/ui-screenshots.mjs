@@ -106,6 +106,7 @@ for (const target of targets) {
         checks.quickError = String(error.message || error).slice(0, 300)
       }
       if (fixtureDir) checks.payslip = await payslipFlow(page)
+      checks.dayEditor = await dayEditorFlow(page)
     }
     report.push({ target: target.name, width: size.width, horizontalOverflowPx: overflow, errors, checks })
     await context.close()
@@ -200,6 +201,79 @@ async function guestSetupFlow(page, shot) {
   if (shot) {
     await page.locator('.work-setup-card').scrollIntoViewIfNeeded()
     await shot('payroll-configured')
+  }
+  return result
+}
+
+/**
+ * 薪資頁單日編輯器（#45）：時間直接輸入、未儲存提醒、資料管理只剩匯出。
+ * 重新載入成全新訪客，用 11/15（沒有班表）；不需要費率。實際儲存由 e2e-member 驗證。
+ * @param {import('playwright').Page} page
+ */
+async function dayEditorFlow(page) {
+  const result = {}
+  const shot = (name) => page.screenshot({ path: join(outDir, `day-editor-${name}.png`) })
+  const day = (n) =>
+    page.locator('.calendar-wrapper .van-calendar__day').filter({ hasText: new RegExp(`^\\D*${n}(?!\\d)`) }).first()
+  const heading = page.locator('.calendar-day-actions__heading strong').first()
+  const times = page.locator('.time-text-field input')
+  const prompt = page.locator('.unsaved-prompt')
+  try {
+    await page.reload({ waitUntil: 'networkidle' })
+    await page.waitForTimeout(600)
+    await tab(page, '薪資')
+    await toastGone(page)
+    await day(15).click()
+    await page.waitForTimeout(300)
+    await times.nth(0).fill('900')
+    await times.nth(0).press('Enter')
+    await times.nth(1).fill('1730')
+    await page.getByText('→ 17:30').waitFor({ timeout: 3000 })
+    result.liveHint = true
+    await times.nth(1).scrollIntoViewIfNeeded()
+    await shot('1-time-input')
+    await times.nth(1).press('Enter')
+    result.normalized = (await times.nth(0).inputValue()) === '09:00' && (await times.nth(1).inputValue()) === '17:30'
+
+    // 無效時間：顯示錯誤
+    await times.nth(0).fill('25:00')
+    await times.nth(0).press('Enter')
+    result.invalidShown = await page.getByText('請輸入像 17:00 的時間').first().isVisible()
+    await times.nth(0).fill('09:00')
+    await times.nth(0).press('Enter')
+
+    // 換日期 → 提醒；取消留在原地
+    await day(16).click()
+    await prompt.getByText('這天還沒儲存').waitFor({ timeout: 3000 })
+    await page.waitForTimeout(450)
+    await shot('2-unsaved-prompt')
+    await prompt.getByRole('button', { name: '取消' }).click()
+    await page.waitForTimeout(400)
+    result.cancelStays = (await heading.textContent())?.includes('2026-11-15') && (await times.nth(1).inputValue()) === '17:30'
+    // 再換一次 → 不儲存 → 切到 11/16，11/15 沒有被寫入
+    await day(16).click()
+    await prompt.getByText('這天還沒儲存').waitFor({ timeout: 3000 })
+    await prompt.getByRole('button', { name: '不儲存', exact: true }).click()
+    await page.waitForTimeout(500)
+    result.discardMoves = (await heading.textContent())?.includes('2026-11-16')
+    await day(15).click()
+    await page.waitForTimeout(300)
+    result.discardNotSaved = await page.getByText('尚未加入班表').first().isVisible()
+    // 沒修改：換日期不提醒
+    await day(16).click()
+    await page.waitForTimeout(400)
+    result.noPromptWhenClean = (await heading.textContent())?.includes('2026-11-16')
+
+    // 資料管理：沒有匯入
+    await page.getByText('打開 匯出備份操作區').click()
+    await page.waitForTimeout(400)
+    const panel = page.locator('.data-management-collapse')
+    await panel.scrollIntoViewIfNeeded()
+    result.noImport = !(await panel.innerText()).includes('匯入') && (await panel.locator('input[type=file]').count()) === 0
+    await panel.screenshot({ path: join(outDir, 'day-editor-3-data-management.png') })
+  } catch (error) {
+    result.error = String(error.message || error).slice(0, 400)
+    await shot('error').catch(() => {})
   }
   return result
 }

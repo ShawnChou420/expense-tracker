@@ -339,10 +339,11 @@ async function payslipFlow(page) {
     await toastGone(page)
     await shot('4-wizard-shifts')
     await page.getByRole('button', { name: /^早班 06:00/ }).click()
-    const rows = page.locator('.week__row')
-    for (const index of [0, 1, 2]) {
-      await rows.nth(index).getByRole('button', { name: '早班', exact: true }).click()
-    }
+    // 新版每週班表：整週快速設定（預設週一到週五）→ 早班 → 套用
+    await page.getByRole('button', { name: /整週快速設定/ }).click()
+    await page.locator('.day-sheet__shifts').getByRole('button', { name: '早班', exact: true }).click()
+    await page.getByRole('button', { name: /套用到 \d+ 天/ }).click()
+    await page.waitForTimeout(400)
     await page.getByRole('button', { name: '下一步', exact: true }).click()
     await page.getByText('以本週為例').waitFor({ timeout: 5000 })
     await page.getByRole('radio', { name: '1 次' }).click()

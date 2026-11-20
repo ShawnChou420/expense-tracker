@@ -37,6 +37,9 @@ import PayslipImport from './components/PayslipImport.vue'
 import WorkSetupWizard from './components/WorkSetupWizard.vue'
 import WorkSetupGate from './components/WorkSetupGate.vue'
 import FillPreviewSheet from './components/FillPreviewSheet.vue'
+import TimeTextField from './components/TimeTextField.vue'
+import { timePickerFilter } from './domain/timeInput.js'
+import { isDayEditorDirty, snapshotDayEditor } from './domain/dayEditor.js'
 import { useWorkSetup } from './composables/useWorkSetup.js'
 import { getGuestWorkSetup, payslipImportRepository, workProfileRepository } from './repositories/workSetupRepositories.js'
 import {
@@ -73,7 +76,6 @@ import {
 } from './utils/holidays.js'
 import {
   createWorkRecord,
-  normalizeWorkRecord,
 } from './utils/workRecord.js'
 import { clearRecordsInMonth, ensureUniqueRecordIds, getMissingScheduleDates, nextRecordId, recordsInMonth, upsertRecordForDate } from './utils/scheduleRecords.js'
 import { showConfirmDialog, showToast } from 'vant'
@@ -101,13 +103,12 @@ const remark = ref('') // ✨ 新增：當日自訂備註狀態
 const showStartTimePicker = ref(false)
 const showEndTimePicker = ref(false)
 
-// --- 過濾器，讓分鐘只顯示 5 的倍數 ---
-const filterTime = (type, options) => {
-  if (type === 'minute') {
-    return options.filter((option) => Number(option.value) % 5 === 0)
-  }
-  return options
-}
+// --- 滾輪分鐘只列 5 的倍數；手動輸入的其他分鐘（例如 17:07）也保留，打開時才不會錯位 ---
+const startPickerFilter = computed(() => timePickerFilter(startTime.value))
+const endPickerFilter = computed(() => timePickerFilter(endTime.value))
+// 手動輸入的時間格式錯誤時不能儲存
+const timeInputInvalid = ref({ start: false, end: false })
+const hasInvalidTimeInput = computed(() => timeInputInvalid.value.start || timeInputInvalid.value.end)
 
 const onStartTimeConfirm = ({ selectedValues }) => {
   startTime.value = selectedValues.join(':')
@@ -594,8 +595,29 @@ const selectedPlannedShift = computed(() => {
 })
 const selectedDateHasDefaultShift = computed(() => Boolean(selectedPlannedShift.value))
 
+// --- 未儲存提醒：載入某天時記下基準值，目前的值和基準值不同就是有未儲存修改 ---
+// 初始值＝空白編輯器（訪客一開始不會呼叫 loadSelectedDate）
+const dayEditorBaseline = ref(snapshotDayEditor({}))
+const timeFieldKey = ref(0)
+const currentDayEditorState = () =>
+  snapshotDayEditor({
+    startTime: startTime.value,
+    endTime: endTime.value,
+    shiftType: shiftType.value,
+    isCleaningDay: isCleaningDay.value,
+    remark: remark.value,
+    smokoCountOverride: smokoCountOverride.value,
+  })
+const markDayEditorClean = () => {
+  dayEditorBaseline.value = currentDayEditorState()
+}
+const dayEditorDirty = computed(() => isDayEditorDirty(dayEditorBaseline.value, currentDayEditorState()))
+
 const loadSelectedDate = () => {
   const existingRecord = selectedRecord.value
+  smokoCountOverride.value = null
+  // 重新建立時間欄位，清掉沒通過驗證的輸入
+  timeFieldKey.value += 1
 
   if (existingRecord) {
     startTime.value = existingRecord.startTime
@@ -603,24 +625,68 @@ const loadSelectedDate = () => {
     shiftType.value = existingRecord.shiftType || 'normal'
     isCleaningDay.value = existingRecord.isCleaningDay || false
     remark.value = existingRecord.remark || ''
-    return
+  } else {
+    const planned = selectedPlannedShift.value
+    startTime.value = planned?.startTime ?? ''
+    endTime.value = planned?.endTime ?? ''
+    shiftType.value = 'normal'
+    isCleaningDay.value = planned?.isCleaningDay ?? false
+    remark.value = ''
   }
-
-  const planned = selectedPlannedShift.value
-  startTime.value = planned?.startTime ?? ''
-  endTime.value = planned?.endTime ?? ''
-  shiftType.value = 'normal'
-  isCleaningDay.value = planned?.isCleaningDay ?? false
-  remark.value = ''
+  markDayEditorClean()
 }
 
+// 有未儲存修改時先問：儲存（成功才繼續）／不儲存（丟棄後繼續）／取消（留在原地）
+const unsavedPrompt = ref({ show: false, date: '' })
+let resolveUnsavedPrompt = null
+const unsavedActions = [
+  { name: '儲存', value: 'save', color: '#1989fa' },
+  { name: '不儲存', value: 'discard', color: '#ee0a24' },
+]
+function confirmLeaveDayEditor() {
+  if (!dayEditorDirty.value) return Promise.resolve(true)
+  resolveUnsavedPrompt?.(false)
+  unsavedPrompt.value = { show: true, date: workDate.value }
+  return new Promise((resolve) => {
+    resolveUnsavedPrompt = resolve
+  })
+}
+function finishUnsavedPrompt(proceed) {
+  const resolve = resolveUnsavedPrompt
+  resolveUnsavedPrompt = null
+  unsavedPrompt.value = { ...unsavedPrompt.value, show: false }
+  resolve?.(proceed)
+}
+function onUnsavedAction(action) {
+  if (action.value === 'save') {
+    finishUnsavedPrompt(addTodayRecordToList())
+    return
+  }
+  loadSelectedDate()
+  finishUnsavedPrompt(true)
+}
+// 點遮罩、取消、手機返回都當作「取消」（選項不自動關閉，由 onUnsavedAction 關，避免先被當成取消）
+function onUnsavedPromptShow(show) {
+  if (!show && resolveUnsavedPrompt) finishUnsavedPrompt(false)
+}
+
+// 離開薪資頁前檢查
+const beforeTabChange = (tab) => (activeTab.value === 'payroll' && tab !== 'payroll' ? confirmLeaveDayEditor() : true)
+
 // 點擊日曆上的某一天
-const onDateSelect = (date) => {
-  showBlackoutEditor.value = false
+const payrollCalendar = ref(null)
+const onDateSelect = async (date) => {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
-  workDate.value = `${year}-${month}-${day}`
+  const nextDate = `${year}-${month}-${day}`
+  if (nextDate !== workDate.value && !(await confirmLeaveDayEditor())) {
+    // 留在原本那天：日曆的選取也退回去
+    payrollCalendar.value?.reset(parseWorkDate(workDate.value))
+    return
+  }
+  showBlackoutEditor.value = false
+  workDate.value = nextDate
   visibleMonth.value = `${year}-${month}`
   loadSelectedDate()
 }
@@ -1303,23 +1369,6 @@ const exportWeeklyJson = () => {
   const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = 'weekly-records.json'; link.click(); URL.revokeObjectURL(url)
 }
 
-const importJsonFiles = async (payload) => {
-  const uploaderFiles = Array.isArray(payload) ? payload : [payload]
-  const eventFiles = Array.from(payload?.target?.files || [])
-  const files = eventFiles.length > 0 ? eventFiles : uploaderFiles.map((item) => item?.file || item).filter(Boolean)
-  const importedRecords = []
-  for (const file of files) {
-    const text = await file.text(); const jsonData = JSON.parse(text)
-    if (Array.isArray(jsonData)) {
-      importedRecords.push(...jsonData.map((record) => normalizeWorkRecord(record)).map((record) => { return buildWorkRecordFromInputs({ id: record.id, workDate: record.workDate, startTime: record.startTime, endTime: record.endTime, shiftType: record.shiftType || 'normal', isCleaningDay: record.isCleaningDay || false, remark: record.remark || '', designatedWork: record.designatedWork, prepMinutes: Number(record.prepMinutes) || 0 }) ?? record }))
-      continue
-    }
-    const normalizedRecord = normalizeWorkRecord(jsonData)
-    importedRecords.push(buildWorkRecordFromInputs({ id: normalizedRecord.id, workDate: normalizedRecord.workDate, startTime: normalizedRecord.startTime, endTime: normalizedRecord.endTime, shiftType: normalizedRecord.shiftType || 'normal', isCleaningDay: normalizedRecord.isCleaningDay || false, remark: normalizedRecord.remark || '', designatedWork: normalizedRecord.designatedWork, prepMinutes: Number(normalizedRecord.prepMinutes) || 0 }) ?? normalizedRecord)
-  }
-  records.value = ensureUniqueRecordIds(importedRecords.sort((a, b) => { if (a.workDate === b.workDate) return b.startTime.localeCompare(a.startTime); return b.workDate.localeCompare(a.workDate) }))
-}
-
 const exportWeeklyXlsx = () => {
   if (records.value.length === 0) return
   const sortedExportRecords = [...records.value].sort((a, b) => { if (a.workDate !== b.workDate) return a.workDate.localeCompare(b.workDate); return a.startTime.localeCompare(b.startTime) })
@@ -1351,14 +1400,19 @@ const getDayOfWeek = (dateStr) => {
   return days[new Date(y, m - 1, d).getDay()]
 }
 
+/** 儲存目前編輯中的這天；成功回傳 true */
 const addTodayRecordToList = () => {
   if (shiftType.value !== 'leave') {
+    if (hasInvalidTimeInput.value) {
+      showToast('請輸入像 17:00 的時間')
+      return false
+    }
     if (!isValidTime(startTime.value) || !isValidTime(endTime.value)) {
       showToast('請先選擇上下班時間')
-      return
+      return false
     }
     // 需要計算薪資的班表：先確認費率（休假紀錄不需要）
-    if (!workSetup.requireSetup({ type: 'ADD_SHIFT', label: '儲存這天的班表' }, 'pay')) return
+    if (!workSetup.requireSetup({ type: 'ADD_SHIFT', label: '儲存這天的班表' }, 'pay')) return false
   }
 
   const todayRecord = buildWorkRecordFromInputs({
@@ -1374,10 +1428,12 @@ const addTodayRecordToList = () => {
     prepMinutes: currentPrepMinutes.value,
   })
 
-  if (!todayRecord) return
+  if (!todayRecord) return false
   const wasExisting = Boolean(selectedRecord.value)
   records.value = upsertRecordForDate(records.value, todayRecord)
+  markDayEditorClean()
   showToast(wasExisting ? '已更新當天班表' : '成功加入排班列表')
+  return true
 }
 
 // 日曆卡片上一鍵標記／取消清潔日：換成該班別的清潔日時間並直接儲存（主管前一天公布時用）
@@ -1398,7 +1454,8 @@ const toggleSelectedDateCleaning = () => {
   showToast(saved.isCleaningDay ? `已設為清潔日 ${saved.startTime}–${saved.endTime}` : `已取消清潔日 ${saved.startTime}–${saved.endTime}`)
 }
 
-const editRecord = (record) => {
+const editRecord = async (record) => {
+  if (record.workDate !== workDate.value && !(await confirmLeaveDayEditor())) return
   workDate.value = record.workDate
   loadSelectedDate()
   scheduleSections.value = []
@@ -1600,6 +1657,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       </div>
       <div class="calendar-wrapper">
         <van-calendar
+          ref="payrollCalendar"
           :poppable="false"
           :show-confirm="false"
           :default-date="calendarDefaultDate"
@@ -1692,28 +1750,24 @@ const markDesignatedWorkDate = ({ date, marked }) => {
               <van-switch :model-value="isCleaningDay" size="20px" @update:model-value="setCleaningDay" />
             </template>
           </van-cell>
-          <van-field
+          <TimeTextField
+            :key="`start-${timeFieldKey}`"
             v-model="startTime"
-            is-link
-            readonly
             label="預估上班時間"
-            placeholder="請選擇時間"
-            input-align="right"
-            @click="showStartTimePicker = true"
+            @update:invalid="timeInputInvalid.start = $event"
+            @open-picker="showStartTimePicker = true"
           />
           <div v-if="startTime" class="time-nudge" role="group" aria-label="上班時間微調">
             <button v-for="step in TIME_NUDGES" :key="step" type="button" @click="nudgeTime('start', step)">
               {{ step > 0 ? `+${step} 分` : `−${-step} 分` }}
             </button>
           </div>
-          <van-field
+          <TimeTextField
+            :key="`end-${timeFieldKey}`"
             v-model="endTime"
-            is-link
-            readonly
             label="預估下班時間"
-            placeholder="請選擇時間"
-            input-align="right"
-            @click="showEndTimePicker = true"
+            @update:invalid="timeInputInvalid.end = $event"
+            @open-picker="showEndTimePicker = true"
           />
           <div v-if="endTime" class="time-nudge" role="group" aria-label="下班時間微調">
             <button v-for="step in TIME_NUDGES" :key="step" type="button" @click="nudgeTime('end', step)">
@@ -1752,11 +1806,22 @@ const markDesignatedWorkDate = ({ date, marked }) => {
     </div>
 
     <van-popup v-model:show="showStartTimePicker" position="bottom" round>
-      <van-time-picker title="預估上班時間" :model-value="(startTime || '06:00').split(':')" :filter="filterTime" @confirm="onStartTimeConfirm" @cancel="showStartTimePicker = false" />
+      <van-time-picker title="預估上班時間" :model-value="(startTime || '06:00').split(':')" :filter="startPickerFilter" @confirm="onStartTimeConfirm" @cancel="showStartTimePicker = false" />
     </van-popup>
     <van-popup v-model:show="showEndTimePicker" position="bottom" round>
-      <van-time-picker title="預估下班時間" :model-value="(endTime || '15:00').split(':')" :filter="filterTime" @confirm="onEndTimeConfirm" @cancel="showEndTimePicker = false" />
+      <van-time-picker title="預估下班時間" :model-value="(endTime || '15:00').split(':')" :filter="endPickerFilter" @confirm="onEndTimeConfirm" @cancel="showEndTimePicker = false" />
     </van-popup>
+    <van-action-sheet
+      :show="unsavedPrompt.show"
+      title="這天還沒儲存"
+      :description="`${unsavedPrompt.date} 的修改還沒儲存。`"
+      :actions="unsavedActions"
+      cancel-text="取消"
+      class="unsaved-prompt"
+      teleport="body"
+      @select="onUnsavedAction"
+      @update:show="onUnsavedPromptShow"
+    />
 
     <div class="workflow">
       
@@ -1962,16 +2027,11 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       <div class="section">
         <h2>資料管理</h2>
         <van-collapse v-model="dataManagementSections" class="data-management-collapse">
-          <van-collapse-item name="data-management" title="打開 匯入 / 匯出 備份操作區">
+          <van-collapse-item name="data-management" title="打開 匯出備份操作區">
             <div class="button-group">
-              <p class="section-note section-note--compact">備份成 JSON，或匯出 Excel 對帳單。</p>
+              <p class="section-note section-note--compact">匯出 JSON 備份或 Excel 對帳單。</p>
               <van-button block plain type="default" @click="exportTodayJson">匯出今日單日 JSON</van-button>
-              <div class="import-export-row">
-                <van-button block plain type="primary" :disabled="records.length === 0" @click="exportWeeklyJson">匯出本週 JSON</van-button>
-                <van-uploader class="import-uploader" :after-read="importJsonFiles" accept=".json,application/json" multiple>
-                  <van-button block plain type="danger" class="import-button">匯入備份 JSON</van-button>
-                </van-uploader>
-              </div>
+              <van-button block plain type="primary" style="margin-top: 12px" :disabled="records.length === 0" @click="exportWeeklyJson">匯出本週 JSON</van-button>
               <van-button block plain type="success" style="margin-top: 12px" :disabled="records.length === 0" @click="exportWeeklyXlsx">📊 匯出每週 XLSX (Excel 對帳單)</van-button>
             </div>
           </van-collapse-item>
@@ -1994,7 +2054,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
     </div>
     <ShoppingList v-show="activeTab === 'shopping'" :active="activeTab === 'shopping'" @navigate="activeTab = $event" />
 
-    <van-tabbar :model-value="tabbarActive" fixed safe-area-inset-bottom @update:model-value="activeTab = $event">
+    <van-tabbar :model-value="tabbarActive" fixed safe-area-inset-bottom :before-change="beforeTabChange" @update:model-value="activeTab = $event">
       <van-tabbar-item name="dashboard" icon="home-o">首頁</van-tabbar-item>
       <van-tabbar-item name="payroll" icon="balance-o">薪資</van-tabbar-item>
       <van-tabbar-item name="expenses" icon="records">支出</van-tabbar-item>
@@ -2218,10 +2278,6 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 .weekly-summary__total--net { margin-top: 12px; padding: 16px; border-radius: 14px; background: linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%); border: 1px solid #bbf7d0; }
 .weekly-summary__total-label { font-size: 13px; color: #166534; font-weight: bold; }
 .weekly-summary__total-value--net { color: #15803d; font-size: 26px; font-weight: 800; margin-top: 4px; overflow-wrap: anywhere; }
-.import-export-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
-.import-uploader { display: block; }
-.import-uploader :deep(.van-uploader__wrapper) { display: block; }
-.import-button { border-style: dashed; background: #fef2f2; }
 .data-management-collapse { overflow: hidden; border-radius: 16px; background: #fff; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04); border: 1px solid #ebedf0; }
 :deep(.data-management-collapse .van-cell) { padding: 14px 16px; font-weight: bold; }
 :deep(.data-management-collapse .van-collapse-item__content) { padding: 14px 16px; background: #fafafa; }

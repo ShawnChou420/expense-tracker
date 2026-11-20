@@ -187,6 +187,38 @@ try {
   await page.getByRole('button', { name: '填滿此月' }).click()
   await page.getByText('沒有需要新增的班表').waitFor()
   check('noDuplicateAfterRelogin', true)
+  await page.getByRole('button', { name: '關閉' }).click()
+  await page.waitForTimeout(300)
+
+  // 7. 單日編輯器（#45）：手動輸入時間，不儲存就換日期 → 提醒選「儲存」→ 重新整理後仍在
+  const day = (n) =>
+    page.locator('.calendar-wrapper .van-calendar__day').filter({ hasText: new RegExp(`^\\D*${n}(?!\\d)`) }).first()
+  const heading = page.locator('.calendar-day-actions__heading strong').first()
+  const times = page.locator('.time-text-field input')
+  await day(15).click() // 11/15 週日，沒有班表
+  await page.waitForTimeout(300)
+  await times.nth(0).fill('0900')
+  await times.nth(0).press('Enter')
+  await times.nth(1).fill('17:00')
+  await times.nth(1).press('Enter')
+  check('manualTimesNormalized', (await times.nth(0).inputValue()) === '09:00' && (await times.nth(1).inputValue()) === '17:00')
+  await day(14).click()
+  const prompt = page.locator('.unsaved-prompt')
+  await prompt.getByText('2026-11-15 的修改還沒儲存。').waitFor({ timeout: 5000 })
+  await page.waitForTimeout(400)
+  await shot('unsaved-prompt')
+  await prompt.getByRole('button', { name: '儲存', exact: true }).click()
+  await page.waitForTimeout(500)
+  check('promptSaveMovesToNewDate', (await heading.textContent())?.includes('2026-11-14'))
+  await page.waitForTimeout(2500) // 等班表寫入後端
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.getByText('最近一期薪資').waitFor({ timeout: 15000 })
+  await tab('薪資')
+  await day(15).click()
+  await page.waitForTimeout(400)
+  check('promptSavePersisted', await page.getByText('已排班 · 09:00–17:00').first().isVisible())
+  check('manualTimePersisted', (await times.nth(0).inputValue()) === '09:00' && (await times.nth(1).inputValue()) === '17:00')
+  await shot('manual-time-after-reload')
 } catch (error) {
   result.error = String(error.message || error).slice(0, 500)
   await shot('error').catch(() => {})

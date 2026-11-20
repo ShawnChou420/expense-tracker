@@ -111,6 +111,16 @@ for (const target of targets) {
         await page.screenshot({ path: join(outDir, 'expense-form.png') })
         await page.locator('.amount-hero__input').fill('25.50').catch(() => {})
         checks.expenseAmountFirst = await page.locator('.amount-hero__input').isVisible()
+        // 返回鍵：先關彈窗、留在原分頁；再按一次回首頁（不會直接離開 App）
+        await page.goBack()
+        await page.waitForTimeout(700)
+        checks.backClosesPopup =
+          (await page.locator('.van-popup--bottom:visible').count()) === 0 &&
+          page.url().startsWith('http://127.0.0.1')
+        checks.backStaysOnTab = await page.locator('.expense-page').isVisible()
+        await page.goBack()
+        await page.waitForTimeout(700)
+        checks.backReturnsHome = await page.locator('.home-header').isVisible()
       } catch (error) {
         checks.quickError = String(error.message || error).slice(0, 300)
       }

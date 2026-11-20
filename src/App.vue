@@ -11,6 +11,7 @@ import AuthPanel from './components/AuthPanel.vue'
 import AccountPage from './components/AccountPage.vue'
 import PrivacyPage from './components/PrivacyPage.vue'
 import { accountRepository } from './repositories/accountRepository.js'
+import { ensureBackGuard, registerPageBack } from './services/backNavigation.js'
 import { authEmail, authToken, signOut, clearSession, apiRequest, restoreSavedSession, waitForBackendReady, sessionExpired, reportEvent, isSuperAdmin } from './services/authSession.js'
 import { startPerfPhase } from './services/perfTrace.js'
 import { useWorkRecordsPersistence } from './composables/useWorkRecordsPersistence.js'
@@ -518,15 +519,34 @@ function openAdmin() {
   activeTab.value = 'admin'
 }
 watch(activeTab, (tab) => {
-  if (tab === 'admin' && window.location.hash !== ADMIN_HASH) window.history.replaceState(null, '', ADMIN_HASH)
+  // 保留 history.state，不清掉返回鍵的守門紀錄
+  if (tab === 'admin' && window.location.hash !== ADMIN_HASH) window.history.replaceState(window.history.state, '', ADMIN_HASH)
   if (tab !== 'admin' && window.location.hash === ADMIN_HASH)
-    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search)
 })
 // 登出或失去管理員權限時離開管理後台
 watch(isSuperAdmin, (admin) => {
   if (!admin && activeTab.value === 'admin') activeTab.value = 'more'
   if (admin && window.location.hash === ADMIN_HASH) activeTab.value = 'admin'
 })
+// 返回鍵：子頁面回上一層、其他分頁回首頁；首頁再按返回才離開 App
+// 薪資頁有未儲存的單日修改時先提醒，取消就留在原地
+registerPageBack({
+  canGoBack: () => activeTab.value !== 'dashboard',
+  back: () => {
+    const target = ['shopping', 'admin'].includes(activeTab.value) ? 'more' : 'dashboard'
+    if (activeTab.value === 'dashboard') return false
+    if (activeTab.value === 'payroll') {
+      confirmLeaveDayEditor().then((proceed) => {
+        if (proceed) activeTab.value = target
+      })
+      return true
+    }
+    activeTab.value = target
+    return true
+  },
+})
+watch(activeTab, () => nextTick(ensureBackGuard))
 const payBreakdownOpen = ref([])
 const advancedRatesOpen = ref([])
 const visibleMonth = ref(workDate.value.slice(0, 7))
@@ -1966,6 +1986,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       cancel-text="取消"
       class="unsaved-prompt"
       teleport="body"
+      :close-on-popstate="false"
       @select="onUnsavedAction"
       @update:show="onUnsavedPromptShow"
     />

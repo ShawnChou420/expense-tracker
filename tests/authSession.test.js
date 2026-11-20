@@ -3,8 +3,13 @@ import {
   REQUEST_TIMEOUT_MS,
   SLOW_REQUEST_MS,
   apiRequest,
+  authToken,
+  clearSession,
   getAuthConfig,
+  restoreSavedSession,
   serverSlow,
+  sessionExpired,
+  waitForBackendReady,
   wakeServer,
 } from '../src/services/authSession.js'
 
@@ -123,5 +128,115 @@ describe('apiRequest', () => {
     )
     freshWake()
     await vi.waitFor(() => expect(text).toHaveBeenCalledTimes(1))
+  })
+})
+
+describe('waitForBackendReady', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('keeps asking while the backend is still starting, then resolves once ready', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 503, text: async () => '' })
+      .mockResolvedValueOnce({ ok: false, status: 502, text: async () => '' })
+      .mockResolvedValueOnce({ ok: true, status: 200, text: async () => '' })
+    vi.stubGlobal('fetch', fetch)
+    expect(await waitForBackendReady({ intervalMs: 1 })).toBe(true)
+    expect(fetch).toHaveBeenCalledTimes(3)
+    expect(fetch.mock.calls[0][0]).toMatch(/\/ready$/)
+  })
+
+  it('stops waiting on an unrelated error such as an older backend without /ready', async () => {
+    const fetch = vi.fn(async () => ({ ok: false, status: 404, text: async () => '' }))
+    vi.stubGlobal('fetch', fetch)
+    expect(await waitForBackendReady({ intervalMs: 1 })).toBe(false)
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not keep an offline user waiting', async () => {
+    const fetch = vi.fn(async () => {
+      throw new Error('offline')
+    })
+    vi.stubGlobal('fetch', fetch)
+    expect(await waitForBackendReady({ intervalMs: 1, maxNetworkErrors: 3 })).toBe(false)
+    expect(fetch).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('restoreSavedSession', () => {
+  /** @type {Map<string, string>} */
+  let store
+  beforeEach(() => {
+    clearSession()
+    sessionExpired.value = false
+    store = new Map([
+      ['expense-tracker.session', JSON.stringify({ token: 'old-token', email: 'a@example.com' })],
+    ])
+    vi.stubGlobal('localStorage', {
+      getItem: (key) => store.get(key) ?? null,
+      setItem: (key, value) => store.set(key, value),
+      removeItem: (key) => store.delete(key),
+    })
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('only marks the user signed in after the backend accepts the saved token', async () => {
+    const pending = deferredFetch()
+    const fetch = vi.fn(() => pending.promise)
+    vi.stubGlobal('fetch', fetch)
+    const restoring = restoreSavedSession()
+    expect(authToken.value).toBeNull()
+    expect(fetch.mock.calls[0][1].headers.Authorization).toBe('Bearer old-token')
+    pending.resolve(json({ email: 'a@example.com', roles: [] }))
+    expect(await restoring).toBe(true)
+    expect(authToken.value).toBe('old-token')
+  })
+
+  it('quietly forgets a rejected token and flags it once for the screen', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => json({}, 401)),
+    )
+    expect(await restoreSavedSession()).toBe(false)
+    expect(authToken.value).toBeNull()
+    expect(store.has('expense-tracker.session')).toBe(false)
+    expect(sessionExpired.value).toBe(true)
+  })
+
+  it('keeps the saved login when the server cannot be reached', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('offline')
+      }),
+    )
+    expect(await restoreSavedSession()).toBe(false)
+    expect(store.has('expense-tracker.session')).toBe(true)
+    expect(sessionExpired.value).toBe(false)
+  })
+})
+
+describe('401 handling', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    clearSession()
+  })
+
+  it('does not show a raw 401 for a request that was sent with an older token', async () => {
+    authToken.value = 'stale'
+    const pending = deferredFetch()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => pending.promise),
+    )
+    const request = apiRequest('/expenses')
+    authToken.value = 'fresh'
+    pending.resolve(json({}, 401))
+    await expect(request).rejects.toMatchObject({
+      code: 'SESSION_EXPIRED',
+      message: '登入已失效，請重新登入',
+    })
+    // 新的登入不受舊請求影響
+    expect(authToken.value).toBe('fresh')
   })
 })

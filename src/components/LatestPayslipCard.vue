@@ -69,9 +69,6 @@ const items = computed(() =>
         <dd>{{ highlights.effectiveHourlyCents === null ? '—' : format(highlights.effectiveHourlyCents) }}</dd>
       </div>
     </dl>
-    <p v-if="payslip.superCents" class="latest-pay__super">
-      另有 Super {{ format(payslip.superCents) }} 存入退休金帳戶（不計入實領）
-    </p>
 
     <button
       v-if="items.length"
@@ -207,11 +204,6 @@ const items = computed(() =>
   font-size: 15px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
-}
-.latest-pay__super {
-  margin: 10px 2px 0;
-  color: var(--color-muted);
-  font-size: 12px;
 }
 .latest-pay__toggle {
   display: flex;

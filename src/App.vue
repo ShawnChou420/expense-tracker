@@ -1978,6 +1978,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       cancel-text="取消"
       class="unsaved-prompt"
       teleport="body"
+      :close-on-popstate="false"
       @select="onUnsavedAction"
       @update:show="onUnsavedPromptShow"
     />

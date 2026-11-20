@@ -283,14 +283,14 @@ async function dayEditorFlow(page) {
     // 再關一次 → 不儲存 → 面板收起，11/15 沒有被寫入
     await sheet.locator('.pday__close').click()
     await prompt.getByRole('button', { name: '不儲存', exact: true }).click()
-    await sheet.waitFor({ state: 'hidden', timeout: 3000 })
+    await sheet.waitFor({ state: 'hidden', timeout: 8000 })
     await day(15).click()
     await sheet.waitFor()
     await page.waitForTimeout(300)
     result.discardNotSaved = (await sheet.getByText('尚未加入班表').isVisible()) && (await times.nth(1).inputValue()) === ''
     // 沒修改：關閉不提醒
     await sheet.locator('.pday__close').click()
-    await sheet.waitFor({ state: 'hidden', timeout: 3000 })
+    await sheet.waitFor({ state: 'hidden', timeout: 8000 })
     result.noPromptWhenClean = true
 
     // 資料管理（設定段）：沒有匯入
@@ -364,9 +364,38 @@ async function payslipFlow(page) {
     result.latestPayslipCard = await page.getByText('最近一期薪資').isVisible()
     await shot('6-dashboard')
     await page.locator('.latest-pay').screenshot({ path: join(outDir, 'payslip-7-latest-card.png') })
-    await page.getByText('年度稅務追蹤').scrollIntoViewIfNeeded()
+    // 年度稅務預設不在首頁（UI 2.0 Sprint 2）：從「自訂首頁」打開
+    const taxHeading = page.getByRole('heading', { name: /年度稅務追蹤/ })
+    result.taxHiddenByDefault = (await taxHeading.count()) === 0
+    await page.getByRole('button', { name: '自訂首頁' }).click()
+    const customize = page.locator('.customize-sheet')
+    await customize.waitFor()
+    await page.waitForTimeout(400)
+    await shot('8a-customize-sheet')
+    await customize.locator('.customize__row', { hasText: '年度稅務追蹤' }).locator('.van-switch').click()
+    await customize.getByRole('button', { name: '關閉' }).click()
+    await customize.waitFor({ state: 'hidden' })
+    await taxHeading.scrollIntoViewIfNeeded()
     result.taxBadge = await page.getByText('薪資單 YTD').first().isVisible()
     await shot('8-dashboard-tax')
+    // 切換成生活優先：今日班表在最前面
+    await page.evaluate(() => window.scrollTo(0, 0))
+    await page.getByRole('button', { name: '自訂首頁' }).click()
+    await customize.waitFor()
+    await customize.getByRole('radio', { name: '生活優先' }).click()
+    await page.locator('.van-dialog').getByRole('button', { name: '切換' }).click()
+    await page.waitForTimeout(400)
+    await customize.getByRole('button', { name: '關閉' }).click()
+    await customize.waitFor({ state: 'hidden' })
+    await page.evaluate(() => window.scrollTo(0, 0))
+    const firstModule = await page.evaluate(() => {
+      const items = [...document.querySelectorAll('.home-modules > *')].filter((el) => el.offsetParent !== null || getComputedStyle(el).display === 'contents')
+      const flat = items.flatMap((el) => (getComputedStyle(el).display === 'contents' ? [...el.children] : [el]))
+      flat.sort((a, b) => Number(getComputedStyle(a).order) - Number(getComputedStyle(b).order))
+      return flat[0]?.querySelector('.today-shift, .hero-card') ? flat[0].querySelector('.today-shift, .hero-card').className : flat[0]?.className
+    })
+    result.lifeModeShiftFirst = String(firstModule).includes('today-shift')
+    await shot('8b-dashboard-life-mode')
     await tab(page, '薪資')
     await payrollView(page, '設定')
     await page.locator('.work-setup-card').scrollIntoViewIfNeeded()

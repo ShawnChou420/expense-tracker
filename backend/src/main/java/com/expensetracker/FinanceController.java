@@ -20,14 +20,17 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
+import tools.jackson.databind.ObjectMapper;
 
 @RestController
 @RequestMapping("/api")
 public class FinanceController {
     private final JdbcTemplate db;
+    private final ObjectMapper json;
 
-    FinanceController(JdbcTemplate db) {
+    FinanceController(JdbcTemplate db, ObjectMapper json) {
         this.db = db;
+        this.json = json;
     }
 
     private static long signedCents(Object value) {
@@ -113,10 +116,14 @@ public class FinanceController {
     Map<String, Object> dashboardSettings(Authentication auth) {
         long owner = LedgerController.owner(auth);
         Map<String, Object> result = new HashMap<>();
-        var preferences = db.query("SELECT display_currency, work_day_target FROM user_preferences WHERE user_seq=?",
-            (rs, row) -> new Object[] { rs.getString(1), rs.getObject(2) }, owner);
+        var preferences = db.query(
+            "SELECT display_currency, work_day_target, dashboard_layout::text FROM user_preferences WHERE user_seq=?",
+            (rs, row) -> new Object[] { rs.getString(1), rs.getObject(2), rs.getString(3) }, owner);
         result.put("displayCurrency", preferences.isEmpty() ? "AUD" : ((String) preferences.get(0)[0]).trim());
         result.put("workDayTarget", preferences.isEmpty() ? null : preferences.get(0)[1]);
+        // 首頁自訂：NULL＝沿用系統預設
+        String layout = preferences.isEmpty() ? null : (String) preferences.get(0)[2];
+        result.put("dashboardLayout", layout == null ? null : json.readValue(layout, Map.class));
         var goals = db.query("""
             SELECT name, target_cents, initial_cents, start_date, end_date FROM saving_goal
             WHERE user_seq=?
@@ -145,6 +152,18 @@ public class FinanceController {
               updated_at=now()
             """, LedgerController.owner(auth), currency);
         return Map.of("currency", currency);
+    }
+
+    /** 首頁自訂：整份覆寫（模式＋模組顯示與順序）；只影響畫面，不刪除任何資料 */
+    @PutMapping("/dashboard-settings/layout")
+    Map<String, Object> saveDashboardLayout(Authentication auth, @RequestBody Map<String, Object> body) {
+        Map<String, Object> layout = DashboardLayout.validate(body);
+        db.update("""
+            INSERT INTO user_preferences(user_seq, dashboard_layout) VALUES (?, ?::jsonb)
+            ON CONFLICT (user_seq) DO UPDATE SET dashboard_layout=EXCLUDED.dashboard_layout,
+              updated_at=now()
+            """, LedgerController.owner(auth), json.writeValueAsString(layout));
+        return layout;
     }
 
     @PutMapping("/dashboard-settings/work-day-target")

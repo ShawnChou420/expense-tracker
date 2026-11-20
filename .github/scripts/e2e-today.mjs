@@ -203,6 +203,23 @@ const noHorizontalScroll = (page) => page.evaluate(() => document.documentElemen
   await editor.getByRole('button', { name: '儲存' }).click()
   await page.locator('.today-task', { hasText: '洗衣服' }).waitFor()
 
+  // 首頁自訂（UI 2.0 Sprint 2）：薪資優先預設不顯示心情與備註 → 在「自訂首頁」打開，設定存到後端
+  check('moodHiddenByDefault', (await page.locator('.today-journal').count()) === 0)
+  await page.getByRole('button', { name: '自訂首頁' }).click()
+  const customize = page.locator('.customize-sheet')
+  await customize.waitFor()
+  await shot(page, 'customize-sheet')
+  await customize.locator('.customize__row', { hasText: '心情與備註' }).locator('.van-switch').click()
+  await customize.getByRole('button', { name: '關閉' }).click()
+  await customize.waitFor({ state: 'hidden' })
+  await page.locator('.today-journal').waitFor()
+  await page.waitForTimeout(800) // 等首頁設定寫入後端
+  const savedLayout = (await call('/dashboard-settings', { token: bob.token })).dashboardLayout
+  check(
+    'layoutSavedToBackend',
+    savedLayout?.mode === 'PAY' && savedLayout.modules.some((m) => m.id === 'mood-journal' && m.visible === true),
+  )
+
   // 心情＋備註
   await page.getByRole('button', { name: /很好/ }).click()
   await page.locator('.today-journal textarea').fill('今天雞胸比較難切，刀要再磨一下。')
@@ -223,12 +240,15 @@ const noHorizontalScroll = (page) => page.evaluate(() => document.documentElemen
   check('tasksPersistAfterLogin', (await page.locator('.today-task__title--done').count()) === 1)
   check('moodPersistsAfterLogin', (await page.locator('.today-mood--active').innerText()).includes('很好'))
   check('journalPersistsAfterLogin', (await page.locator('.today-journal textarea').inputValue()).includes('雞胸'))
+  check('layoutPersistsAfterLogin', (await page.locator('.today-journal').count()) === 1)
   await context.close()
 }
 
 // Alice：之前未完成的事項（不會自動消失）＋換一句
 {
   const { context, page } = await openApp(alice, { width: 390, height: 844 })
+  // 不同帳號的首頁設定互不影響：Alice 仍是預設（沒有心情與備註）
+  check('otherAccountKeepsDefaultLayout', (await page.locator('.today-journal').count()) === 0)
   await page.getByText('還有 1 件之前未完成的事項').click()
   await page.locator('.today-overdue-list').getByText('繳房租').waitFor()
   await shot(page, 'overdue-popup')

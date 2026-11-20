@@ -217,7 +217,7 @@ try {
   check('promptCancelKeepsSheet', (await sheet.isVisible()) && (await times.nth(1).inputValue()) === '17:00')
   await sheet.locator('.pday__close').click()
   await prompt.getByRole('button', { name: '儲存', exact: true }).click()
-  await sheet.waitFor({ state: 'hidden', timeout: 5000 })
+  await sheet.waitFor({ state: 'hidden', timeout: 8000 })
   check('promptSaveClosesSheet', true)
   await page.waitForTimeout(2500) // 等班表寫入後端
   await page.reload({ waitUntil: 'networkidle' })

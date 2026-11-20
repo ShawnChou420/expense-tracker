@@ -70,3 +70,13 @@ export function getOnboardingSteps({
   const doneCount = steps.filter((step) => step.done).length
   return { steps, doneCount, total: steps.length, allDone: doneCount === steps.length }
 }
+
+/**
+ * 首頁只顯示「下一步」：第一個還沒完成的步驟；全部完成時回傳 null。
+ * @param {ReturnType<typeof getOnboardingSteps>} onboarding
+ */
+export function getNextOnboardingStep(onboarding) {
+  const index = onboarding.steps.findIndex((step) => !step.done)
+  if (index < 0) return null
+  return { ...onboarding.steps[index], number: index + 1 }
+}

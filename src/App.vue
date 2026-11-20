@@ -1010,6 +1010,11 @@ watch(() => workSetup.profile.value, () => {
   if (!selectedRecord.value && !startTime.value && !endTime.value) loadSelectedDate()
 })
 const setupState = workSetup.setup
+// 班表段的設定摘要：最多列兩個班別名稱
+const setupShiftNames = computed(() => {
+  const names = workSetup.profile.value.shiftTemplates.map((template) => template.name).filter(Boolean)
+  return names.length > 2 ? `${names.slice(0, 2).join('、')} 等 ${names.length} 種` : names.join('、')
+})
 
 // 計算用的加成費率：已確認＝實際值；未確認＝使用者同意暫估時用預設倍率，否則不計入（並在畫面標示）。
 // 舊班表的金額在儲存當下已固定，費率變更不會改變歷史班表。
@@ -1673,7 +1678,6 @@ const markDesignatedWorkDate = ({ date, marked }) => {
           {{ currencyFlag }} {{ currentCurrency }}
         </van-button>
       </div>
-      <p>排班與薪資預估</p>
     </div>
 
     <div class="payroll-views" role="tablist" aria-label="薪資頁內容">
@@ -1731,6 +1735,20 @@ const markDesignatedWorkDate = ({ date, marked }) => {
         {{ setupState.payReady ? '設定班別' : '開始設定' }}
       </van-button>
     </section>
+
+    <!-- 工作設定完成後，班表段只留一行摘要；點了到「設定」段看完整內容 -->
+    <button
+      v-if="payrollView === 'schedule' && setupState.ready"
+      type="button"
+      class="work-setup-summary"
+      @click="switchPayrollView('settings')"
+    >
+      <span class="work-setup-summary__text">
+        <strong>A${{ baseRate.toFixed(2) }}／時</strong>
+        <span v-if="setupShiftNames"> · {{ setupShiftNames }}</span> · 已設定
+      </span>
+      <van-icon name="arrow" aria-hidden="true" />
+    </button>
 
     <div v-show="payrollView === 'schedule'" class="section calendar-section">
       <div class="calendar-intro">
@@ -2160,15 +2178,15 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 </template>
 
 <style scoped>
-.boot-splash { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; min-height: 100vh; min-height: 100dvh; background: #f5f7fa; }
+.boot-splash { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; min-height: 100vh; min-height: 100dvh; background: var(--color-background); }
 .boot-splash__mark { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 20px; background: var(--color-primary, #1989fa); color: #fff; font-size: 34px; box-shadow: 0 8px 24px rgb(25 137 250 / 0.25); }
 .boot-splash__hint { min-height: 1.4em; margin: 0; color: var(--color-muted, #969799); font-size: 13px; opacity: 0; transition: opacity 0.4s; }
 .boot-splash__hint--show { opacity: 1; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.page { min-height: 100vh; background: #f5f7fa; }
+.page { min-height: 100vh; background: var(--color-background); }
 .account-shell { max-width: 820px; margin-inline: auto; padding: calc(10px + env(safe-area-inset-top, 0px)) max(var(--page-inset), env(safe-area-inset-right, 0px)) 0 max(var(--page-inset), env(safe-area-inset-left, 0px)); }
 .account-card { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 58px; padding: 8px 10px; box-sizing: border-box; border: 1px solid var(--color-border); border-radius: 16px; background: var(--color-surface); box-shadow: 0 6px 18px rgba(29, 66, 106, .05); }
-.account-card__avatar { display: grid; flex: none; place-items: center; width: 38px; height: 38px; border-radius: 12px; background: #eaf3fe; color: #166dd1; font-size: 20px; }
+.account-card__avatar { display: grid; flex: none; place-items: center; width: 38px; height: 38px; border-radius: 12px; background: var(--color-primary-soft); color: var(--color-primary); font-size: 20px; }
 .account-card__identity { display: grid; gap: 2px; flex: 1; min-width: 0; }
 .account-card__identity strong { color: var(--color-heading); font-size: 13px; font-weight: 800; line-height: 1.2; }
 .account-card__identity span { overflow: hidden; color: var(--color-muted); font-size: 12px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
@@ -2182,42 +2200,42 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 .global-currency-btn { flex: none; min-height: 38px; font-weight: 700; border-radius: 12px; background: #fff; box-shadow: 0 2px 8px rgba(29, 66, 106, .06); }
 
 .section { margin-top: var(--page-section-gap); }
-.section h2 { font-size: var(--font-heading); font-weight: 800; color: #1b2a3b; margin: 0 0 12px; letter-spacing: -.02em; }
+.section h2 { font-size: var(--font-heading); font-weight: 800; color: var(--color-heading); margin: 0 0 12px; letter-spacing: -.02em; }
 .calendar-section { margin-top: 8px; }
 .calendar-intro { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
 .calendar-intro :deep(.van-button) { flex: none; min-height: 40px; border-radius: 11px; }
-.calendar-help { margin: 0; color: #657588; font-size: 13px; line-height: 1.4; }
+.calendar-help { margin: 0; color: var(--color-muted); font-size: 13px; line-height: 1.4; }
 .calendar-month-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
-.calendar-month-actions span { flex: 1 1 100%; color: #657588; font-size: 13px; font-weight: 700; }
+.calendar-month-actions span { flex: 1 1 100%; color: var(--color-muted); font-size: 13px; font-weight: 700; }
 .calendar-month-actions :deep(.van-button) { min-height: 40px; border-radius: 11px; }
 .rate-preview { display: grid; gap: 0; margin-bottom: 10px; }
-.rate-preview__row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px 12px; padding: 7px 0; font-size: 13px; border-bottom: 1px solid #edf1f5; }
+.rate-preview__row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px 12px; padding: 7px 0; font-size: 13px; border-bottom: 1px solid var(--color-border); }
 .rate-preview__row:last-child { border-bottom: 0; }
-.rate-preview__row strong { color: #166dd1; margin-left: auto; font-variant-numeric: tabular-nums; }
+.rate-preview__row strong { color: var(--color-primary); margin-left: auto; font-variant-numeric: tabular-nums; }
 .rate-input-note { margin-top: 10px; }
-.schedule-month-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; padding: 4px; border-radius: 14px; background: #eaf3fe; }
-.schedule-month-nav button { width: 40px; height: 40px; border: 0; border-radius: 10px; background: #fff; color: #166dd1; }
+.schedule-month-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; padding: 4px; border-radius: 14px; background: var(--color-primary-soft); }
+.schedule-month-nav button { width: 40px; height: 40px; border: 0; border-radius: 10px; background: #fff; color: var(--color-primary); }
 .schedule-month-nav strong { font-size: 14px; text-align: center; }
 
-.calendar-wrapper { border-radius: var(--page-card-radius); overflow: hidden; box-shadow: 0 12px 28px rgba(29, 66, 106, .07); background: #fff; border: 1px solid #e6edf5; }
-.calendar-day-actions { margin: 12px 0 0; padding: 15px 16px; border: 1px solid #e6edf5; border-radius: 18px; background: #fff; box-shadow: 0 6px 18px rgba(29, 66, 106, .05); }
+.calendar-wrapper { border-radius: var(--page-card-radius); overflow: hidden; box-shadow: 0 12px 28px rgba(29, 66, 106, .07); background: #fff; border: 1px solid var(--color-border); }
+.calendar-day-actions { margin: 12px 0 0; padding: 15px 16px; border: 1px solid var(--color-border); border-radius: 18px; background: #fff; box-shadow: 0 6px 18px rgba(29, 66, 106, .05); }
 .calendar-day-actions__heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 10px; }
-.calendar-day-actions__heading strong { color: #1b2a3b; font-size: 15px; }
-.calendar-day-actions__heading small { color: #8290a0; font-size: 11px; }
-.calendar-day-actions__heading p { margin: 4px 0 0; color: #657588; font-size: 12px; }
+.calendar-day-actions__heading strong { color: var(--color-heading); font-size: 15px; }
+.calendar-day-actions__heading small { color: var(--color-muted); font-size: 11px; }
+.calendar-day-actions__heading p { margin: 4px 0 0; color: var(--color-muted); font-size: 12px; }
 .calendar-day-actions__heading .calendar-day-actions__blackout { display: block; margin: 4px 0 0; padding: 0; border: 0; background: none; color: #a95a0c; font: inherit; font-weight: 700; text-align: left; overflow-wrap: anywhere; }
 .calendar-day-actions__blackout span { margin-left: 4px; color: var(--color-primary); font-weight: 600; text-decoration: underline; }
 .calendar-day-actions__heading .calendar-day-actions__source { display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 999px; background: var(--color-primary-soft); color: var(--color-primary); font-size: 12px; }
-.calendar-day-actions__pay { margin-left: auto; color: #166dd1 !important; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.calendar-day-actions__pay { margin-left: auto; color: var(--color-primary) !important; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .calendar-day-actions__buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 13px; }
 .calendar-day-actions__buttons :deep(.van-button) { min-height: 42px; padding: 0 8px; border-radius: 11px; font-size: 13px; }
 .calendar-day-actions__blackout-button { grid-column: 1 / -1; }
-.calendar-day-actions__hint { margin: 10px 0 0; color: #8290a0; font-size: 11px; line-height: 1.4; }
+.calendar-day-actions__hint { margin: 10px 0 0; color: var(--color-muted); font-size: 11px; line-height: 1.4; }
 .blackout-editor { max-height: 90dvh; overflow-y: auto; padding: 20px 16px calc(20px + env(safe-area-inset-bottom)); }
-.blackout-editor__heading { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; color: #1b2a3b; }
+.blackout-editor__heading { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; color: var(--color-heading); }
 .blackout-editor__heading strong { font-size: 18px; }
-.blackout-editor__heading span { color: #657588; font-size: 13px; }
-.blackout-editor p { color: #657588; font-size: 13px; line-height: 1.5; }
+.blackout-editor__heading span { color: var(--color-muted); font-size: 13px; }
+.blackout-editor p { color: var(--color-muted); font-size: 13px; line-height: 1.5; }
 .blackout-editor__actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
 .blackout-editor__actions :deep(.van-button) { min-height: 46px; border-radius: 12px; }
 .blackout-editor__actions :deep(.van-button:only-child) { grid-column: 1 / -1; }
@@ -2246,15 +2264,15 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 :deep(.cleaning-day .van-calendar__top-info) { color: #f97316 !important; font-weight: 700; }
 /* 當天快速調整：班別快選與時間微調 */
 .day-shift { display: grid; gap: 8px; padding: 12px 16px 4px; }
-.day-shift__label { color: #646566; font-size: 14px; }
+.day-shift__label { color: var(--color-muted); font-size: 14px; }
 .day-shift__chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .day-shift__chip { display: grid; justify-items: center; min-width: 72px; min-height: 44px; padding: 4px 12px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-surface); color: var(--color-heading); font: inherit; font-size: 14px; font-weight: 700; }
 .day-shift__chip small { color: var(--color-muted); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.day-shift__chip.is-selected { border-color: #166dd1; background: #eaf3fe; color: #166dd1; }
-.day-shift__chip.is-selected small { color: #166dd1; }
+.day-shift__chip.is-selected { border-color: var(--color-primary); background: var(--color-primary-soft); color: var(--color-primary); }
+.day-shift__chip.is-selected small { color: var(--color-primary); }
 .time-nudge { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 0 16px 10px; }
-.time-nudge button { min-height: 36px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-surface); color: #166dd1; font: inherit; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.time-nudge button:active { background: #eaf3fe; }
+.time-nudge button { min-height: 36px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-surface); color: var(--color-primary); font: inherit; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.time-nudge button:active { background: var(--color-primary-soft); }
 :deep(.leave-blackout-day) { box-shadow: inset 0 0 0 2px #f7b060; border-radius: 8px; }
 :deep(.leave-blackout-day .van-calendar__top-info) { color: #a95a0c !important; font-weight: 800; }
 :deep(.van-calendar__bottom-info) {
@@ -2273,7 +2291,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
   text-align: center;
 }
 :deep(.record-work-day .van-calendar__bottom-info) { color: #167c58 !important; background: #eaf7f0; }
-:deep(.record-leave-day .van-calendar__bottom-info) { color: #8290a0 !important; background: #f1f4f8; }
+:deep(.record-leave-day .van-calendar__bottom-info) { color: var(--color-muted) !important; background: var(--color-border); }
 :deep(.has-remark-day) {
   background-color: #fffbeb !important;
   border: 1px dashed #fef3c7 !important;
@@ -2297,50 +2315,50 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 
 .workflow { margin-top: 4px; }
 .section-card { padding: 18px; border-radius: var(--page-card-radius); background: #fff; box-shadow: 0 12px 28px rgba(29, 66, 106, .07); }
-.section-note { margin: 0 0 14px; font-size: 13px; line-height: 1.5; color: #646566; }
+.section-note { margin: 0 0 14px; font-size: 13px; line-height: 1.5; color: var(--color-muted); }
 :deep(.gross-cell .van-cell__value) { font-weight: 700; color: #1989fa; font-size: 16px; }
 
 .weekly-actions { display: grid; gap: 12px; }
 .weekly-actions :deep(.van-button--primary) { min-height: 50px; font-size: 15px; font-weight: 800; box-shadow: 0 8px 20px rgba(25, 137, 250, 0.2); border-radius: 15px; }
 .weekly-actions :deep(.van-button--plain) { min-height: 42px; border-radius: 12px; box-shadow: none; }
 .empty-state { padding: 30px 16px; text-align: center; }
-.empty-state__title { font-size: 14px; font-weight: 700; color: #4b5563; }
+.empty-state__title { font-size: 14px; font-weight: 700; color: var(--color-muted); }
 .empty-state__text { margin-top: 6px; font-size: 12px; line-height: 1.5; color: #9ca3af; }
-.schedule-collapse { overflow: hidden; border: 1px solid #e6edf5; border-radius: 20px; background: #fff; box-shadow: 0 12px 28px rgba(29, 66, 106, .07); }
+.schedule-collapse { overflow: hidden; border: 1px solid var(--color-border); border-radius: 20px; background: #fff; box-shadow: 0 12px 28px rgba(29, 66, 106, .07); }
 :deep(.schedule-collapse > .van-collapse-item > .van-cell) { min-height: 62px; padding: 12px 18px; }
 .schedule-overview { display: grid; gap: 2px; }
-.schedule-overview strong { color: #1b2a3b; font-size: 14px; font-weight: 800; }
-.schedule-overview small { color: #8290a0; font-size: 11px; }
+.schedule-overview strong { color: var(--color-heading); font-size: 14px; font-weight: 800; }
+.schedule-overview small { color: var(--color-muted); font-size: 11px; }
 :deep(.schedule-collapse > .van-collapse-item > .van-collapse-item__wrapper .van-collapse-item__content) { padding: 0 12px 12px; }
-.record-collapse { overflow: hidden; border: 1px solid #e6edf5; border-radius: 13px; }
+.record-collapse { overflow: hidden; border: 1px solid var(--color-border); border-radius: 13px; }
 :deep(.record-collapse .van-cell) { min-height: 48px; padding: 10px 12px; }
 :deep(.record-collapse .van-cell__title) { min-width: 0; }
 :deep(.record-collapse .van-cell__value) { flex: 0 1 auto; max-width: 50%; margin-left: 8px; }
-.schedule-date { color: #1b2a3b; font-size: 13px; font-weight: 800; white-space: nowrap; }
-.schedule-date small { margin-left: 3px; color: #8290a0; font-size: 11px; }
-.schedule-pay { color: #166dd1; font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.schedule-date { color: var(--color-heading); font-size: 13px; font-weight: 800; white-space: nowrap; }
+.schedule-date small { margin-left: 3px; color: var(--color-muted); font-size: 11px; }
+.schedule-pay { color: var(--color-primary); font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .schedule-detail { padding: 2px 0; }
 .schedule-detail__tags { display: flex; flex-wrap: wrap; gap: 6px; }
-.schedule-detail p { margin: 8px 0 0; color: #657588; font-size: 12px; line-height: 1.5; }
+.schedule-detail p { margin: 8px 0 0; color: var(--color-muted); font-size: 12px; line-height: 1.5; }
 .schedule-detail__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .schedule-detail__actions :deep(.van-button) { min-height: 34px; border-radius: 9px; }
 .weekly-summary-card { padding: 14px 16px 16px; }
 .weekly-summary__row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; padding: 6px 0; }
-.weekly-summary__label { font-size: 13px; color: #4b5563; }
+.weekly-summary__label { font-size: 13px; color: var(--color-muted); }
 .advanced-collapse { margin: 12px var(--van-cell-group-inset-padding, 16px) 0; overflow: hidden; border-radius: 16px; }
 .term-glossary { display: grid; gap: 6px; margin: 12px 0 0; padding: 12px; border-radius: 12px; background: #f7fbff; }
 .term-glossary div { display: grid; grid-template-columns: 96px 1fr; gap: 8px; }
-.term-glossary dt { color: #166dd1; font-size: 12px; font-weight: 800; }
+.term-glossary dt { color: var(--color-primary); font-size: 12px; font-weight: 800; }
 .term-glossary dd { margin: 0; color: #4b5b6b; font-size: 12px; line-height: 1.45; }
 .sub-page-back { max-width: 820px; margin: 8px auto -4px; padding: 0 max(var(--page-inset), env(safe-area-inset-left, 0px)); }
-.sub-page-back button { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 6px 10px; border: 1px solid var(--color-border); border-radius: 11px; background: #fff; color: #166dd1; font: inherit; font-size: 13px; font-weight: 700; }
+.sub-page-back button { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 6px 10px; border: 1px solid var(--color-border); border-radius: 11px; background: #fff; color: var(--color-primary); font: inherit; font-size: 13px; font-weight: 700; }
 /* 薪資頁分段 */
 .payroll-views { position: sticky; top: 0; z-index: 5; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 0 0 var(--page-section-gap); padding: 4px; border-radius: 14px; background: #e9eef5; }
 .payroll-views button { min-height: 40px; border: 0; border-radius: 11px; background: transparent; color: var(--color-muted); font: inherit; font-size: 15px; font-weight: 700; }
 .payroll-views button.is-active { background: var(--color-surface); color: var(--color-primary); box-shadow: 0 1px 4px rgba(16, 42, 67, 0.12); }
 .week-toolbar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
 /* 當天面板 */
-.payroll-day-sheet { display: flex; flex-direction: column; max-height: 90dvh; background: var(--color-background, #f5f7fa); }
+.payroll-day-sheet { display: flex; flex-direction: column; max-height: 90dvh; background: var(--color-background, var(--color-background)); }
 .pday__body { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 16px 0 8px; }
 .pday__body > .calendar-day-actions { margin: 0 var(--page-inset, 16px) 8px; }
 .pday__body > .section > h2 { margin-top: 12px; padding: 0 var(--page-inset, 16px); }
@@ -2380,14 +2398,18 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 .payslip-entry__text strong { font-size: 15px; }
 .payslip-entry__text small { color: var(--color-muted); font-size: 12px; }
 .rate-reset-btn { margin-top: 8px; }
-.weekly-summary__range { margin-left: 4px; font-size: 14px; font-weight: 500; color: #646566; }
+.weekly-summary__range { margin-left: 4px; font-size: 14px; font-weight: 500; color: var(--color-muted); }
 .weekly-summary__value { margin-left: auto; font-size: 14px; font-weight: 600; color: #1f2937; overflow-wrap: anywhere; }
 .weekly-summary__row--tax { padding-top: 12px; margin-top: 8px; border-top: 1px dashed #e5e7eb; }
 .weekly-summary__value--tax { color: #b45309; font-weight: bold; }
 .weekly-summary__total--net { margin-top: 12px; padding: 16px; border-radius: 14px; background: linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%); border: 1px solid #bbf7d0; }
 .weekly-summary__total-label { font-size: 13px; color: #166534; font-weight: bold; }
 .weekly-summary__total-value--net { color: #15803d; font-size: 26px; font-weight: 800; margin-top: 4px; overflow-wrap: anywhere; }
-.data-management-collapse { overflow: hidden; border-radius: 16px; background: #fff; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04); border: 1px solid #ebedf0; }
+.data-management-collapse { overflow: hidden; border-radius: 16px; background: #fff; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04); border: 1px solid var(--color-border); }
 :deep(.data-management-collapse .van-cell) { padding: 14px 16px; font-weight: bold; }
 :deep(.data-management-collapse .van-collapse-item__content) { padding: 14px 16px; background: #fafafa; }
+.work-setup-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: var(--touch-target); margin: 0 0 var(--space-row); padding: 10px 16px; border: 1px solid var(--color-border); border-radius: var(--radius-medium); background: var(--color-surface); color: var(--color-muted); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+.work-setup-summary__text { min-width: 0; overflow-wrap: anywhere; }
+.work-setup-summary strong { color: var(--color-heading); font-variant-numeric: tabular-nums; }
+.work-setup-summary:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 </style>

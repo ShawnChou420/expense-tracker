@@ -225,6 +225,11 @@ async function guestSetupFlow(page, shot) {
     await payrollView(page, '設定')
     await page.locator('.work-setup-card').scrollIntoViewIfNeeded()
     await shot('payroll-configured')
+    // 設定完成後，班表段只留一行設定摘要
+    await payrollView(page, '班表')
+    await page.evaluate(() => window.scrollTo(0, 0))
+    result.setupSummary = await page.locator('.work-setup-summary').isVisible()
+    await shot('payroll-schedule')
   }
   return result
 }

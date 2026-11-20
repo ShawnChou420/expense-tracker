@@ -17,7 +17,7 @@ import {
   signedDollarsToCents,
 } from '../domain/money.js'
 import { dashboardSettingsRepository } from '../repositories/inMemoryDashboardSettingsRepository.js'
-import { getOnboardingSteps } from '../domain/onboarding.js'
+import { getNextOnboardingStep, getOnboardingSteps } from '../domain/onboarding.js'
 import {
   formatHours,
   formatRangeLabel,
@@ -115,6 +115,7 @@ const onboarding = computed(() =>
     workSetupReady: props.setup.ready,
   }),
 )
+const nextOnboardingStep = computed(() => getNextOnboardingStep(onboarding.value))
 const showSalaryForm = ref(false)
 const editingSalaryId = ref(null)
 const salaryForm = ref({ paidAt: today, amount: '', gross: '', tax: '', periodStart: '', periodEnd: '' })
@@ -443,7 +444,6 @@ async function saveTarget() {
       <div class="home-header__titles">
         <span class="home-header__eyebrow">{{ liveDateLabel }}</span>
         <h1>{{ greeting }}</h1>
-        <p>我的澳打生活 🇦🇺</p>
       </div>
       <button
         type="button"
@@ -558,53 +558,32 @@ async function saveTarget() {
       <van-icon name="arrow" aria-hidden="true" class="payslip-cta__arrow" />
     </button>
 
+    <!-- 開始使用：只顯示下一步。工作設定還沒完成時，上方主卡與薪資單入口已經在引導，不再重複 -->
     <section
-      v-if="!onboarding.allDone && !onboardingDismissed"
+      v-if="nextOnboardingStep && setup.ready && !onboardingDismissed"
       class="onboarding-card app-page__card home-block"
       aria-labelledby="onboarding-title"
     >
       <div class="onboarding-card__head">
         <div>
-          <h2 id="onboarding-title">開始使用</h2>
-          <p>
-            照著做完這 {{ onboarding.total }} 步，首頁就會顯示你的收支與存款進度（已完成
-            {{ onboarding.doneCount }}/{{ onboarding.total }}）
-          </p>
+          <h2 id="onboarding-title">下一步：{{ nextOnboardingStep.title }}</h2>
+          <p>{{ nextOnboardingStep.description }}</p>
         </div>
         <button
           class="onboarding-card__close"
           type="button"
-          aria-label="暫時隱藏開始使用"
+          aria-label="暫時隱藏下一步提示"
           @click="onboardingDismissed = true"
         >
           <van-icon name="cross" />
         </button>
       </div>
-      <ol class="onboarding-steps">
-        <li
-          v-for="(step, index) in onboarding.steps"
-          :key="step.id"
-          :class="{ 'onboarding-steps__item--done': step.done }"
-          class="onboarding-steps__item"
-        >
-          <span class="onboarding-steps__mark" aria-hidden="true">
-            <van-icon v-if="step.done" name="success" />
-            <template v-else>{{ index + 1 }}</template>
-          </span>
-          <div class="onboarding-steps__text">
-            <strong>{{ step.title }}</strong>
-            <small>{{ step.done ? '✓ 已完成' : step.description }}</small>
-          </div>
-          <van-button
-            v-if="!step.done"
-            size="small"
-            type="primary"
-            plain
-            @click="runOnboardingAction(step.action)"
-            >{{ step.actionLabel }}</van-button
-          >
-        </li>
-      </ol>
+      <div class="onboarding-card__foot">
+        <span class="onboarding-card__count">{{ onboarding.doneCount }}／{{ onboarding.total }} 完成</span>
+        <van-button size="small" type="primary" @click="runOnboardingAction(nextOnboardingStep.action)">
+          {{ nextOnboardingStep.actionLabel }}
+        </van-button>
+      </div>
     </section>
 
     <ProgressCard
@@ -1280,62 +1259,17 @@ async function saveTarget() {
   color: var(--color-muted);
   font-size: 16px;
 }
-.onboarding-steps {
-  display: grid;
-  gap: 8px;
-  margin: 12px 0 0;
-  padding: 0;
-  list-style: none;
-}
-.onboarding-steps__item {
+.onboarding-card__foot {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 14px;
-  background: var(--color-surface);
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
 }
-.onboarding-steps__mark {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
-  font-size: 13px;
-  font-weight: 800;
-}
-.onboarding-steps__text {
-  display: grid;
-  flex: 1;
-  gap: 2px;
-  min-width: 0;
-}
-.onboarding-steps__text strong {
-  color: var(--color-heading);
-  font-size: 14px;
-}
-.onboarding-steps__text small {
+.onboarding-card__count {
   color: var(--color-muted);
-  font-size: 12px;
-  line-height: 1.45;
-}
-.onboarding-steps__item :deep(.van-button) {
-  flex: none;
-  min-width: 76px;
-}
-.onboarding-steps__item--done {
-  background: #f7fbf9;
-}
-.onboarding-steps__item--done .onboarding-steps__mark {
-  background: var(--color-income-soft);
-  color: var(--color-income);
-}
-.onboarding-steps__item--done .onboarding-steps__text small {
-  color: var(--color-income);
+  font-size: var(--font-caption);
+  font-variant-numeric: tabular-nums;
 }
 .preview-note {
   margin: 0 0 12px;

@@ -74,7 +74,7 @@ function onKeypress(event) {
   font-size: 13px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: #166dd1;
+  color: var(--color-primary);
 }
-.time-text-field__hint.is-error { color: #ee0a24; }
+.time-text-field__hint.is-error { color: var(--color-expense); }
 </style>

@@ -20,6 +20,7 @@ import { dashboardSettingsRepository } from '../repositories/inMemoryDashboardSe
 import { getNextOnboardingStep, getOnboardingSteps } from '../domain/onboarding.js'
 import { getVisibleModuleIds, normalizeLayout } from '../domain/dashboardLayout.js'
 import DashboardCustomizeSheet from './DashboardCustomizeSheet.vue'
+import QuickPayEstimator from './QuickPayEstimator.vue'
 import {
   formatHours,
   formatRangeLabel,
@@ -355,7 +356,14 @@ let layoutSaving = 0
 // 集簽：選了「目前不集簽」才不顯示；還沒設定時仍顯示設定入口
 const layoutContext = computed(() => ({ hasVisa: props.visaJourney?.goal !== 'NONE' }))
 const layout = computed(() => normalizeLayout(savedLayout.value))
-const visibleModuleIds = computed(() => getVisibleModuleIds(layout.value, layoutContext.value))
+// 全新訪客（沒登入、還沒完成工作設定、也沒有任何班表）：首頁改成雙滑桿快速試算，只留每日小語
+// 一旦開始設定或建立班表，就回到一般首頁，顯示自己的資料
+const guestWelcome = computed(
+  () => !authToken.value && !props.setup.ready && props.workRecords.length === 0,
+)
+const visibleModuleIds = computed(() =>
+  guestWelcome.value ? ['daily-quote'] : getVisibleModuleIds(layout.value, layoutContext.value),
+)
 const show = (/** @type {string} */ id) => visibleModuleIds.value.includes(id)
 // 以 10 為間隔，留位置給固定的提示卡：薪資單入口（5）、下一步（6）固定在第一個區塊之後
 const orderStyle = (/** @type {string} */ id) => ({ order: visibleModuleIds.value.indexOf(id) * 10 })
@@ -478,11 +486,14 @@ async function saveTarget() {
 <template>
   <main class="dashboard-page app-page">
     <header class="home-header">
-      <div class="home-header__titles">
+      <div v-if="guestWelcome" class="home-header__titles">
+        <span class="home-header__brand">Expense Tracker</span>
+      </div>
+      <div v-else class="home-header__titles">
         <span class="home-header__eyebrow">{{ liveDateLabel }}</span>
         <h1>{{ greeting }}</h1>
       </div>
-      <button type="button" class="home-header__customize" @click="customizeOpen = true">
+      <button v-if="!guestWelcome" type="button" class="home-header__customize" @click="customizeOpen = true">
         <van-icon name="apps-o" aria-hidden="true" />自訂首頁
       </button>
       <button
@@ -502,7 +513,13 @@ async function saveTarget() {
     <p v-else-if="displayCurrency.fallback" class="currency-note">
       暫時取得不到 {{ displayCurrency.requested }} 匯率，先以 AUD 顯示。
     </p>
-    <button v-if="!authToken" type="button" class="guest-banner" @click="emit('open-account')">
+    <QuickPayEstimator
+      v-if="guestWelcome"
+      @start="emit('work-setup', 1)"
+      @import-payslip="emit('import-payslip')"
+      @open-account="emit('open-account')"
+    />
+    <button v-if="!authToken && !guestWelcome" type="button" class="guest-banner" @click="emit('open-account')">
       <van-icon name="info-o" aria-hidden="true" />
       <span>訪客模式：資料重新整理後會消失</span>
       <strong>登入保存</strong>
@@ -605,7 +622,7 @@ async function saveTarget() {
     </div>
 
     <button
-      v-if="!latestPayslip"
+      v-if="!latestPayslip && !guestWelcome"
       :style="{ order: 5 }"
       type="button"
       class="payslip-cta home-block app-page__card"
@@ -621,7 +638,7 @@ async function saveTarget() {
 
     <!-- 開始使用：只顯示下一步。工作設定還沒完成時，上方主卡與薪資單入口已經在引導，不再重複 -->
     <section
-      v-if="nextOnboardingStep && setup.ready && !onboardingDismissed"
+      v-if="nextOnboardingStep && setup.ready && !onboardingDismissed && !guestWelcome"
       :style="{ order: 6 }"
       class="onboarding-card app-page__card home-block"
       aria-labelledby="onboarding-title"
@@ -1109,6 +1126,13 @@ async function saveTarget() {
   margin: 4px 0 0;
   color: var(--color-muted);
   font-size: 14px;
+}
+.home-header__brand {
+  color: var(--color-primary);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: var(--touch-target);
 }
 .home-header__customize {
   display: inline-flex;

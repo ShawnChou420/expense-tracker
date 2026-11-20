@@ -273,7 +273,8 @@ for (const viewport of [{ width: 360, height: 780 }, { width: 430, height: 932 }
   await page.goto(appUrl)
   await page.locator('.today-quote__text').waitFor({ timeout: 20000 })
   check('guestSeesQuote', (await page.locator('.today-quote__text').innerText()).trim() === guestQuote.content)
-  check('guestSeesRestState', (await page.locator('.today-shift').innerText()).includes('今天休息'))
+  // 全新訪客：首頁是雙滑桿快速試算（UI 2.0 Sprint 3），預設 A$26.44 × 38 小時
+  check('guestSeesQuickEstimate', (await page.locator('.quick-pay__amount').innerText()).trim() === 'A$1,004.72')
   await shot(page, 'guest')
   await context.close()
 }

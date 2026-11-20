@@ -152,7 +152,8 @@ try {
   await page.locator('.home-header__account').click()
   await page.getByRole('button', { name: '登出' }).click()
   await page.waitForTimeout(1500)
-  check('guestAfterLogout', await page.getByText('先完成工作設定').first().isVisible())
+  // 登出後回到全新訪客的快速試算，看不到會員資料
+  check('guestAfterLogout', await page.locator('.quick-pay').isVisible())
   // 忘記密碼：用驗證碼重設後直接登入
   await page.locator('.home-header__account').click()
   await page.locator('.auth-sheet').waitFor()

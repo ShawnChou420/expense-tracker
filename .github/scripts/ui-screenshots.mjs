@@ -145,8 +145,16 @@ async function guestSetupFlow(page, shot) {
     if (shot) await shot(name)
     result.wizardOverflowPx = Math.max(result.wizardOverflowPx ?? 0, await popupOverflow(page))
   }
-  // 1. 新訪客：首頁主卡提示先完成工作設定
-  result.heroAsksSetup = await page.getByText('先完成工作設定').first().isVisible()
+  // 1. 新訪客：首頁是雙滑桿快速試算（預設 A$26.44 × 38 小時），手動輸入後即時更新
+  result.quickEstimateDefault = (await page.locator('.quick-pay__amount').innerText()).trim() === 'A$1,004.72'
+  await page.locator('#quick-rate').fill('31.67')
+  await page.locator('#quick-rate').press('Enter')
+  await page.locator('#quick-hours').fill('37.5')
+  await page.locator('#quick-hours').press('Enter')
+  result.quickEstimateTyped = (await page.locator('.quick-pay__amount').innerText()).trim() === 'A$1,187.63'
+  if (shot) await shot('guest-quick-estimate')
+  await page.getByRole('button', { name: '重設' }).click()
+  result.quickEstimateReset = (await page.locator('.quick-pay__amount').innerText()).trim() === 'A$1,004.72'
 
   // 2. 薪資頁「填滿本週」→ 設定閘門，不會用任何預設費率產生班表
   await tab(page, '薪資')
@@ -316,7 +324,7 @@ async function payslipFlow(page) {
     // 重新載入：回到全新訪客（訪客資料只在記憶體）
     await page.reload({ waitUntil: 'networkidle' })
     await page.waitForTimeout(600)
-    await page.getByRole('button', { name: /讓第一張薪資單/ }).click()
+    await page.getByRole('button', { name: /有薪資單？上傳後自動設定時薪/ }).click()
     await page.waitForTimeout(600)
     await shot('1-choose')
     await page

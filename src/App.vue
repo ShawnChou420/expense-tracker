@@ -679,7 +679,13 @@ const onDateSelect = async (date) => {
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   const nextDate = `${year}-${month}-${day}`
-  if (nextDate !== workDate.value && !(await confirmLeaveDayEditor())) {
+  if (nextDate === workDate.value) {
+    // 同一天：有未儲存修改就保留，直接打開面板繼續編輯
+    if (!dayEditorDirty.value) loadSelectedDate()
+    daySheetOpen.value = true
+    return
+  }
+  if (!(await confirmLeaveDayEditor())) {
     // 留在原本那天：日曆的選取也退回去
     payrollCalendar.value?.reset(parseWorkDate(workDate.value))
     return
@@ -691,17 +697,29 @@ const onDateSelect = async (date) => {
   daySheetOpen.value = true
 }
 
+// 關閉當天面板（×、點遮罩）前，有未儲存修改就先提醒；取消就留在面板
+const beforeDaySheetClose = () => confirmLeaveDayEditor()
+async function closeDaySheet() {
+  if (await confirmLeaveDayEditor()) daySheetOpen.value = false
+}
+
 // 從當天面板打開其他表單時，先收起面板，不疊兩層彈窗
-function openFromDaySheet(open) {
+async function openFromDaySheet(open) {
+  if (!(await confirmLeaveDayEditor())) return
   daySheetOpen.value = false
   open()
 }
 
+// 切換班表／本週／設定前也檢查
+async function switchPayrollView(view) {
+  if (view === payrollView.value) return
+  if (await confirmLeaveDayEditor()) payrollView.value = view
+}
+
 function saveDayFromSheet() {
-  const before = records.value
-  addTodayRecordToList()
-  // 有存進去就收起面板；被設定閘門擋下時也收起，讓閘門不疊在面板上
-  if (records.value !== before || workSetup.gate.value.show) daySheetOpen.value = false
+  const saved = addTodayRecordToList()
+  // 存進去就收起面板；被設定閘門擋下時也收起，讓閘門不疊在面板上（修改仍保留，下次打開還在）
+  if (saved || workSetup.gate.value.show) daySheetOpen.value = false
 }
 
 // --- 填滿本週／本月：先檢查設定 → 預覽 → 使用者確認後才寫入 ---
@@ -1639,7 +1657,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
         role="tab"
         :aria-selected="payrollView === view.id"
         :class="{ 'is-active': payrollView === view.id }"
-        @click="payrollView = view.id"
+        @click="switchPayrollView(view.id)"
       >
         {{ view.label }}
       </button>
@@ -1738,6 +1756,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       safe-area-inset-bottom
       teleport="body"
       class="payroll-day-sheet"
+      :before-close="beforeDaySheetClose"
     >
       <div class="pday__body">
           <div class="calendar-day-actions">
@@ -1755,7 +1774,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
               <strong v-if="selectedRecord && selectedRecord.shiftType !== 'leave'" class="calendar-day-actions__pay">
                 {{ currencySymbol }}{{ formatDisplayMoney(selectedRecord.grossPay * currentExchangeRate) }}
               </strong>
-              <button type="button" class="pday__close" aria-label="關閉" @click="daySheetOpen = false">
+              <button type="button" class="pday__close" aria-label="關閉" @click="closeDaySheet">
                 <van-icon name="cross" />
               </button>
             </div>

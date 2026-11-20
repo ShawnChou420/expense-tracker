@@ -18,6 +18,8 @@ import {
 } from '../domain/money.js'
 import { dashboardSettingsRepository } from '../repositories/inMemoryDashboardSettingsRepository.js'
 import { getNextOnboardingStep, getOnboardingSteps } from '../domain/onboarding.js'
+import { getVisibleModuleIds, normalizeLayout } from '../domain/dashboardLayout.js'
+import DashboardCustomizeSheet from './DashboardCustomizeSheet.vue'
 import {
   formatHours,
   formatRangeLabel,
@@ -209,7 +211,8 @@ const heroItems = computed(() => [
 const heroMeta = computed(() => {
   const flags = weeklyPay.value.rateFlags
   return [
-    `已排 ${formatHours(weeklyPay.value.paidMinutes)} · ${weeklyPay.value.shiftCount} 天班表` +
+    // 原本的「本週財務」標題拿掉了，週別改放在這裡
+    `${weekLabel.value} · 已排 ${formatHours(weeklyPay.value.paidMinutes)} · ${weeklyPay.value.shiftCount} 天班表` +
       (weeklyPay.value.ppeCents > 0 ? ' · 含 PPE' : ''),
     flags.provisional.length ? '含未確認費率，僅供參考' : '',
     flags.excluded.length ? `未含${flags.excluded.join('、')}` : '',
@@ -336,12 +339,43 @@ async function refreshLedger() {
 async function refreshDashboardData() {
   const identity = authToken.value
   await refreshLedger()
-  const [goal, target] = await Promise.all([
-    dashboardSettingsRepository.getSavingGoal(), dashboardSettingsRepository.getWorkDayTarget(),
-  ])
+  const settings = await dashboardSettingsRepository.getSettings()
   if (identity === authToken.value) {
-    savingGoal.value = goal
-    workDayTarget.value = target
+    savingGoal.value = settings.savingGoal
+    workDayTarget.value = settings.workDayTarget
+    // 首頁自訂正在儲存時不覆蓋，避免畫面跳回舊設定
+    if (!layoutSaving) savedLayout.value = settings.dashboardLayout
+  }
+}
+
+// --- 首頁自訂（模式、模組顯示與順序）---
+const savedLayout = ref(/** @type {unknown} */ (null))
+const customizeOpen = ref(false)
+let layoutSaving = 0
+// 集簽：選了「目前不集簽」才不顯示；還沒設定時仍顯示設定入口
+const layoutContext = computed(() => ({ hasVisa: props.visaJourney?.goal !== 'NONE' }))
+const layout = computed(() => normalizeLayout(savedLayout.value))
+const visibleModuleIds = computed(() => getVisibleModuleIds(layout.value, layoutContext.value))
+const show = (/** @type {string} */ id) => visibleModuleIds.value.includes(id)
+// 以 10 為間隔，留位置給固定的提示卡：薪資單入口（5）、下一步（6）固定在第一個區塊之後
+const orderStyle = (/** @type {string} */ id) => ({ order: visibleModuleIds.value.indexOf(id) * 10 })
+const todayParts = computed(() => {
+  const part = (/** @type {string} */ id) => ({ visible: show(id), order: visibleModuleIds.value.indexOf(id) * 10 })
+  return { tasks: part('today-tasks'), quote: part('daily-quote'), mood: part('mood-journal') }
+})
+async function updateLayout(/** @type {import('../domain/dashboardLayout.js').DashboardLayout} */ next) {
+  const identity = authToken.value
+  const previous = savedLayout.value
+  savedLayout.value = next
+  layoutSaving += 1
+  try {
+    await dashboardSettingsRepository.saveDashboardLayout(next)
+  } catch (error) {
+    // 儲存失敗：回到原本的設定並告知，不假裝已儲存
+    if (identity === authToken.value && savedLayout.value === next) savedLayout.value = previous
+    showToast(`首頁設定沒有儲存：${error instanceof Error ? error.message : '請稍後再試'}`)
+  } finally {
+    layoutSaving -= 1
   }
 }
 
@@ -356,6 +390,9 @@ onUnmounted(() => {
   clearInterval(clockTimer)
 })
 watch(authToken, async () => {
+  // 換帳號：先清掉上一個帳號的首頁設定，不外洩
+  savedLayout.value = null
+  customizeOpen.value = false
   trips.value = []
   expenses.value = []
   salaryDeposits.value = null
@@ -445,6 +482,9 @@ async function saveTarget() {
         <span class="home-header__eyebrow">{{ liveDateLabel }}</span>
         <h1>{{ greeting }}</h1>
       </div>
+      <button type="button" class="home-header__customize" @click="customizeOpen = true">
+        <van-icon name="apps-o" aria-hidden="true" />自訂首頁
+      </button>
       <button
         type="button"
         class="home-header__account"
@@ -468,61 +508,76 @@ async function saveTarget() {
       <strong>登入保存</strong>
     </button>
 
-    <TodayShiftCard
-      :records="workRecords"
-      :now="now"
-      :pay-ready="setup.payReady"
-      :money="money"
-      :currency="displayCurrency.code"
-      @open-payroll="emit('navigate', 'payroll')"
-      @import-payslip="emit('import-payslip')"
-      @work-setup="emit('work-setup', 1)"
-      @add-shift="emit('quick-action', 'shift')"
+    <!-- 首頁模組：顯示與順序由「自訂首頁」決定（CSS order）；隱藏只影響畫面，不刪除資料 -->
+    <div class="home-modules">
+    <EmptyState
+      v-if="!visibleModuleIds.length"
+      class="home-modules__empty"
+      icon="apps-o"
+      title="首頁目前沒有顯示任何區塊"
+      action-label="自訂首頁"
+      @action="customizeOpen = true"
     />
+    <div v-if="show('today-shift')" class="home-module" :style="orderStyle('today-shift')">
+      <TodayShiftCard
+        :records="workRecords"
+        :now="now"
+        :pay-ready="setup.payReady"
+        :money="money"
+        :currency="displayCurrency.code"
+        @open-payroll="emit('navigate', 'payroll')"
+        @import-payslip="emit('import-payslip')"
+        @work-setup="emit('work-setup', 1)"
+        @add-shift="emit('quick-action', 'shift')"
+      />
 
-    <TodaySection :today="liveToday" />
+    </div>
 
-    <h2 class="home-section-title">本週財務 <small>{{ weekLabel }}</small></h2>
-    <HeroCard
-      label="本週預估實領"
-      :amount="money(weeklyPay.netCents)"
-      :unit="displayCurrency.code"
-      :meta="heroMeta"
-      :items="heroItems"
-      :empty="heroEmpty !== null"
-      :empty-title="heroEmpty?.title"
-      :empty-description="heroEmpty?.description"
-      :empty-action-label="heroEmpty?.action"
-      :empty-action-icon="heroEmpty?.icon"
-      @open="emit('navigate', 'payroll')"
-      @action="onHeroAction"
-    >
-      <template #corner>
-        <button
-          type="button"
-          class="hero-currency"
-          :aria-label="`顯示幣別：${displayCurrency.code}，點擊切換`"
-          @click="emit('change-currency')"
-        >
-          {{ displayCurrency.flag }} {{ displayCurrency.code }}
-          <van-icon name="arrow-down" aria-hidden="true" />
-        </button>
-      </template>
-    </HeroCard>
+    <TodaySection :today="liveToday" :parts="todayParts" />
 
-    <LatestPayslipCard
-      v-if="latestPayslip"
-      :format="money"
-      class="home-block"
-      :payslip="latestPayslip"
-      :schedule-ready="setup.scheduleReady"
-      :is-member="Boolean(authToken)"
-      @setup-schedule="emit('work-setup', 2)"
-      @open-payroll="emit('navigate', 'payroll')"
-      @import-payslip="emit('import-payslip')"
-    />
+    <div v-if="show('weekly-pay')" class="home-module" :style="orderStyle('weekly-pay')">
+      <HeroCard
+        label="本週預估實領"
+        :amount="money(weeklyPay.netCents)"
+        :unit="displayCurrency.code"
+        :meta="heroMeta"
+        :items="heroItems"
+        :empty="heroEmpty !== null"
+        :empty-title="heroEmpty?.title"
+        :empty-description="heroEmpty?.description"
+        :empty-action-label="heroEmpty?.action"
+        :empty-action-icon="heroEmpty?.icon"
+        @open="emit('navigate', 'payroll')"
+        @action="onHeroAction"
+      >
+        <template #corner>
+          <button
+            type="button"
+            class="hero-currency"
+            :aria-label="`顯示幣別：${displayCurrency.code}，點擊切換`"
+            @click="emit('change-currency')"
+          >
+            {{ displayCurrency.flag }} {{ displayCurrency.code }}
+            <van-icon name="arrow-down" aria-hidden="true" />
+          </button>
+        </template>
+      </HeroCard>
+    </div>
 
-    <section class="home-stats home-block" aria-label="本週財務摘要">
+    <div v-if="show('latest-payslip') && latestPayslip" class="home-module" :style="orderStyle('latest-payslip')">
+      <LatestPayslipCard
+        :format="money"
+        class="home-block"
+        :payslip="latestPayslip"
+        :schedule-ready="setup.scheduleReady"
+        :is-member="Boolean(authToken)"
+        @setup-schedule="emit('work-setup', 2)"
+        @open-payroll="emit('navigate', 'payroll')"
+        @import-payslip="emit('import-payslip')"
+      />
+    </div>
+
+    <div v-if="show('weekly-balance')" class="home-module" :style="orderStyle('weekly-balance')">
       <StatCard
         label="本週預估結餘"
         badge="預估"
@@ -532,6 +587,9 @@ async function saveTarget() {
         clickable
         @click="emit('navigate', 'expenses')"
       />
+    </div>
+
+    <div v-if="show('pending-fares')" class="home-module" :style="orderStyle('pending-fares')">
       <StatCard
         label="車資待收"
         :value="money(pendingFares.pendingCents)"
@@ -540,12 +598,15 @@ async function saveTarget() {
         clickable
         @click="emit('navigate', 'trips')"
       />
-    </section>
+    </div>
 
-    <QuickActions class="home-block" :actions="quickActions" @select="emit('quick-action', $event)" />
+    <div v-if="show('quick-actions')" class="home-module" :style="orderStyle('quick-actions')">
+      <QuickActions class="home-block" :actions="quickActions" @select="emit('quick-action', $event)" />
+    </div>
 
     <button
       v-if="!latestPayslip"
+      :style="{ order: 5 }"
       type="button"
       class="payslip-cta home-block app-page__card"
       @click="emit('import-payslip')"
@@ -561,6 +622,7 @@ async function saveTarget() {
     <!-- 開始使用：只顯示下一步。工作設定還沒完成時，上方主卡與薪資單入口已經在引導，不再重複 -->
     <section
       v-if="nextOnboardingStep && setup.ready && !onboardingDismissed"
+      :style="{ order: 6 }"
       class="onboarding-card app-page__card home-block"
       aria-labelledby="onboarding-title"
     >
@@ -586,338 +648,351 @@ async function saveTarget() {
       </div>
     </section>
 
-    <ProgressCard
-      class="home-block"
-      title="存款挑戰"
-      :subtitle="savingGoal ? `${savingGoal.name} · 依已記錄的實際收支` : ''"
-      :current="money(saving?.currentCents ?? 0)"
-      :target="savingGoal ? money(savingGoal.targetCents) : ''"
-      :percent="saving?.progressPercent ?? 0"
-      :foot-left="`已完成 ${saving?.percent ?? 0}%`"
-      :foot-right="
-        (saving?.excessCents ?? 0) > 0
-          ? `超出 ${money(saving?.excessCents ?? 0)} 🎉`
-          : `還差 ${money(saving?.remainingCents ?? 0)}`
-      "
-      tone="income"
-    >
-      <template #action>
-        <button
-          v-if="savingGoal"
-          type="button"
-          class="icon-button"
-          aria-label="編輯儲蓄目標"
-          @click="openGoalEditor"
-        >
-          <van-icon name="setting-o" />
-        </button>
-      </template>
-      <template v-if="!savingGoal" #empty>
-        <EmptyState
-          class="home-card-empty"
-          stacked
-          icon="gold-coin-o"
-          title="設定你的第一個儲蓄目標。"
-          description="設定目標金額，之後依收支自動累計。"
-          action-label="建立目標"
-          @action="openGoalEditor"
-        />
-      </template>
-      <p v-if="savingGoal && saving && !saving.hasActualTransactions" class="home-card-note">
-        還沒有收支紀錄。
-      </p>
-    </ProgressCard>
-
-    <!-- 集簽：選擇「目前不集簽」時隱藏；歷史班表照常保留 -->
-    <VisaJourneyCard
-      v-if="visaJourney?.goal !== 'NONE'"
-      class="home-block"
-      :settings="visaJourney"
-      :progress="visaProgress"
-      @setup="emit('visa-setup')"
-      @import-history="emit('import-history')"
-    />
-
-    <ProgressCard
-      v-if="incomeYearProgress"
-      class="home-block"
-      title="年度稅務追蹤"
-      :badge="{ payslip: '薪資單 YTD', actual: '實際入帳', estimated: '預估' }[incomeYearProgress.basis]"
-      :subtitle="`${incomeYearProgress.incomeYear.label} 財年 · 稅前收入累計`"
-      :current="money(incomeYearProgress.ytdGrossCents)"
-      :target="money(incomeYearProgress.limitCents)"
-      :percent="incomeYearProgress.percent"
-      :foot-left="`已達 ${Math.round(incomeYearProgress.percent)}%`"
-      :foot-right="
-        incomeYearProgress.crossed
-          ? '已超過第一級距'
-          : `距第一級距上限 ${money(incomeYearProgress.remainingCents)}`
-      "
-      :tone="incomeYearProgress.percent >= 85 ? 'warning' : 'primary'"
-    >
-      <p class="home-card-note">{{ taxProgressHint }}</p>
-      <p class="home-card-fine">
-        {{
-          {
-            payslip: `依 ${employerYtd?.payDate ?? ''} 依薪資單的年度累計。`,
-            actual: '依已記錄的薪資入帳稅前金額。',
-            estimated: '依班表預估，匯入薪資單後會更準。',
-          }[incomeYearProgress.basis]
-        }}個人估算，以 ATO 為準。
-      </p>
-    </ProgressCard>
-
-    <section class="advanced home-block" aria-labelledby="advanced-title">
-      <button
-        type="button"
-        class="advanced__toggle app-page__card"
-        :aria-expanded="advancedOpen"
-        aria-controls="advanced-panel"
-        @click="advancedOpen = !advancedOpen"
+    <div v-if="show('savings-goal')" class="home-module" :style="orderStyle('savings-goal')">
+      <ProgressCard
+        class="home-block"
+        title="存款挑戰"
+        :subtitle="savingGoal ? `${savingGoal.name} · 依已記錄的實際收支` : ''"
+        :current="money(saving?.currentCents ?? 0)"
+        :target="savingGoal ? money(savingGoal.targetCents) : ''"
+        :percent="saving?.progressPercent ?? 0"
+        :foot-left="`已完成 ${saving?.percent ?? 0}%`"
+        :foot-right="
+          (saving?.excessCents ?? 0) > 0
+            ? `超出 ${money(saving?.excessCents ?? 0)} 🎉`
+            : `還差 ${money(saving?.remainingCents ?? 0)}`
+        "
+        tone="income"
       >
-        <span class="advanced__text">
-          <strong id="advanced-title">進階統計</strong>
-          <small>收入趨勢、支出分布、工作紀錄{{ authToken ? '、薪資入帳' : '' }}</small>
-        </span>
-        <van-icon :name="advancedOpen ? 'arrow-up' : 'arrow-down'" aria-hidden="true" />
-      </button>
-      <div v-if="advancedOpen" id="advanced-panel" class="advanced__panel">
-      <PeriodSwitcher
-        class="home-period"
-        :period="period"
-        :range-label="`${range?.start ?? ''} – ${range?.end ?? ''}`"
-        :is-current="isCurrentPeriod"
-        @update:period="setPeriod"
-        @move="movePeriod"
-        @reset="anchor = today"
+        <template #action>
+          <button
+            v-if="savingGoal"
+            type="button"
+            class="icon-button"
+            aria-label="編輯儲蓄目標"
+            @click="openGoalEditor"
+          >
+            <van-icon name="setting-o" />
+          </button>
+        </template>
+        <template v-if="!savingGoal" #empty>
+          <EmptyState
+            class="home-card-empty"
+            stacked
+            icon="gold-coin-o"
+            title="設定你的第一個儲蓄目標。"
+            description="設定目標金額，之後依收支自動累計。"
+            action-label="建立目標"
+            @action="openGoalEditor"
+          />
+        </template>
+        <p v-if="savingGoal && saving && !saving.hasActualTransactions" class="home-card-note">
+          還沒有收支紀錄。
+        </p>
+      </ProgressCard>
+    </div>
+
+    <!-- 集簽：只有設定過集簽（且不是「目前不集簽」）才會出現；歷史班表照常保留 -->
+    <div v-if="show('visa-progress')" class="home-module" :style="orderStyle('visa-progress')">
+      <VisaJourneyCard
+        class="home-block"
+        :settings="visaJourney"
+        :progress="visaProgress"
+        @setup="emit('visa-setup')"
+        @import-history="emit('import-history')"
       />
+    </div>
 
-      <section class="summary-grid" aria-label="所選期間收支摘要">
-        <div class="summary-tile app-page__card">
-          <span>已記錄收入</span
-          ><strong>{{
-            summary.hasActualIncomeInRange ? money(summary.actualIncomeCents) : '本期尚無入帳'
-          }}</strong
-          ><small>依實際收款日期，不含預估薪資</small>
-        </div>
-        <div class="summary-tile app-page__card">
-          <span>已支付支出</span><strong>{{ money(summary.paidExpenseCents) }}</strong
-          ><small>房租及生活支出，未付不計入</small>
-        </div>
-        <div class="summary-tile summary-tile--net app-page__card">
-          <span>已記錄淨結餘</span
-          ><strong>{{
-            summary.hasActualTransactions ? money(summary.netCents) : '尚無實際收支'
-          }}</strong
-          ><small>僅計入已記錄的收支，不代表帳戶餘額</small>
-        </div>
-      </section>
-      <p class="source-note">
-        {{
-          hasSalaryDeposits
-            ? '薪資依入帳日計算。'
-            : authToken
-              ? '還沒有記錄薪資入帳。'
-              : '訪客模式尚無實際薪資入帳資料。'
-        }}{{ summary.pendingFareCents > 0 ? `另有 ${money(summary.pendingFareCents)} 車資待收，未計入收入。` : '' }}
-      </p>
+    <div v-if="show('tax-progress') && incomeYearProgress" class="home-module" :style="orderStyle('tax-progress')">
+      <ProgressCard
+        class="home-block"
+        title="年度稅務追蹤"
+        :badge="{ payslip: '薪資單 YTD', actual: '實際入帳', estimated: '預估' }[incomeYearProgress.basis]"
+        :subtitle="`${incomeYearProgress.incomeYear.label} 財年 · 稅前收入累計`"
+        :current="money(incomeYearProgress.ytdGrossCents)"
+        :target="money(incomeYearProgress.limitCents)"
+        :percent="incomeYearProgress.percent"
+        :foot-left="`已達 ${Math.round(incomeYearProgress.percent)}%`"
+        :foot-right="
+          incomeYearProgress.crossed
+            ? '已超過第一級距'
+            : `距第一級距上限 ${money(incomeYearProgress.remainingCents)}`
+        "
+        :tone="incomeYearProgress.percent >= 85 ? 'warning' : 'primary'"
+      >
+        <p class="home-card-note">{{ taxProgressHint }}</p>
+        <p class="home-card-fine">
+          {{
+            {
+              payslip: `依 ${employerYtd?.payDate ?? ''} 依薪資單的年度累計。`,
+              actual: '依已記錄的薪資入帳稅前金額。',
+              estimated: '依班表預估，匯入薪資單後會更準。',
+            }[incomeYearProgress.basis]
+          }}個人估算，以 ATO 為準。
+        </p>
+      </ProgressCard>
+    </div>
 
-      <section v-if="authToken" class="dashboard-section salary-card app-page__card" aria-label="薪資入帳紀錄">
-        <div class="section-head salary-card__head">
-          <div>
-            <h2>薪資入帳</h2>
-            <p>實際收到的稅後薪資，依入帳日期統計</p>
+    <div v-if="show('advanced')" class="home-module" :style="orderStyle('advanced')">
+      <section class="advanced home-block" aria-labelledby="advanced-title">
+        <button
+          type="button"
+          class="advanced__toggle app-page__card"
+          :aria-expanded="advancedOpen"
+          aria-controls="advanced-panel"
+          @click="advancedOpen = !advancedOpen"
+        >
+          <span class="advanced__text">
+            <strong id="advanced-title">進階統計</strong>
+            <small>收入趨勢、支出分布、工作紀錄{{ authToken ? '、薪資入帳' : '' }}</small>
+          </span>
+          <van-icon :name="advancedOpen ? 'arrow-up' : 'arrow-down'" aria-hidden="true" />
+        </button>
+        <div v-if="advancedOpen" id="advanced-panel" class="advanced__panel">
+        <PeriodSwitcher
+          class="home-period"
+          :period="period"
+          :range-label="`${range?.start ?? ''} – ${range?.end ?? ''}`"
+          :is-current="isCurrentPeriod"
+          @update:period="setPeriod"
+          @move="movePeriod"
+          @reset="anchor = today"
+        />
+
+        <section class="summary-grid" aria-label="所選期間收支摘要">
+          <div class="summary-tile app-page__card">
+            <span>已記錄收入</span
+            ><strong>{{
+              summary.hasActualIncomeInRange ? money(summary.actualIncomeCents) : '本期尚無入帳'
+            }}</strong
+            ><small>依實際收款日期，不含預估薪資</small>
           </div>
-          <van-button size="small" plain type="primary" icon="plus" @click="openSalaryEditor()">新增入帳</van-button>
-        </div>
-        <p v-if="salaryDeposits === null" class="salary-card__state">正在讀取入帳紀錄…</p>
-        <div v-else-if="!hasSalaryDeposits" class="salary-card__empty">
-          <span class="salary-card__empty-icon" aria-hidden="true"><van-icon name="balance-pay" /></span>
-          <div>
-            <strong>還沒有實際薪資紀錄</strong>
-            <p>收到薪水後在這裡記一筆。</p>
+          <div class="summary-tile app-page__card">
+            <span>已支付支出</span><strong>{{ money(summary.paidExpenseCents) }}</strong
+            ><small>房租及生活支出，未付不計入</small>
           </div>
-        </div>
-        <div v-else class="salary-list">
-          <article v-for="deposit in sortedSalaryDeposits" :key="deposit.id" class="salary-entry">
-            <div class="salary-entry__main">
-              <div class="salary-entry__when">
-                <strong>{{ deposit.paidAt }}</strong>
-                <small v-if="deposit.periodStart || deposit.periodEnd">
-                  薪資期間 {{ deposit.periodStart || '未填起日' }} ～ {{ deposit.periodEnd || '未填迄日' }}
-                </small>
+          <div class="summary-tile summary-tile--net app-page__card">
+            <span>已記錄淨結餘</span
+            ><strong>{{
+              summary.hasActualTransactions ? money(summary.netCents) : '尚無實際收支'
+            }}</strong
+            ><small>僅計入已記錄的收支，不代表帳戶餘額</small>
+          </div>
+        </section>
+        <p class="source-note">
+          {{
+            hasSalaryDeposits
+              ? '薪資依入帳日計算。'
+              : authToken
+                ? '還沒有記錄薪資入帳。'
+                : '訪客模式尚無實際薪資入帳資料。'
+          }}{{ summary.pendingFareCents > 0 ? `另有 ${money(summary.pendingFareCents)} 車資待收，未計入收入。` : '' }}
+        </p>
+
+        <section v-if="authToken" class="dashboard-section salary-card app-page__card" aria-label="薪資入帳紀錄">
+          <div class="section-head salary-card__head">
+            <div>
+              <h2>薪資入帳</h2>
+              <p>實際收到的稅後薪資，依入帳日期統計</p>
+            </div>
+            <van-button size="small" plain type="primary" icon="plus" @click="openSalaryEditor()">新增入帳</van-button>
+          </div>
+          <p v-if="salaryDeposits === null" class="salary-card__state">正在讀取入帳紀錄…</p>
+          <div v-else-if="!hasSalaryDeposits" class="salary-card__empty">
+            <span class="salary-card__empty-icon" aria-hidden="true"><van-icon name="balance-pay" /></span>
+            <div>
+              <strong>還沒有實際薪資紀錄</strong>
+              <p>收到薪水後在這裡記一筆。</p>
+            </div>
+          </div>
+          <div v-else class="salary-list">
+            <article v-for="deposit in sortedSalaryDeposits" :key="deposit.id" class="salary-entry">
+              <div class="salary-entry__main">
+                <div class="salary-entry__when">
+                  <strong>{{ deposit.paidAt }}</strong>
+                  <small v-if="deposit.periodStart || deposit.periodEnd">
+                    薪資期間 {{ deposit.periodStart || '未填起日' }} ～ {{ deposit.periodEnd || '未填迄日' }}
+                  </small>
+                </div>
+                <div class="salary-entry__amount"><small>稅後入帳</small><strong>{{ money(deposit.amountCents) }}</strong></div>
               </div>
-              <div class="salary-entry__amount"><small>稅後入帳</small><strong>{{ money(deposit.amountCents) }}</strong></div>
-            </div>
-            <p v-if="deposit.grossCents != null || deposit.taxCents != null" class="salary-entry__extra">
-              <span v-if="deposit.grossCents != null">稅前 {{ money(deposit.grossCents) }}</span>
-              <span v-if="deposit.taxCents != null">扣稅 {{ money(deposit.taxCents) }}</span>
-            </p>
-            <div class="salary-entry__actions">
-              <van-button size="small" plain type="primary" @click="openSalaryEditor(deposit)">編輯</van-button>
-              <van-button size="small" plain type="danger" @click="removeSalary(deposit)">刪除</van-button>
-            </div>
-          </article>
-        </div>
-      </section>
-
-
-      <div class="analytics-grid">
-        <section class="dashboard-section chart-card app-page__card" aria-labelledby="trend-title">
-          <div class="section-head"><h2 id="trend-title">收入趨勢</h2></div>
-          <div
-            v-if="summary.hasActualIncomeRecords || summary.hasEstimatedWorkRecords"
-            class="mode-switch"
-            aria-label="收入資料口徑"
-          >
-            <button
-              type="button"
-              :disabled="!summary.hasActualIncomeRecords"
-              :class="{ selected: incomeMode === 'actual' }"
-              @click="incomeMode = 'actual'"
-            >
-              實際入帳
-            </button>
-            <button
-              type="button"
-              :disabled="!summary.hasEstimatedWorkRecords"
-              :class="{ selected: incomeMode === 'estimated' }"
-              @click="incomeMode = 'estimated'"
-            >
-              預估工作收入
-            </button>
+              <p v-if="deposit.grossCents != null || deposit.taxCents != null" class="salary-entry__extra">
+                <span v-if="deposit.grossCents != null">稅前 {{ money(deposit.grossCents) }}</span>
+                <span v-if="deposit.taxCents != null">扣稅 {{ money(deposit.taxCents) }}</span>
+              </p>
+              <div class="salary-entry__actions">
+                <van-button size="small" plain type="primary" @click="openSalaryEditor(deposit)">編輯</van-button>
+                <van-button size="small" plain type="danger" @click="removeSalary(deposit)">刪除</van-button>
+              </div>
+            </article>
           </div>
-          <p class="scope-note">
-            {{
-              incomeMode === 'actual'
-                ? hasSalaryDeposits
-                  ? '依收款日：車資與薪資入帳。'
-                  : '依收款日：車資（尚未記錄薪資）。'
-                : '依工作日：稅前預估，非實際入帳。'
-            }}
-          </p>
-          <IncomeTrendChart
-            :format="money"
-            v-if="summary.hasActualIncomeRecords || summary.hasEstimatedWorkRecords"
-            :points="summary.days"
-            :mode="incomeMode"
-            :active="active"
-            @select="selectedIncomePoint = $event"
-          />
-          <p v-else class="empty-copy">還沒有收入紀錄。</p>
-          <p v-if="selectedIncomePoint" class="chart-selection">
-            {{ selectedIncomePoint.date }} ·
-            {{
-              incomeMode === 'actual'
-                ? money(selectedIncomePoint.actualCents)
-                : money(selectedIncomePoint.estimatedCents)
-            }}（{{
-              incomeMode === 'actual'
-                ? `已收車資 ${money(selectedIncomePoint.tripCents)}${hasSalaryDeposits ? `、薪資入帳 ${money(selectedIncomePoint.salaryCents)}` : ''}`
-                : '工作預估'
-            }}）
-          </p>
-          <van-collapse
-            v-if="summary.hasActualIncomeRecords || summary.hasEstimatedWorkRecords"
-            v-model="incomeDetailsOpen"
-            class="daily-collapse"
-          >
-            <van-collapse-item name="daily" title="查看每日數值">
+        </section>
+
+
+        <div class="analytics-grid">
+          <section class="dashboard-section chart-card app-page__card" aria-labelledby="trend-title">
+            <div class="section-head"><h2 id="trend-title">收入趨勢</h2></div>
+            <div
+              v-if="summary.hasActualIncomeRecords || summary.hasEstimatedWorkRecords"
+              class="mode-switch"
+              aria-label="收入資料口徑"
+            >
               <button
-                v-for="point in summary.days"
-                :key="point.date"
                 type="button"
-                class="daily-row"
-                @click="selectedIncomePoint = point"
+                :disabled="!summary.hasActualIncomeRecords"
+                :class="{ selected: incomeMode === 'actual' }"
+                @click="incomeMode = 'actual'"
               >
-                <span>{{ point.date }}</span>
-                <strong>{{
-                  money(incomeMode === 'actual' ? point.actualCents : point.estimatedCents)
-                }}</strong>
+                實際入帳
               </button>
-            </van-collapse-item>
-          </van-collapse>
-          <p
-            v-if="summary.hasActualIncomeRecords || summary.hasEstimatedWorkRecords"
-            class="chart-hint"
-          >
-            點折線查看當天金額。
-          </p>
-        </section>
-
-        <section class="dashboard-section chart-card app-page__card" aria-labelledby="expense-title">
-          <div class="section-head"><h2 id="expense-title">支出分布</h2></div>
-          <p class="scope-note">
-            所選期間已付的支出。
-          </p>
-          <ExpenseDonutChart
-            :format="money"
-            v-if="summary.distribution.totalCents > 0"
-            :distribution="summary.distribution"
-            :active="active"
-            @select="selectedExpenseGroup = $event"
-          />
-          <p v-else class="empty-copy">這段期間尚無已支付支出。</p>
-          <p v-if="selectedExpenseGroup" class="chart-selection">
-            {{ selectedExpenseGroup.label }} · {{ money(selectedExpenseGroup.amountCents) }}
-          </p>
-          <div v-if="summary.distribution.detail.length" class="category-list">
-            <button
-              v-for="entry in summary.distribution.detail"
-              :key="entry.id"
-              type="button"
-              @click="selectedExpenseGroup = entry"
-            >
-              <span class="category-name"
-                ><i :style="{ background: entry.color }"></i>{{ entry.label }}</span
+              <button
+                type="button"
+                :disabled="!summary.hasEstimatedWorkRecords"
+                :class="{ selected: incomeMode === 'estimated' }"
+                @click="incomeMode = 'estimated'"
               >
-              <span>{{ money(entry.amountCents) }} · {{ entry.percent }}%</span>
-            </button>
+                預估工作收入
+              </button>
+            </div>
+            <p class="scope-note">
+              {{
+                incomeMode === 'actual'
+                  ? hasSalaryDeposits
+                    ? '依收款日：車資與薪資入帳。'
+                    : '依收款日：車資（尚未記錄薪資）。'
+                  : '依工作日：稅前預估，非實際入帳。'
+              }}
+            </p>
+            <IncomeTrendChart
+              :format="money"
+              v-if="summary.hasActualIncomeRecords || summary.hasEstimatedWorkRecords"
+              :points="summary.days"
+              :mode="incomeMode"
+              :active="active"
+              @select="selectedIncomePoint = $event"
+            />
+            <p v-else class="empty-copy">還沒有收入紀錄。</p>
+            <p v-if="selectedIncomePoint" class="chart-selection">
+              {{ selectedIncomePoint.date }} ·
+              {{
+                incomeMode === 'actual'
+                  ? money(selectedIncomePoint.actualCents)
+                  : money(selectedIncomePoint.estimatedCents)
+              }}（{{
+                incomeMode === 'actual'
+                  ? `已收車資 ${money(selectedIncomePoint.tripCents)}${hasSalaryDeposits ? `、薪資入帳 ${money(selectedIncomePoint.salaryCents)}` : ''}`
+                  : '工作預估'
+              }}）
+            </p>
+            <van-collapse
+              v-if="summary.hasActualIncomeRecords || summary.hasEstimatedWorkRecords"
+              v-model="incomeDetailsOpen"
+              class="daily-collapse"
+            >
+              <van-collapse-item name="daily" title="查看每日數值">
+                <button
+                  v-for="point in summary.days"
+                  :key="point.date"
+                  type="button"
+                  class="daily-row"
+                  @click="selectedIncomePoint = point"
+                >
+                  <span>{{ point.date }}</span>
+                  <strong>{{
+                    money(incomeMode === 'actual' ? point.actualCents : point.estimatedCents)
+                  }}</strong>
+                </button>
+              </van-collapse-item>
+            </van-collapse>
+            <p
+              v-if="summary.hasActualIncomeRecords || summary.hasEstimatedWorkRecords"
+              class="chart-hint"
+            >
+              點折線查看當天金額。
+            </p>
+          </section>
+
+          <section class="dashboard-section chart-card app-page__card" aria-labelledby="expense-title">
+            <div class="section-head"><h2 id="expense-title">支出分布</h2></div>
+            <p class="scope-note">
+              所選期間已付的支出。
+            </p>
+            <ExpenseDonutChart
+              :format="money"
+              v-if="summary.distribution.totalCents > 0"
+              :distribution="summary.distribution"
+              :active="active"
+              @select="selectedExpenseGroup = $event"
+            />
+            <p v-else class="empty-copy">這段期間尚無已支付支出。</p>
+            <p v-if="selectedExpenseGroup" class="chart-selection">
+              {{ selectedExpenseGroup.label }} · {{ money(selectedExpenseGroup.amountCents) }}
+            </p>
+            <div v-if="summary.distribution.detail.length" class="category-list">
+              <button
+                v-for="entry in summary.distribution.detail"
+                :key="entry.id"
+                type="button"
+                @click="selectedExpenseGroup = entry"
+              >
+                <span class="category-name"
+                  ><i :style="{ background: entry.color }"></i>{{ entry.label }}</span
+                >
+                <span>{{ money(entry.amountCents) }} · {{ entry.percent }}%</span>
+              </button>
+            </div>
+          </section>
+        </div>
+
+        <section class="dashboard-section work-card app-page__card" aria-labelledby="work-title">
+          <div class="section-head">
+            <h2 id="work-title">指定工作紀錄</h2>
+            <van-button size="small" plain type="primary" @click="openTargetEditor">{{
+              workDayTarget === null ? '設定追蹤目標' : '修改目標'
+            }}</van-button>
           </div>
+          <p class="scope-note">累計所有已標記的工作日。</p>
+          <div class="work-count">
+            <strong>{{ workProgress.count }}</strong
+            ><span>已標記工作日{{ workDayTarget === null ? '' : `／目標 ${workDayTarget} 日` }}</span>
+          </div>
+          <template v-if="workDayTarget !== null"
+            ><van-progress
+              :percentage="workProgress.progressPercent"
+              :show-pivot="false"
+              color="#1989fa"
+              track-color="#e6edf5"
+            />
+            <p class="goal-result">尚差 {{ workProgress.remaining }} 日</p></template
+          >
+          <p v-else class="empty-copy">還沒設定目標。</p>
+          <van-collapse v-if="eligibleDates.length" v-model="workDetailsOpen" class="work-collapse"
+            ><van-collapse-item name="dates" title="管理工作日標記"
+              ><div v-for="date in eligibleDates" :key="date" class="work-date">
+                <span>{{ date }}</span
+                ><van-switch
+                  :model-value="workProgress.dates.includes(date)"
+                  size="22px"
+                  :aria-label="`${date} 指定工作標記`"
+                  @update:model-value="emit('mark-work-date', { date, marked: $event })"
+                /></div></van-collapse-item
+          ></van-collapse>
+          <van-button v-else size="small" plain type="primary" @click="emit('navigate', 'payroll')"
+            >前往薪資頁新增工作紀錄</van-button
+          >
+          <p class="disclaimer">個人紀錄，非官方資格判定。</p>
         </section>
-      </div>
-
-      <section class="dashboard-section work-card app-page__card" aria-labelledby="work-title">
-        <div class="section-head">
-          <h2 id="work-title">指定工作紀錄</h2>
-          <van-button size="small" plain type="primary" @click="openTargetEditor">{{
-            workDayTarget === null ? '設定追蹤目標' : '修改目標'
-          }}</van-button>
         </div>
-        <p class="scope-note">累計所有已標記的工作日。</p>
-        <div class="work-count">
-          <strong>{{ workProgress.count }}</strong
-          ><span>已標記工作日{{ workDayTarget === null ? '' : `／目標 ${workDayTarget} 日` }}</span>
-        </div>
-        <template v-if="workDayTarget !== null"
-          ><van-progress
-            :percentage="workProgress.progressPercent"
-            :show-pivot="false"
-            color="#1989fa"
-            track-color="#e6edf5"
-          />
-          <p class="goal-result">尚差 {{ workProgress.remaining }} 日</p></template
-        >
-        <p v-else class="empty-copy">還沒設定目標。</p>
-        <van-collapse v-if="eligibleDates.length" v-model="workDetailsOpen" class="work-collapse"
-          ><van-collapse-item name="dates" title="管理工作日標記"
-            ><div v-for="date in eligibleDates" :key="date" class="work-date">
-              <span>{{ date }}</span
-              ><van-switch
-                :model-value="workProgress.dates.includes(date)"
-                size="22px"
-                :aria-label="`${date} 指定工作標記`"
-                @update:model-value="emit('mark-work-date', { date, marked: $event })"
-              /></div></van-collapse-item
-        ></van-collapse>
-        <van-button v-else size="small" plain type="primary" @click="emit('navigate', 'payroll')"
-          >前往薪資頁新增工作紀錄</van-button
-        >
-        <p class="disclaimer">個人紀錄，非官方資格判定。</p>
       </section>
-      </div>
-    </section>
+    </div>
+    </div>
 
+    <DashboardCustomizeSheet
+      v-model:show="customizeOpen"
+      :layout="layout"
+      :context="layoutContext"
+      @change="updateLayout"
+    />
     <van-popup v-model:show="showGoalForm" position="bottom" round safe-area-inset-bottom>
       <form class="edit-sheet" @submit.prevent="saveGoal">
         <h2>儲蓄目標</h2>
@@ -1034,6 +1109,46 @@ async function saveTarget() {
   margin: 4px 0 0;
   color: var(--color-muted);
   font-size: 14px;
+}
+.home-header__customize {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--touch-target);
+  margin-left: auto;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-primary);
+  font: inherit;
+  font-size: var(--font-caption);
+  font-weight: 700;
+  cursor: pointer;
+}
+.home-header__customize:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+/* 首頁模組：依「自訂首頁」排序（CSS order），間距統一由 gap 決定 */
+.home-modules {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 14px;
+}
+.home-modules > :deep(*) {
+  margin-top: 0;
+}
+.home-module {
+  min-width: 0;
+}
+.home-module > :deep(*) {
+  margin-top: 0;
+}
+.home-modules__empty {
+  order: -1;
 }
 .home-header__account {
   position: relative;

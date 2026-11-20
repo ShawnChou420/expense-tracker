@@ -16,7 +16,17 @@ import {
 const props = defineProps({
   // 裝置本地的今天 YYYY-MM-DD（跨日時父元件會更新）
   today: { type: String, required: true },
+  // 首頁自訂：三個區塊各自顯示與順序（CSS order）。資料仍然只用一次 /api/today 載入
+  parts: {
+    type: Object,
+    default: () => ({
+      tasks: { visible: true, order: 0 },
+      quote: { visible: true, order: 1 },
+      mood: { visible: true, order: 2 },
+    }),
+  },
 })
+const partStyle = (/** @type {'tasks' | 'quote' | 'mood'} */ part) => ({ order: props.parts[part]?.order ?? 0 })
 
 const loading = ref(true)
 const loadError = ref('')
@@ -305,7 +315,12 @@ defineExpose({ reload: load })
 <template>
   <div class="today-section">
     <!-- 今日待辦 -->
-    <section class="today-card app-page__card" aria-labelledby="today-tasks-title">
+    <section
+      v-if="parts.tasks?.visible"
+      class="today-card app-page__card"
+      :style="partStyle('tasks')"
+      aria-labelledby="today-tasks-title"
+    >
       <div class="today-card__head">
         <h2 id="today-tasks-title">今日待辦</h2>
         <span v-if="!loading && progress.total > 0" class="today-card__count">
@@ -384,7 +399,12 @@ defineExpose({ reload: load })
     </section>
 
     <!-- 給今天的你，一句話 -->
-    <section class="today-quote app-page__card" aria-labelledby="today-quote-title">
+    <section
+      v-if="parts.quote?.visible"
+      class="today-quote app-page__card"
+      :style="partStyle('quote')"
+      aria-labelledby="today-quote-title"
+    >
       <div class="today-card__head">
         <h2 id="today-quote-title">給今天的你，一句話</h2>
         <button
@@ -409,7 +429,12 @@ defineExpose({ reload: load })
     </section>
 
     <!-- 心情與備註 -->
-    <section class="today-card app-page__card" aria-labelledby="today-mood-title">
+    <section
+      v-if="parts.mood?.visible"
+      class="today-card app-page__card"
+      :style="partStyle('mood')"
+      aria-labelledby="today-mood-title"
+    >
       <div class="today-card__head">
         <h2 id="today-mood-title">{{ isJournalToday ? '今天感覺如何？' : `${formatDateLabel(journalDate)} 的紀錄` }}</h2>
         <div class="today-date-nav">
@@ -570,9 +595,8 @@ defineExpose({ reload: load })
 
 <style scoped>
 .today-section {
-  display: grid;
-  gap: 14px;
-  margin-top: 14px;
+  /* 三個區塊直接成為首頁模組容器的項目，才能和其他模組一起排序 */
+  display: contents;
 }
 .today-card,
 .today-quote {

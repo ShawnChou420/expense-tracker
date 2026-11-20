@@ -212,3 +212,39 @@ export function getExpenseSummary(expenses, range) {
     })).filter((group) => group.amountCents > 0),
   }
 }
+
+/** 新使用者還沒有紀錄時的常用分類 */
+const DEFAULT_QUICK_CATEGORIES = [
+  ['FOOD', 'GROCERIES'],
+  ['FOOD', 'DINING'],
+  ['TRANSPORT', 'FUEL'],
+  ['HOUSING', 'RENT'],
+  ['FOOD', 'COFFEE'],
+]
+
+/**
+ * 記帳表單上方的「常用分類」：最近用過的分類優先，不足再補預設，不重複。
+ * @param {Array<{ group: string, category: string, createdAt?: string, date?: string }>} expenses
+ * @param {number} [limit]
+ * @returns {Array<{ group: string, category: string, label: string }>}
+ */
+export function getQuickCategories(expenses, limit = 5) {
+  const recent = [...expenses].sort((a, b) =>
+    (b.createdAt || b.date || '').localeCompare(a.createdAt || a.date || ''),
+  )
+  const pairs = [
+    ...recent.map((expense) => [expense.group, expense.category]),
+    ...DEFAULT_QUICK_CATEGORIES,
+  ]
+  const seen = new Set()
+  const result = []
+  for (const [group, category] of pairs) {
+    const key = `${group}:${category}`
+    const found = getExpenseCategory(group, category)
+    if (!found || seen.has(key)) continue
+    seen.add(key)
+    result.push({ group, category, label: found.label })
+    if (result.length >= limit) break
+  }
+  return result
+}

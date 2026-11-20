@@ -10,6 +10,7 @@ import {
   getExpenseGroup,
   getExpenseOccurrences,
   getExpenseSummary,
+  getQuickCategories,
 } from '../domain/expenses.js'
 import { dollarsToCents, formatAud, formatCentsInput } from '../domain/money.js'
 import { expenseRepository, subscribeToLedgerChanges } from '../repositories/appRepositories.js'
@@ -25,6 +26,28 @@ const payingOccurrence = ref(null)
 const paymentDate = ref(formatLocalDate(new Date()))
 const editingId = ref(null)
 const form = ref(emptyForm())
+// 記帳表單：金額優先，分類先顯示常用的幾個，其他欄位收在「更多選項」
+const amountInput = ref(null)
+const showAllCategories = ref(false)
+const moreOptionsOpen = ref(false)
+const quickCategories = computed(() => {
+  const list = getQuickCategories(expenses.value)
+  const selected = getExpenseCategory(form.value.group, form.value.category)
+  const included = list.some(
+    (item) => item.group === form.value.group && item.category === form.value.category,
+  )
+  return selected && !included
+    ? [{ group: form.value.group, category: form.value.category, label: selected.label }, ...list]
+    : list
+})
+function pickQuickCategory(item) {
+  form.value.group = item.group
+  selectCategory({ id: item.category })
+}
+function focusAmount() {
+  // 新增時打開就準備輸入金額（iOS 可能需要再點一下才會出現鍵盤）
+  if (!editingId.value) amountInput.value?.focus()
+}
 
 const weekRange = computed(() => getWeekRange(selectedDate.value))
 const summary = computed(() => getExpenseSummary(expenses.value, weekRange.value))
@@ -92,6 +115,10 @@ function openForm(expense) {
           source.date,
       }
     : { ...emptyForm(), date: selectedDate.value }
+  showAllCategories.value = false
+  moreOptionsOpen.value = Boolean(
+    source && (source.frequency !== 'NONE' || source.note || source.status !== 'PAID'),
+  )
   showForm.value = true
 }
 
@@ -380,7 +407,13 @@ defineExpose({ openForm })
       已記錄投資虧損 {{ formatAud(summary.investmentLossCents) }}；不列入生活支出現金流。
     </p>
 
-    <van-popup v-model:show="showForm" position="bottom" round safe-area-inset-bottom>
+    <van-popup
+      v-model:show="showForm"
+      position="bottom"
+      round
+      safe-area-inset-bottom
+      @opened="focusAmount"
+    >
       <form class="sheet-form" @submit.prevent="saveExpense">
         <div class="sheet-header">
           <div>
@@ -391,42 +424,64 @@ defineExpose({ openForm })
           </button>
         </div>
         <div class="sheet-scroll">
-          <p class="field-label">支出大類</p>
-          <div class="group-picker">
+          <label class="amount-hero">
+            <span class="amount-hero__currency">AUD $</span>
+            <input
+              ref="amountInput"
+              v-model="form.amount"
+              class="amount-hero__input"
+              type="text"
+              inputmode="decimal"
+              enterkeyhint="done"
+              placeholder="0.00"
+              aria-label="金額 AUD"
+              autocomplete="off"
+            />
+          </label>
+          <div v-if="!showAllCategories" class="quick-categories" role="group" aria-label="分類">
             <button
-              v-for="group in EXPENSE_GROUPS"
-              :key="group.id"
+              v-for="item in quickCategories"
+              :key="`${item.group}:${item.category}`"
               type="button"
-              :class="{ selected: form.group === group.id }"
-              @click="selectGroup(group)"
+              :class="{ selected: form.group === item.group && form.category === item.category }"
+              @click="pickQuickCategory(item)"
             >
-              <van-icon :name="group.icon" /><span>{{ group.label }}</span>
+              {{ item.label }}
+            </button>
+            <button type="button" class="quick-categories__more" @click="showAllCategories = true">
+              更多分類
             </button>
           </div>
-          <p class="field-label">支出小類</p>
-          <div class="subcategory-picker">
-            <button
-              v-for="category in selectedGroup.categories"
-              :key="category.id"
-              type="button"
-              :class="{ selected: form.category === category.id }"
-              @click="selectCategory(category)"
-            >
-              {{ category.label }}
-            </button>
-          </div>
+          <template v-else>
+            <p class="field-label">支出大類</p>
+            <div class="group-picker">
+              <button
+                v-for="group in EXPENSE_GROUPS"
+                :key="group.id"
+                type="button"
+                :class="{ selected: form.group === group.id }"
+                @click="selectGroup(group)"
+              >
+                <van-icon :name="group.icon" /><span>{{ group.label }}</span>
+              </button>
+            </div>
+            <p class="field-label">支出小類</p>
+            <div class="subcategory-picker">
+              <button
+                v-for="category in selectedGroup.categories"
+                :key="category.id"
+                type="button"
+                :class="{ selected: form.category === category.id }"
+                @click="selectCategory(category)"
+              >
+                {{ category.label }}
+              </button>
+            </div>
+          </template>
           <p v-if="form.category === 'INVESTMENT_LOSS'" class="form-hint">
             只記錄已實現虧損，不算生活支出。
           </p>
           <van-cell-group inset class="form-fields">
-            <van-field
-              v-model="form.amount"
-              label="金額 AUD"
-              type="number"
-              inputmode="decimal"
-              placeholder="0.00"
-              required
-            />
             <van-field v-model="form.date" label="日期" type="date" required />
             <van-field
               v-if="authToken && form.status === 'PAID'"
@@ -441,72 +496,85 @@ defineExpose({ openForm })
               placeholder="選填，例如 Woolworths"
               clearable
             />
-            <van-field
-              v-model="form.note"
-              label="備註"
-              type="textarea"
-              rows="2"
-              autosize
-              placeholder="選填"
-              clearable
-            />
           </van-cell-group>
-          <p v-if="form.category !== 'INVESTMENT_LOSS'" class="field-label">支出頻率</p>
-          <div v-if="form.category !== 'INVESTMENT_LOSS'" class="frequency-picker">
-            <button
-              v-for="frequency in EXPENSE_FREQUENCIES"
-              :key="frequency.id"
-              type="button"
-              :class="{ selected: form.frequency === frequency.id }"
-              @click="form.frequency = frequency.id"
-            >
-              {{ frequency.label }}
-            </button>
-          </div>
-          <van-cell-group v-if="form.frequency === 'CUSTOM'" inset class="interval-field"
-            ><van-field
-              v-model="form.intervalDays"
-              label="每隔幾天"
-              type="number"
-              inputmode="numeric"
-              placeholder="1–365"
-              required
-          /></van-cell-group>
-          <van-cell-group v-if="form.frequency !== 'NONE'" inset class="interval-field">
-            <van-field
-              v-model="form.endDate"
-              label="結束日期"
-              type="date"
-              placeholder="選填，不填表示持續"
-              clearable
-            />
-          </van-cell-group>
-          <p v-if="form.frequency !== 'NONE'" class="form-hint">
-            從這天開始自動排程，每期付款後再標記已付。
-          </p>
-          <p v-if="form.category !== 'INVESTMENT_LOSS'" class="field-label">付款狀態</p>
-          <div v-if="form.category !== 'INVESTMENT_LOSS'" class="status-picker">
-            <button
-              type="button"
-              :class="{ selected: form.status === 'PAID' }"
-              @click="form.status = 'PAID'"
-            >
-              已支付</button
-            ><button
-              type="button"
-              :class="{ selected: form.status === 'PLANNED' }"
-              @click="form.status = 'PLANNED'"
-            >
-              預計支付
-            </button>
-          </div>
-          <p v-if="form.category !== 'INVESTMENT_LOSS'" class="status-hint">
-            {{
-              form.frequency === 'NONE'
-                ? '預計支付不會算入本週已支付金額。'
-                : '只設定第一筆，之後每期預設待付。'
-            }}
-          </p>
+          <button
+            type="button"
+            class="more-options"
+            :aria-expanded="moreOptionsOpen"
+            @click="moreOptionsOpen = !moreOptionsOpen"
+          >
+            {{ moreOptionsOpen ? '收起更多選項' : '更多選項：固定支出、付款狀態、備註' }}
+            <van-icon :name="moreOptionsOpen ? 'arrow-up' : 'arrow-down'" />
+          </button>
+          <template v-if="moreOptionsOpen">
+            <van-cell-group inset class="form-fields">
+              <van-field
+                v-model="form.note"
+                label="備註"
+                type="textarea"
+                rows="2"
+                autosize
+                placeholder="選填"
+                clearable
+              />
+            </van-cell-group>
+            <p v-if="form.category !== 'INVESTMENT_LOSS'" class="field-label">支出頻率</p>
+            <div v-if="form.category !== 'INVESTMENT_LOSS'" class="frequency-picker">
+              <button
+                v-for="frequency in EXPENSE_FREQUENCIES"
+                :key="frequency.id"
+                type="button"
+                :class="{ selected: form.frequency === frequency.id }"
+                @click="form.frequency = frequency.id"
+              >
+                {{ frequency.label }}
+              </button>
+            </div>
+            <van-cell-group v-if="form.frequency === 'CUSTOM'" inset class="interval-field"
+              ><van-field
+                v-model="form.intervalDays"
+                label="每隔幾天"
+                type="number"
+                inputmode="numeric"
+                placeholder="1–365"
+                required
+            /></van-cell-group>
+            <van-cell-group v-if="form.frequency !== 'NONE'" inset class="interval-field">
+              <van-field
+                v-model="form.endDate"
+                label="結束日期"
+                type="date"
+                placeholder="選填，不填表示持續"
+                clearable
+              />
+            </van-cell-group>
+            <p v-if="form.frequency !== 'NONE'" class="form-hint">
+              從這天開始自動排程，每期付款後再標記已付。
+            </p>
+            <p v-if="form.category !== 'INVESTMENT_LOSS'" class="field-label">付款狀態</p>
+            <div v-if="form.category !== 'INVESTMENT_LOSS'" class="status-picker">
+              <button
+                type="button"
+                :class="{ selected: form.status === 'PAID' }"
+                @click="form.status = 'PAID'"
+              >
+                已支付</button
+              ><button
+                type="button"
+                :class="{ selected: form.status === 'PLANNED' }"
+                @click="form.status = 'PLANNED'"
+              >
+                預計支付
+              </button>
+            </div>
+            <p v-if="form.category !== 'INVESTMENT_LOSS'" class="status-hint">
+              {{
+                form.frequency === 'NONE'
+                  ? '預計支付不會算入本週已支付金額。'
+                  : '只設定第一筆，之後每期預設待付。'
+              }}
+            </p>
+          </template>
         </div>
         <div class="sheet-footer">
           <van-button type="primary" block native-type="submit">{{
@@ -874,6 +942,77 @@ defineExpose({ openForm })
   margin: 18px 4px 10px;
   font-size: 13px;
   font-weight: 800;
+}
+.amount-hero {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 4px 0 14px;
+  padding: 14px 16px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  background: var(--color-surface);
+}
+.amount-hero:focus-within {
+  border-color: var(--color-primary);
+}
+.amount-hero__currency {
+  flex: none;
+  color: var(--color-muted);
+  font-size: 15px;
+  font-weight: 700;
+}
+.amount-hero__input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-heading);
+  font: inherit;
+  font-size: 34px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+.quick-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.quick-categories button,
+.more-options {
+  min-height: var(--touch-target);
+  padding: 0 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-heading);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+}
+.quick-categories button.selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+.quick-categories .quick-categories__more {
+  border-style: dashed;
+  color: var(--color-primary);
+}
+.more-options {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin: 12px 0 4px;
+  border: 0;
+  border-radius: var(--radius-medium);
+  background: transparent;
+  color: var(--color-primary);
+  font-size: 13px;
 }
 .group-picker {
   display: grid;

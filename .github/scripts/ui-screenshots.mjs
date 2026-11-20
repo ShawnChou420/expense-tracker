@@ -102,6 +102,9 @@ for (const target of targets) {
         await page.getByRole('button', { name: '新增支出' }).click()
         await page.waitForTimeout(800)
         checks.expenseFormOpened = await page.locator('.van-popup--bottom:visible').count() > 0
+        await page.screenshot({ path: join(outDir, 'expense-form.png') })
+        await page.locator('.amount-hero__input').fill('25.50').catch(() => {})
+        checks.expenseAmountFirst = await page.locator('.amount-hero__input').isVisible()
       } catch (error) {
         checks.quickError = String(error.message || error).slice(0, 300)
       }

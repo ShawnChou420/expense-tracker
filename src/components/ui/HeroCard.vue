@@ -54,11 +54,9 @@ const emit = defineEmits(['open', 'action'])
   position: relative;
   overflow: hidden;
   border-radius: var(--radius-hero);
-  background:
-    radial-gradient(circle at 100% 0, rgba(255, 255, 255, 0.16) 0, transparent 46%),
-    var(--color-primary);
+  background: var(--color-primary);
   color: #fff;
-  box-shadow: 0 10px 28px rgba(18, 104, 218, 0.24);
+  box-shadow: 0 4px 14px rgba(18, 104, 218, 0.16);
 }
 .hero-card__tap {
   display: grid;

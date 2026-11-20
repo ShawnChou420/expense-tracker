@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getOnboardingSteps } from './onboarding.js'
+import { getNextOnboardingStep, getOnboardingSteps } from './onboarding.js'
 
 describe('getOnboardingSteps', () => {
   it('shows every step as pending for a brand-new guest', () => {
@@ -44,5 +44,23 @@ describe('getOnboardingSteps', () => {
     const step = getOnboardingSteps({}).steps[0]
     expect(step.description).toBe('先設定薪資費率與班別，再使用自動排班。')
     expect(getOnboardingSteps({ workSetupReady: true }).steps[0].done).toBe(true)
+  })
+})
+
+describe('getNextOnboardingStep', () => {
+  it('回傳第一個未完成的步驟與序號', () => {
+    const next = getNextOnboardingStep(getOnboardingSteps({ workSetupReady: true }))
+    expect(next?.id).toBe('schedule')
+    expect(next?.number).toBe(2)
+  })
+
+  it('全部完成時回傳 null', () => {
+    const done = getOnboardingSteps({
+      workSetupReady: true,
+      workRecords: [{ shiftType: 'normal', paidMinutes: 60 }],
+      expenses: [{}],
+      savingGoal: {},
+    })
+    expect(getNextOnboardingStep(done)).toBeNull()
   })
 })

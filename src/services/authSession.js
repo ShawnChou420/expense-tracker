@@ -79,6 +79,45 @@ export function reportEvent(type, info = {}) {
   apiRequest('/events', { method: 'POST', body: { type, ...info } }).catch(() => {})
 }
 
+/** 後端還在啟動時常見的狀態碼：/api/ready 的 503、雲端平台喚醒期間的 502／504 */
+const STARTING_STATUSES = new Set([502, 503, 504])
+
+/**
+ * App 開啟時等後端（含資料庫）準備好再顯示畫面：免費方案閒置會休眠，喚醒期間的請求容易失敗。
+ * 每 1.5 秒問一次 /api/ready，最多等 timeoutMs；逾時、離線或其他錯誤就放行，交給各畫面自己的錯誤處理。
+ * @param {{ timeoutMs?: number, intervalMs?: number, maxNetworkErrors?: number }} [options]
+ * @returns {Promise<boolean>} 是否確認已就緒
+ */
+export async function waitForBackendReady({ timeoutMs = 90_000, intervalMs = 1500, maxNetworkErrors = 3 } = {}) {
+  if (!isApiAvailable) return false
+  wakeRequested = true
+  const deadline = Date.now() + timeoutMs
+  let networkErrors = 0
+  while (Date.now() < deadline) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), Math.max(1000, deadline - Date.now()))
+    try {
+      const response = await fetch(endpoint('/ready'), { credentials: 'omit', signal: controller.signal })
+      await response.text().catch(() => '')
+      if (response.ok) return true
+      // 舊版後端沒有 /api/ready（404）或其他非啟動中的錯誤：不再等
+      if (!STARTING_STATUSES.has(response.status)) return false
+    } catch {
+      // 離線時很快就會失敗，不要讓使用者一直等
+      networkErrors += 1
+      if (networkErrors >= maxNetworkErrors) return false
+    } finally {
+      clearTimeout(timer)
+    }
+    if (Date.now() + intervalMs >= deadline) break
+    await new Promise((done) => setTimeout(done, intervalMs))
+  }
+  return false
+}
+
+/** 上次保存的登入在這次開啟時已失效（例如在別台裝置改了密碼）；畫面據此提示一次 */
+export const sessionExpired = ref(false)
+
 /** 請求超過這個時間仍未回應，就顯示「伺服器啟動中」提示（免費方案閒置後喚醒約需 1 分鐘） */
 export const SLOW_REQUEST_MS = 4000
 /** 超過這個時間放棄等待；冷啟動通常在這之內完成 */
@@ -107,8 +146,11 @@ export function apiRequest(path, { method = 'GET', body } = {}) {
   return shared.then((result) => (result === null ? null : structuredClone(result)))
 }
 
-/** @param {string} path @param {string} method @param {unknown} body */
-async function send(path, method, body) {
+/**
+ * @param {string} path @param {string} method @param {unknown} body
+ * @param {string | null} [token] 這個請求要帶的登入憑證（預設為目前的登入）
+ */
+async function send(path, method, body, token = authToken.value) {
   let response
   const requestId = newRequestId()
   const startedAt = performance.now()
@@ -139,7 +181,7 @@ async function send(path, method, body) {
         headers: {
           'Content-Type': 'application/json',
           'X-Request-Id': requestId,
-          ...(authToken.value ? { Authorization: `Bearer ${authToken.value}` } : {}),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       })
@@ -153,9 +195,12 @@ async function send(path, method, body) {
       throw new Error('無法連線到後端，請檢查網路與 API 設定')
     }
     trace(response.status)
-    if (response.status === 401 && authToken.value) {
-      clearSession()
-      throw new Error('登入已失效，請重新登入')
+    if (response.status === 401 && token) {
+      // 只有「目前這個登入」被拒絕才登出；舊憑證的請求晚回來時不重複登出、也不顯示「操作失敗（401）」
+      if (token === authToken.value) clearSession()
+      const expired = new Error('登入已失效，請重新登入')
+      Object.assign(expired, { status: 401, code: 'SESSION_EXPIRED' })
+      throw expired
     }
     if (!response.ok) {
       const error = await response.json().catch(() => ({}))
@@ -208,21 +253,19 @@ export async function restoreSavedSession() {
     forgetSession()
     return false
   }
-  authToken.value = saved.token
-  authEmail.value = saved.email || ''
+  // 先向後端確認，確認有效才設為登入中：避免各畫面拿失效的憑證同時送出請求、跳出一堆錯誤
   try {
-    const me = await apiRequest('/auth/me')
-    authEmail.value = me.email
+    const me = await send('/auth/me', 'GET', undefined, saved.token)
+    authToken.value = saved.token
+    authEmail.value = me.email || saved.email || ''
     authRoles.value = Array.isArray(me.roles) ? me.roles : []
     return true
   } catch (/** @type {any} */ error) {
-    // 網路暫時不通時保留登入，讓使用者稍後重試；只有後端明確拒絕才登出
-    if (!authToken.value) return false
-    if (String(error?.message || '').includes('無法連線')) {
-      authToken.value = null
-      return false
+    // 後端明確拒絕才清掉；網路不通或伺服器還沒好時保留，下次開啟再試
+    if (error?.status === 401 || error?.status === 403) {
+      forgetSession()
+      sessionExpired.value = true
     }
-    clearSession()
     return false
   }
 }

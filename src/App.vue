@@ -736,6 +736,26 @@ const onDateSelect = async (date) => {
   daySheetOpen.value = true
 }
 
+// 首頁「調整上下班時間」：不切換分頁，直接打開那天的當天面板並捲到時間欄位
+// （同一個面板、同一套薪資計算與未儲存提醒）
+async function openDayEditorFromHome(date) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date))) return
+  if (date !== workDate.value) {
+    if (!(await confirmLeaveDayEditor())) return
+    showBlackoutEditor.value = false
+    workDate.value = date
+    visibleMonth.value = date.slice(0, 7)
+    payrollCalendar.value?.reset(parseWorkDate(date))
+    loadSelectedDate()
+  } else if (!dayEditorDirty.value) {
+    loadSelectedDate()
+  }
+  ledger.ensureLoaded()
+  daySheetOpen.value = true
+  // 等面板滑出後再捲動，避免動畫中捲動位置被重設
+  setTimeout(() => workInputSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 320)
+}
+
 // 關閉當天面板（×、點遮罩）前，有未儲存修改就先提醒；取消就留在面板
 const beforeDaySheetClose = () => confirmLeaveDayEditor()
 async function closeDaySheet() {
@@ -1680,6 +1700,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       @navigate="activeTab = $event"
       @open-account="openAccount"
       @quick-action="handleQuickAction"
+      @adjust-shift="openDayEditorFromHome"
       @import-payslip="payslipImportOpen = true"
       @work-setup="openWorkSetup($event)"
     />

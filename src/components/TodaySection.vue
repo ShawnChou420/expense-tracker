@@ -14,7 +14,7 @@ import {
   getTaskProgress,
 } from '../domain/today.js'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const props = defineProps({
   // 裝置本地的今天 YYYY-MM-DD（跨日時父元件會更新）
   today: { type: String, required: true },
@@ -40,6 +40,8 @@ const refreshing = ref(false)
 
 const progress = computed(() => getTaskProgress(tasks.value))
 const isMember = computed(() => Boolean(authToken.value))
+// 澳洲英文小句子的翻譯與用法說明是繁體中文，只在中文介面顯示；其他語系只顯示英文句子
+const showQuoteHelp = computed(() => String(locale.value).startsWith('zh'))
 
 // 每次載入的序號：登入狀態或日期在載入途中改變時，只採用最後一次的結果（避免舊請求的錯誤蓋掉新結果）
 let loadSeq = 0
@@ -420,10 +422,14 @@ defineExpose({ reload: load })
         </button>
       </div>
       <van-skeleton v-if="loading" :row="2" />
-      <blockquote v-else-if="quote" class="today-quote__text">
-        {{ quote.content }}
-        <footer v-if="quote.source || quote.author">—— {{ quote.source || quote.author }}</footer>
-      </blockquote>
+      <div v-else-if="quote" class="today-quote__body">
+        <blockquote class="today-quote__text" :lang="quote.language || undefined">
+          {{ quote.content }}
+          <footer v-if="quote.source || quote.author">—— {{ quote.source || quote.author }}</footer>
+        </blockquote>
+        <p v-if="showQuoteHelp && quote.translation" class="today-quote__translation">{{ quote.translation }}</p>
+        <p v-if="showQuoteHelp && quote.note" class="today-quote__note">{{ quote.note }}</p>
+      </div>
       <div v-else-if="quoteFailed" class="today-card__error">
         <p>{{ t('today.quoteUnavailable') }}</p>
         <van-button size="small" plain type="primary" @click="retryQuote">{{ t('common.retry') }}</van-button>
@@ -808,9 +814,27 @@ defineExpose({ reload: load })
 .today-quote__text {
   margin: 0;
   color: var(--color-heading);
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.65;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.today-quote__body {
+  display: grid;
+  gap: 6px;
+}
+.today-quote__translation {
+  margin: 0;
+  color: var(--color-heading);
+  font-size: var(--font-body);
+  line-height: 1.6;
+}
+.today-quote__note {
+  margin: 4px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid rgba(18, 104, 218, 0.14);
+  color: #4e5d6a;
+  font-size: var(--font-caption);
+  line-height: 1.6;
 }
 .today-quote__text footer {
   margin-top: 4px;

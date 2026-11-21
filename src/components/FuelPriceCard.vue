@@ -84,7 +84,9 @@ async function load() {
   } catch (failure) {
     if (seq === loadSeq) {
       result.value = null
-      error.value = failure instanceof Error ? localizeMessage(failure.message) : t('fuel.unavailable')
+      // 位置權限錯誤要告訴使用者改用郵遞區號；其他（伺服器、網路）只說暫時取不到，不顯示狀態碼
+      const message = failure instanceof Error ? localizeMessage(failure.message) : ''
+      error.value = message === t('fuel.permissionDenied') ? message : t('fuel.unavailable')
     }
   } finally {
     if (seq === loadSeq) loading.value = false
@@ -268,7 +270,7 @@ onMounted(load)
 }
 .fuel-card__fuel {
   min-width: 52px;
-  min-height: 36px;
+  min-height: var(--touch-target);
   padding: 0 12px;
   border: 1px solid var(--color-border);
   border-radius: 999px;
@@ -312,7 +314,7 @@ onMounted(load)
   line-height: 1.5;
 }
 .fuel-card__source {
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 .fuel-card__list {
   display: grid;
@@ -359,7 +361,7 @@ onMounted(load)
 }
 .fuel-card__station small {
   color: var(--color-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
   overflow-wrap: anywhere;
 }
 .fuel-card__price {
@@ -374,6 +376,6 @@ onMounted(load)
 }
 .fuel-card__price small {
   color: var(--color-muted);
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 </style>

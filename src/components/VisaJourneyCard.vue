@@ -150,7 +150,7 @@ const estimateText = computed(() => {
   border-radius: 999px;
   background: var(--color-income-soft);
   color: var(--color-income);
-  font-size: 12px;
+  font-size: var(--font-caption);
   font-weight: 700;
 }
 .visa-card__icon {
@@ -189,7 +189,7 @@ const estimateText = computed(() => {
   color: var(--color-heading);
 }
 .visa-card__stats span {
-  font-size: 12px;
+  font-size: var(--font-caption);
   color: var(--color-muted);
 }
 .visa-card__bar-label {
@@ -259,6 +259,6 @@ const estimateText = computed(() => {
 .visa-card__disclaimer {
   margin: 0;
   color: var(--color-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 </style>

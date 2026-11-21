@@ -80,14 +80,14 @@ const width = computed(() => `${Math.max(0, Math.min(100, props.percent))}%`)
   border-radius: 999px;
   background: #eef2f7;
   color: var(--color-muted);
-  font-size: 11px;
+  font-size: var(--font-caption);
   font-style: normal;
   font-weight: 700;
 }
 .progress-card__head p {
   margin: 3px 0 0;
   color: var(--color-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
   line-height: 1.45;
 }
 .progress-card__head :deep(.van-button) {

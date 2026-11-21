@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   DASHBOARD_MODULES,
   getDefaultLayout,
+  getDisplayOrder,
+  getPromptOrder,
   getVisibleModuleIds,
   isSameLayout,
   moveModule,
@@ -12,17 +14,26 @@ import {
 const ALL = DASHBOARD_MODULES.length
 
 describe('getDefaultLayout', () => {
-  it('薪資優先：本週薪資在最前面，心情與稅務預設隱藏', () => {
+  it('薪資優先：本週薪資、今日班表、快捷操作在前，心情與稅務預設隱藏', () => {
     const layout = getDefaultLayout('PAY')
     expect(layout.modules).toHaveLength(ALL)
     expect(getVisibleModuleIds(layout).slice(0, 4)).toEqual([
       'weekly-pay',
-      'latest-payslip',
       'today-shift',
-      'savings-goal',
+      'quick-actions',
+      'latest-payslip',
     ])
     expect(getVisibleModuleIds(layout)).not.toContain('mood-journal')
     expect(getVisibleModuleIds(layout)).not.toContain('tax-progress')
+  })
+
+  it('薪資優先預設不放待辦與每日小語（減少首頁資訊量），生活優先仍保留', () => {
+    const pay = getVisibleModuleIds(getDefaultLayout('PAY'))
+    expect(pay).not.toContain('today-tasks')
+    expect(pay).not.toContain('daily-quote')
+    const life = getVisibleModuleIds(getDefaultLayout('LIFE'))
+    expect(life).toContain('today-tasks')
+    expect(life).toContain('daily-quote')
   })
 
   it('生活優先：今日班表、待辦、小語、心情在前，本週收入在後', () => {
@@ -87,18 +98,18 @@ describe('normalizeLayout', () => {
 
 describe('setModuleVisible / moveModule', () => {
   it('關閉小語只影響小語', () => {
-    const layout = setModuleVisible(getDefaultLayout('PAY'), 'daily-quote', false)
+    const layout = setModuleVisible(getDefaultLayout('LIFE'), 'daily-quote', false)
     expect(getVisibleModuleIds(layout)).not.toContain('daily-quote')
     expect(getVisibleModuleIds(layout)).toContain('today-tasks')
   })
 
   it('上移、下移；到頭或到尾時不變', () => {
     const base = getDefaultLayout('PAY')
-    const up = moveModule(base, 'today-shift', -1)
+    const up = moveModule(base, 'quick-actions', -1)
     expect(up.modules.slice(0, 3).map((m) => m.id)).toEqual([
       'weekly-pay',
+      'quick-actions',
       'today-shift',
-      'latest-payslip',
     ])
     expect(moveModule(base, 'weekly-pay', -1)).toBe(base)
     const last = base.modules[base.modules.length - 1].id
@@ -120,5 +131,34 @@ describe('setModuleVisible / moveModule', () => {
   it('isSameLayout 比較內容', () => {
     expect(isSameLayout(getDefaultLayout('PAY'), getDefaultLayout('PAY'))).toBe(true)
     expect(isSameLayout(getDefaultLayout('PAY'), getDefaultLayout('LIFE'))).toBe(false)
+  })
+})
+
+describe('getDisplayOrder', () => {
+  const ids = ['weekly-pay', 'today-shift', 'quick-actions', 'advanced']
+
+  it('今天有班時，今日班表排第一，其餘順序不變', () => {
+    expect(getDisplayOrder(ids, { hasShiftToday: true })).toEqual([
+      'today-shift',
+      'weekly-pay',
+      'quick-actions',
+      'advanced',
+    ])
+  })
+
+  it('今天沒班、或今日班表被隱藏時，維持原本順序', () => {
+    expect(getDisplayOrder(ids, { hasShiftToday: false })).toEqual(ids)
+    expect(getDisplayOrder(['weekly-pay'], { hasShiftToday: true })).toEqual(['weekly-pay'])
+  })
+})
+
+describe('getPromptOrder', () => {
+  it('提示卡放在進階統計之前', () => {
+    expect(getPromptOrder(['weekly-pay', 'today-shift', 'advanced'])).toBe(15)
+  })
+
+  it('沒有進階統計時放在最後', () => {
+    expect(getPromptOrder(['weekly-pay', 'today-shift'])).toBe(15)
+    expect(getPromptOrder(['weekly-pay'])).toBe(5)
   })
 })

@@ -759,7 +759,7 @@ defineExpose({ reload: load })
   border-radius: 999px;
   background: var(--color-primary-soft);
   color: var(--color-primary);
-  font-size: 11px;
+  font-size: var(--font-caption);
   text-decoration: none;
 }
 .today-quick-add {
@@ -841,7 +841,7 @@ defineExpose({ reload: load })
   line-height: 1.2;
 }
 .today-mood small {
-  font-size: 12px;
+  font-size: var(--font-caption);
   white-space: nowrap;
 }
 .today-mood--active {
@@ -880,7 +880,7 @@ defineExpose({ reload: load })
 }
 .today-journal__foot small {
   color: var(--color-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 .today-journal__status--failed {
   color: var(--color-expense) !important;

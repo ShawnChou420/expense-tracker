@@ -151,7 +151,7 @@ const items = computed(() =>
   margin: 2px 0 0;
   overflow: hidden;
   color: var(--color-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -161,7 +161,7 @@ const items = computed(() =>
   border-radius: 999px;
   background: var(--color-background);
   color: var(--color-muted);
-  font-size: 11px;
+  font-size: var(--font-caption);
   font-weight: 700;
 }
 .latest-pay__amount {
@@ -171,7 +171,7 @@ const items = computed(() =>
 }
 .latest-pay__amount small {
   color: var(--color-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 .latest-pay__amount strong {
   color: var(--color-income);
@@ -199,7 +199,7 @@ const items = computed(() =>
 }
 .latest-pay__grid dt {
   color: var(--color-muted);
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 .latest-pay__grid dd {
   margin: 2px 0 0;
@@ -249,7 +249,7 @@ const items = computed(() =>
 .latest-pay__items small {
   overflow: hidden;
   color: var(--color-muted);
-  font-size: 11px;
+  font-size: var(--font-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

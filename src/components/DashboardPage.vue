@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import LanguageSwitcher from './LanguageSwitcher.vue'
 import { formatDateRange, formatHoursLabel, formatLongDate, joinList } from '../i18n/format.js'
 import { expenseGroupLabel } from '../i18n/labels.js'
-import { showConfirmDialog, showToast } from 'vant'
+import { showConfirmDialog, showDialog, showToast } from 'vant'
 import { formatLocalDate, parseLocalDate } from '../domain/date.js'
 import {
   getActualTransactions,
@@ -22,7 +22,12 @@ import {
 } from '../domain/money.js'
 import { dashboardSettingsRepository } from '../repositories/inMemoryDashboardSettingsRepository.js'
 import { getNextOnboardingStep, getOnboardingSteps } from '../domain/onboarding.js'
-import { getVisibleModuleIds, normalizeLayout } from '../domain/dashboardLayout.js'
+import {
+  getDisplayOrder,
+  getPromptOrder,
+  getVisibleModuleIds,
+  normalizeLayout,
+} from '../domain/dashboardLayout.js'
 import DashboardCustomizeSheet from './DashboardCustomizeSheet.vue'
 import QuickPayEstimator from './QuickPayEstimator.vue'
 import {
@@ -219,22 +224,34 @@ const weekBalance = computed(() =>
   getEstimatedWeekBalance(weeklyPay.value.netCents, weekExpenses.value),
 )
 const pendingFares = computed(() => getPendingFareSummary(trips.value))
-const heroItems = computed(() => [
-  { label: t('dashboard.weeklyGross'), value: money(weeklyPay.value.grossCents) },
-  { label: t('dashboard.estimatedWithholding'), value: money(weeklyPay.value.taxCents) },
-])
-const heroMeta = computed(() => {
+// 沒有預扣（扣稅比例未設定或為 0）時，「實領」等於稅前，標題改稱稅前，也不再重複列出稅前／預扣
+const heroHasWithholding = computed(() => weeklyPay.value.taxCents > 0)
+const heroLabel = computed(() =>
+  heroHasWithholding.value ? t('dashboard.estimatedWeeklyNet') : t('dashboard.estimatedWeeklyGross'),
+)
+const heroItems = computed(() =>
+  heroHasWithholding.value
+    ? [
+        { label: t('dashboard.weeklyGross'), value: money(weeklyPay.value.grossCents) },
+        { label: t('dashboard.estimatedWithholding'), value: money(weeklyPay.value.taxCents) },
+      ]
+    : [],
+)
+// 主卡只留週別與時數；未含項目、暫定費率收進「計算說明」，點了才看
+const heroMeta = computed(() =>
+  t('dashboard.weekMeta', { week: weekLabel.value, hours: formatHoursLabel(weeklyPay.value.paidMinutes), days: weeklyPay.value.shiftCount }) +
+    (weeklyPay.value.ppeCents > 0 ? ` · ${t('dashboard.includesPpe')}` : ''),
+)
+const heroNotes = computed(() => {
   const flags = weeklyPay.value.rateFlags
   return [
-    // 原本的「本週財務」標題拿掉了，週別改放在這裡
-    t('dashboard.weekMeta', { week: weekLabel.value, hours: formatHoursLabel(weeklyPay.value.paidMinutes), days: weeklyPay.value.shiftCount }) +
-      (weeklyPay.value.ppeCents > 0 ? ` · ${t('dashboard.includesPpe')}` : ''),
     flags.provisional.length ? t('dashboard.provisionalRates') : '',
     flags.excluded.length ? t('dashboard.excludedRates', { items: joinList(flags.excluded) }) : '',
-  ]
-    .filter(Boolean)
-    .join(' · ')
+  ].filter(Boolean)
 })
+function openHeroNotes() {
+  showDialog({ title: t('dashboard.payNotesTitle'), message: heroNotes.value.join('\n'), messageAlign: 'left' })
+}
 // 首頁主卡的空狀態：還沒設定費率→引導工作設定；設定好但這週沒班→引導排班
 const heroEmpty = computed(() => {
   if (!props.setup.payReady && weeklyPay.value.shiftCount === 0) {
@@ -379,10 +396,16 @@ const visibleModuleIds = computed(() =>
   guestWelcome.value ? ['daily-quote'] : getVisibleModuleIds(layout.value, layoutContext.value),
 )
 const show = (/** @type {string} */ id) => visibleModuleIds.value.includes(id)
-// 以 10 為間隔，留位置給固定的提示卡：薪資單入口（5）、下一步（6）固定在第一個區塊之後
-const orderStyle = (/** @type {string} */ id) => ({ order: visibleModuleIds.value.indexOf(id) * 10 })
+// 今天有班（不含請假）時，今日班表排到最前面；只影響畫面順序，不改儲存的版面
+const hasShiftToday = computed(() =>
+  props.workRecords.some((record) => record.workDate === liveToday.value && record.shiftType !== 'leave'),
+)
+const displayIds = computed(() => getDisplayOrder(visibleModuleIds.value, { hasShiftToday: hasShiftToday.value }))
+// 以 10 為間隔，留位置給固定的提示卡（薪資單入口、下一步）：放在一般模組之後、進階統計之前
+const orderStyle = (/** @type {string} */ id) => ({ order: displayIds.value.indexOf(id) * 10 })
+const promptOrder = computed(() => getPromptOrder(displayIds.value))
 const todayParts = computed(() => {
-  const part = (/** @type {string} */ id) => ({ visible: show(id), order: visibleModuleIds.value.indexOf(id) * 10 })
+  const part = (/** @type {string} */ id) => ({ visible: show(id), order: displayIds.value.indexOf(id) * 10 })
   return { tasks: part('today-tasks'), quote: part('daily-quote'), mood: part('mood-journal') }
 })
 async function updateLayout(/** @type {import('../domain/dashboardLayout.js').DashboardLayout} */ next) {
@@ -507,8 +530,14 @@ async function saveTarget() {
         <span class="home-header__eyebrow">{{ liveDateLabel }}</span>
         <h1>{{ greeting }}</h1>
       </div>
-      <button v-if="!guestWelcome" type="button" class="home-header__customize" @click="customizeOpen = true">
-        <van-icon name="apps-o" aria-hidden="true" />{{ t('dashboard.customize') }}
+      <button
+        v-if="!guestWelcome"
+        type="button"
+        class="home-header__customize"
+        :aria-label="t('dashboard.customize')"
+        @click="customizeOpen = true"
+      >
+        <van-icon name="apps-o" aria-hidden="true" /><span class="home-header__customize-text">{{ t('dashboard.customize') }}</span>
       </button>
       <LanguageSwitcher v-if="!authToken" class="home-header__language" />
       <button
@@ -574,7 +603,7 @@ async function saveTarget() {
 
     <div v-if="show('weekly-pay')" class="home-module" :style="orderStyle('weekly-pay')">
       <HeroCard
-        :label="t('dashboard.estimatedWeeklyNet')"
+        :label="heroLabel"
         :amount="money(weeklyPay.netCents)"
         :unit="displayCurrency.code"
         :meta="heroMeta"
@@ -596,6 +625,11 @@ async function saveTarget() {
           >
             {{ displayCurrency.flag }} {{ displayCurrency.code }}
             <van-icon name="arrow-down" aria-hidden="true" />
+          </button>
+        </template>
+        <template v-if="heroNotes.length" #foot>
+          <button type="button" class="hero-notes" @click="openHeroNotes">
+            <van-icon name="info-o" aria-hidden="true" />{{ t('dashboard.payNotesChip') }}
           </button>
         </template>
       </HeroCard>
@@ -643,7 +677,7 @@ async function saveTarget() {
 
     <button
       v-if="!latestPayslip && !guestWelcome"
-      :style="{ order: 5 }"
+      :style="{ order: promptOrder }"
       type="button"
       class="payslip-cta home-block app-page__card"
       @click="emit('import-payslip')"
@@ -659,7 +693,7 @@ async function saveTarget() {
     <!-- 開始使用：只顯示下一步。工作設定還沒完成時，上方主卡與薪資單入口已經在引導，不再重複 -->
     <section
       v-if="nextOnboardingStep && setup.ready && !onboardingDismissed && !guestWelcome"
-      :style="{ order: 6 }"
+      :style="{ order: promptOrder + 1 }"
       class="onboarding-card app-page__card home-block"
       aria-labelledby="onboarding-title"
     >
@@ -686,7 +720,14 @@ async function saveTarget() {
     </section>
 
     <div v-if="show('savings-goal')" class="home-module" :style="orderStyle('savings-goal')">
+      <!-- 還沒有目標：只佔一行入口，不放整張空卡 -->
+      <button v-if="!savingGoal" type="button" class="home-row-cta" @click="openGoalEditor">
+        <van-icon name="gold-coin-o" class="home-row-cta__icon" aria-hidden="true" />
+        <span>{{ t('dashboard.setSavingGoal') }}</span>
+        <van-icon name="plus" aria-hidden="true" />
+      </button>
       <ProgressCard
+        v-else
         class="home-block"
         :title="t('dashboard.savingChallenge')"
         :subtitle="savingGoal ? t('dashboard.savingSubtitle', { name: savingGoal.name }) : ''"
@@ -711,17 +752,6 @@ async function saveTarget() {
           >
             <van-icon name="setting-o" />
           </button>
-        </template>
-        <template v-if="!savingGoal" #empty>
-          <EmptyState
-            class="home-card-empty"
-            stacked
-            icon="gold-coin-o"
-            :title="t('dashboard.firstGoalTitle')"
-            :description="t('dashboard.firstGoalDescription')"
-            :action-label="t('dashboard.createGoal')"
-            @action="openGoalEditor"
-          />
         </template>
         <p v-if="savingGoal && saving && !saving.hasActualTransactions" class="home-card-note">
           {{ t('dashboard.noTransactions') }}
@@ -1096,7 +1126,7 @@ async function saveTarget() {
 .chart-hint,
 .disclaimer {
   color: var(--color-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
   line-height: 1.5;
 }
 .home-header {
@@ -1110,8 +1140,8 @@ async function saveTarget() {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  min-height: 32px;
-  padding: 0 10px;
+  min-height: 36px;
+  padding: 0 12px;
   border: 1px solid rgba(255, 255, 255, 0.45);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.16);
@@ -1124,16 +1154,16 @@ async function saveTarget() {
 .currency-note {
   margin: -4px 0 12px;
   color: var(--color-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 .home-header__titles {
   min-width: 0;
 }
 .home-header__eyebrow {
   color: var(--color-primary);
-  font-size: 11px;
+  font-size: var(--font-caption);
   font-weight: 800;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.04em;
 }
 .home-header h1 {
   margin: 2px 0 0;
@@ -1171,6 +1201,18 @@ async function saveTarget() {
   font-weight: 700;
   cursor: pointer;
 }
+/* 手機寬度：自訂首頁只留圖示，讓問候語不被擠成兩行 */
+@media (max-width: 480px) {
+  .home-header__customize {
+    justify-content: center;
+    width: var(--touch-target);
+    padding: 0;
+    font-size: 18px;
+  }
+  .home-header__customize-text {
+    display: none;
+  }
+}
 .home-header__customize:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
@@ -1179,8 +1221,54 @@ async function saveTarget() {
 .home-modules {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  margin-top: 14px;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+/* 首頁卡片內的小按鈕：字級與觸控高度至少 44px */
+.home-modules :deep(.van-button--small) {
+  min-height: var(--touch-target);
+  padding: 0 16px;
+  font-size: 14px;
+}
+.hero-notes {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--touch-target);
+  margin: -6px 0 0 20px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font: inherit;
+  font-size: var(--font-caption);
+  font-weight: 700;
+  cursor: pointer;
+}
+.home-row-cta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  background: var(--color-surface);
+  color: var(--color-heading);
+  font: inherit;
+  font-size: var(--font-body);
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+.home-row-cta span {
+  flex: 1;
+}
+.home-row-cta__icon {
+  color: var(--color-primary);
+  font-size: 20px;
 }
 .home-modules > :deep(*) {
   margin-top: 0;
@@ -1253,6 +1341,10 @@ async function saveTarget() {
 .home-block {
   margin-top: 14px;
 }
+/* 模組清單內的間距只由 gap 決定，避免卡片間距忽大忽小 */
+.home-modules .home-block {
+  margin-top: 0;
+}
 .home-section-title {
   display: flex;
   align-items: baseline;
@@ -1264,7 +1356,7 @@ async function saveTarget() {
 }
 .home-section-title small {
   color: var(--color-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
   font-weight: 500;
 }
 .home-stats {
@@ -1309,7 +1401,7 @@ async function saveTarget() {
 }
 .payslip-cta__text small {
   color: var(--color-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
   line-height: 1.45;
 }
 .payslip-cta__arrow {
@@ -1342,7 +1434,7 @@ async function saveTarget() {
 .home-card-fine {
   margin: 4px 0 0;
   color: var(--color-muted);
-  font-size: 11px;
+  font-size: var(--font-caption);
   line-height: 1.5;
 }
 .advanced__toggle {
@@ -1370,7 +1462,7 @@ async function saveTarget() {
   font-weight: 800;
 }
 .advanced__text small {
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 .advanced__panel {
   animation: advanced-in var(--motion-fast) ease;
@@ -1514,7 +1606,7 @@ async function saveTarget() {
 .summary-tile small {
   display: block;
   color: var(--color-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 .summary-tile strong {
   display: block;
@@ -1525,7 +1617,7 @@ async function saveTarget() {
   overflow-wrap: anywhere;
 }
 .summary-tile small {
-  font-size: 11px;
+  font-size: var(--font-caption);
   line-height: 1.4;
 }
 .summary-tile--net {
@@ -1556,21 +1648,21 @@ async function saveTarget() {
 }
 .salary-card__head { align-items: flex-start; flex-wrap: wrap; }
 .salary-card__head > div { flex: 1; min-width: 150px; }
-.salary-card__head p { margin: 4px 0 0; color: var(--color-muted); font-size: 12px; line-height: 1.4; }
+.salary-card__head p { margin: 4px 0 0; color: var(--color-muted); font-size: var(--font-caption); line-height: 1.4; }
 .salary-card__state { margin: 18px 0 0; color: var(--color-muted); font-size: 13px; }
 .salary-card__empty { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding: 15px; border: 1px dashed #cbdff4; border-radius: 14px; background: #f7fbff; }
 .salary-card__empty-icon { display: grid; flex: none; place-items: center; width: 42px; height: 42px; border-radius: 13px; background: #eaf3fe; color: #166dd1; font-size: 22px; }
 .salary-card__empty strong { color: var(--color-heading); font-size: 14px; }
-.salary-card__empty p { margin: 3px 0 0; color: var(--color-muted); font-size: 12px; line-height: 1.5; }
+.salary-card__empty p { margin: 3px 0 0; color: var(--color-muted); font-size: var(--font-caption); line-height: 1.5; }
 .salary-list { display: grid; gap: 10px; margin-top: 16px; }
 .salary-entry { min-width: 0; padding: 14px; border: 1px solid var(--color-border); border-radius: 15px; background: #f8fbff; }
 .salary-entry__main { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start; }
 .salary-entry__when, .salary-entry__amount { display: grid; gap: 4px; min-width: 0; }
 .salary-entry__when strong { color: var(--color-heading); font-size: 14px; font-variant-numeric: tabular-nums; }
-.salary-entry__when small, .salary-entry__amount small { color: var(--color-muted); font-size: 11px; line-height: 1.4; }
+.salary-entry__when small, .salary-entry__amount small { color: var(--color-muted); font-size: var(--font-caption); line-height: 1.4; }
 .salary-entry__amount { text-align: right; }
 .salary-entry__amount strong { color: var(--color-income); font-size: clamp(18px, 5vw, 23px); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.salary-entry__extra { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 10px 0 0; color: var(--color-muted); font-size: 12px; }
+.salary-entry__extra { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 10px 0 0; color: var(--color-muted); font-size: var(--font-caption); }
 .salary-entry__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--color-border); }
 .salary-entry__actions :deep(.van-button) { min-height: 38px; min-width: 62px; border-radius: 10px; }
 .scope-note {
@@ -1587,7 +1679,7 @@ async function saveTarget() {
   display: grid;
   gap: 3px;
   color: var(--color-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 .goal-values strong {
   color: #1b2a3b;

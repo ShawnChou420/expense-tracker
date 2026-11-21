@@ -67,7 +67,7 @@ const emit = defineEmits(['click'])
   border-radius: 999px;
   background: #eef2f7;
   color: var(--color-muted);
-  font-size: 11px;
+  font-size: var(--font-caption);
   font-style: normal;
   font-weight: 700;
 }
@@ -94,7 +94,7 @@ const emit = defineEmits(['click'])
 }
 .stat-card__hint {
   color: var(--color-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
   line-height: 1.45;
 }
 .stat-card--pending .stat-card__hint {

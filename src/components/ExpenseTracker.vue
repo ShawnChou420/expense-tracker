@@ -1,6 +1,10 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { showConfirmDialog, showToast } from 'vant'
+import { useI18n } from 'vue-i18n'
+import { formatMonthDay } from '../i18n/format.js'
+import { expenseCategoryLabel, expenseFrequencyLabel, expenseGroupLabel } from '../i18n/labels.js'
+import { localizeMessage } from '../i18n/messages.js'
 import { formatLocalDate, getWeekRange, parseLocalDate } from '../domain/date.js'
 import {
   createExpense,
@@ -16,6 +20,7 @@ import { dollarsToCents, formatAud, formatCentsInput } from '../domain/money.js'
 import { expenseRepository, subscribeToLedgerChanges } from '../repositories/appRepositories.js'
 import { authToken } from '../services/authSession.js'
 
+const { t, locale } = useI18n()
 const repository = expenseRepository
 const expenses = ref([])
 const selectedDate = ref(formatLocalDate(new Date()))
@@ -52,9 +57,10 @@ function focusAmount() {
 const weekRange = computed(() => getWeekRange(selectedDate.value))
 const summary = computed(() => getExpenseSummary(expenses.value, weekRange.value))
 const selectedGroup = computed(() => getExpenseGroup(form.value.group))
-const weekLabel = computed(
-  () => `${weekRange.value.start.slice(5)} – ${weekRange.value.end.slice(5)}`,
-)
+const weekLabel = computed(() => {
+  void locale.value
+  return `${formatMonthDay(weekRange.value.start)} – ${formatMonthDay(weekRange.value.end)}`
+})
 const weeklyExpenses = computed(() =>
   getExpenseOccurrences(expenses.value, weekRange.value)
     .filter((expense) => filter.value === 'ALL' || expense.group === filter.value)
@@ -149,7 +155,7 @@ async function saveExpense() {
         (previous.frequency === 'CUSTOM' &&
           Number(previous.intervalDays) !== Number(form.value.intervalDays)))
     ) {
-      throw new Error('已有已付紀錄；請結束舊排程，再新增不同金額或分類的固定支出')
+      throw new Error(t('errors.expenseHasPaid'))
     }
     const record = createExpense({
       ...form.value,
@@ -170,10 +176,10 @@ async function saveExpense() {
     selectedDate.value = record.date
     filter.value = 'ALL'
     showForm.value = false
-    showToast(editingId.value ? '支出已更新' : '支出已記錄')
+    showToast(editingId.value ? t('expenses.updated') : t('expenses.recorded'))
     editingId.value = null
   } catch (error) {
-    showToast(error.message)
+    showToast(localizeMessage(error.message))
   }
 }
 
@@ -188,8 +194,8 @@ async function togglePaid(occurrence) {
   if (authToken.value && occurrence.status === 'PAID') {
     try {
       await showConfirmDialog({
-        title: '移除已付款紀錄？',
-        message: '此筆實際付款將從首頁收入支出統計中移除。',
+        title: t('expenses.removePaidTitle'),
+        message: t('expenses.removePaidMessage'),
       })
     } catch {
       return
@@ -206,12 +212,12 @@ async function togglePaid(occurrence) {
         })
   await repository.save(updated)
   expenses.value = await repository.list()
-  showToast(occurrence.status === 'PAID' ? '已改為預計支付' : '已標記支付')
+  showToast(occurrence.status === 'PAID' ? t('expenses.markedPlanned') : t('expenses.markedPaid'))
 }
 
 async function savePayment() {
   if (!payingOccurrence.value || !parseLocalDate(paymentDate.value)) {
-    showToast('請選擇有效的付款日期')
+    showToast(t('expenses.invalidPaymentDate'))
     return
   }
   try {
@@ -222,9 +228,9 @@ async function savePayment() {
     })
     showPaymentForm.value = false
     await refreshExpenses()
-    showToast('實際付款已記錄')
+    showToast(t('expenses.paymentRecorded'))
   } catch (error) {
-    showToast(error.message)
+    showToast(localizeMessage(error.message))
   }
 }
 
@@ -232,18 +238,24 @@ async function removeExpense(expense) {
   const source = expenses.value.find((record) => record.id === expense.sourceId)
   try {
     await showConfirmDialog({
-      title: source.frequency === 'NONE' ? '刪除這筆支出？' : '刪除整條固定支出？',
+      title:
+        source.frequency === 'NONE'
+          ? t('expenses.deleteOneTitle')
+          : t('expenses.deleteSeriesTitle'),
       message:
         source.frequency === 'NONE'
-          ? `${expense.date} · ${formatAud(expense.amountCents)}，刪除後無法復原。`
-          : '這會刪除所有預計與已付紀錄，且無法復原。',
+          ? t('expenses.deleteOneMessage', {
+              date: expense.date,
+              amount: formatAud(expense.amountCents),
+            })
+          : t('expenses.deleteSeriesMessage'),
     })
   } catch {
     return
   }
   await repository.remove(source.id)
   expenses.value = await repository.list()
-  showToast('支出已刪除')
+  showToast(t('expenses.deleted'))
 }
 let unsubscribeLedger = null
 async function refreshExpenses() {
@@ -253,14 +265,14 @@ async function refreshExpenses() {
 }
 onMounted(() => {
   unsubscribeLedger = subscribeToLedgerChanges(() =>
-    refreshExpenses().catch((error) => showToast(error.message)),
+    refreshExpenses().catch((error) => showToast(localizeMessage(error.message))),
   )
-  refreshExpenses().catch((error) => showToast(error.message))
+  refreshExpenses().catch((error) => showToast(localizeMessage(error.message)))
 })
 onUnmounted(() => unsubscribeLedger?.())
 watch(authToken, () => {
   expenses.value = []
-  refreshExpenses().catch((error) => showToast(error.message))
+  refreshExpenses().catch((error) => showToast(localizeMessage(error.message)))
 })
 
 // 讓首頁快捷操作可以直接打開新增表單
@@ -271,8 +283,8 @@ defineExpose({ openForm })
   <section class="expense-page app-page">
     <header class="page-header app-page__header">
       <div>
-        <h1>支出紀錄</h1>
-        <p>生活花費與固定扣款，一起記清楚。</p>
+        <h1>{{ t('expenses.title') }}</h1>
+        <p>{{ t('expenses.subtitle') }}</p>
       </div>
       <van-button
         class="app-page__action header-action"
@@ -280,49 +292,58 @@ defineExpose({ openForm })
         size="small"
         icon="plus"
         @click="openForm()"
-        >記一筆支出</van-button
+        >{{ t('expenses.add') }}</van-button
       >
     </header>
 
     <section class="overview app-page__card" aria-labelledby="expense-overview-title">
       <div class="overview-top">
         <div>
-          <h2 id="expense-overview-title">本週支出</h2>
+          <h2 id="expense-overview-title">{{ t('expenses.weekTotal') }}</h2>
         </div>
-        <button type="button" class="today-link" @click="selectCurrentWeek">回本週</button>
+        <button type="button" class="today-link" @click="selectCurrentWeek">
+          {{ t('expenses.backToThisWeek') }}
+        </button>
       </div>
-      <div class="week-switcher" aria-label="切換統計週期">
-        <button type="button" aria-label="上一週" @click="moveWeek(-1)">
+      <div class="week-switcher" :aria-label="t('expenses.switchWeekAria')">
+        <button type="button" :aria-label="t('common.previousWeek')" @click="moveWeek(-1)">
           <van-icon name="arrow-left" />
         </button>
-        <span>{{ weekLabel }} <small>週一至週日</small></span>
-        <button type="button" aria-label="下一週" @click="moveWeek(1)">
+        <span
+          >{{ weekLabel }} <small>{{ t('expenses.monToSun') }}</small></span
+        >
+        <button type="button" :aria-label="t('common.nextWeek')" @click="moveWeek(1)">
           <van-icon name="arrow" />
         </button>
       </div>
       <div v-if="summary.count" class="overview-amount">
-        <span>已支付</span><strong>{{ formatAud(summary.paidCents) }}</strong
-        ><small>本週到期項目，不是按付款日的現金流</small>
+        <span>{{ t('expenses.paid') }}</span
+        ><strong>{{ formatAud(summary.paidCents) }}</strong
+        ><small>{{ t('expenses.paidNote') }}</small>
       </div>
       <div v-if="summary.count" class="overview-bottom">
         <span
-          >預計支付 <strong>{{ formatAud(summary.plannedCents) }}</strong></span
-        ><span>{{ summary.count }} 筆紀錄</span>
+          >{{ t('expenses.planned') }} <strong>{{ formatAud(summary.plannedCents) }}</strong></span
+        ><span>{{ t('expenses.recordCount', { count: summary.count }) }}</span>
       </div>
-      <p v-if="summary.count" class="overview-note">固定支出標記已付後才計入首頁。</p>
-      <p v-else class="overview-empty">本週還沒有支出。</p>
+      <p v-if="summary.count" class="overview-note">{{ t('expenses.recurringNote') }}</p>
+      <p v-else class="overview-empty">{{ t('expenses.noExpenses') }}</p>
     </section>
 
     <section class="records-section" aria-labelledby="records-title">
       <div class="section-heading">
         <div>
-          <h2 id="records-title">支出紀錄</h2>
+          <h2 id="records-title">{{ t('expenses.title') }}</h2>
         </div>
-        <small>{{ weeklyExpenses.length }} 筆</small>
+        <small>{{ t('expenses.countShort', { count: weeklyExpenses.length }) }}</small>
       </div>
-      <div v-if="activeGroups.length" class="filter-row" aria-label="支出大類篩選">
+      <div
+        v-if="activeGroups.length"
+        class="filter-row"
+        :aria-label="t('expenses.groupFilterAria')"
+      >
         <button type="button" :class="{ active: filter === 'ALL' }" @click="filter = 'ALL'">
-          全部
+          {{ t('expenses.all') }}
         </button>
         <button
           v-for="group in activeGroups"
@@ -331,19 +352,21 @@ defineExpose({ openForm })
           :class="{ active: filter === group.id }"
           @click="filter = group.id"
         >
-          {{ group.label }}
+          {{ expenseGroupLabel(group.id, group.label) }}
         </button>
       </div>
       <div v-if="weeklyExpenses.length === 0" class="empty-card">
-        <strong>{{ filter === 'ALL' ? '本週還沒有支出' : '這個分類還沒有紀錄' }}</strong>
-        <span>開始記錄生活花費或固定扣款。</span>
+        <strong>{{
+          filter === 'ALL' ? t('expenses.noExpenses') : t('expenses.noneInCategory')
+        }}</strong>
+        <span>{{ t('expenses.startHint') }}</span>
         <van-button
           v-if="filter === 'ALL'"
           class="app-page__action"
           type="primary"
           size="small"
           @click="openForm()"
-          >新增支出</van-button
+          >{{ t('expenses.addShort') }}</van-button
         >
       </div>
       <article v-for="expense in weeklyExpenses" :key="expense.occurrenceId" class="expense-card">
@@ -353,11 +376,21 @@ defineExpose({ openForm })
           /></span>
           <div class="expense-card__info">
             <strong>{{
-              expense.title || getExpenseCategory(expense.group, expense.category).label
+              expense.title ||
+              expenseCategoryLabel(
+                expense.category,
+                getExpenseCategory(expense.group, expense.category).label,
+              )
             }}</strong
             ><span
-              >{{ expense.date }} · {{ getExpenseGroup(expense.group).label }} /
-              {{ getExpenseCategory(expense.group, expense.category).label }}</span
+              >{{ expense.date }} ·
+              {{ expenseGroupLabel(expense.group, getExpenseGroup(expense.group).label) }} /
+              {{
+                expenseCategoryLabel(
+                  expense.category,
+                  getExpenseCategory(expense.group, expense.category).label,
+                )
+              }}</span
             >
           </div>
           <strong class="expense-card__amount">−{{ formatAud(expense.amountCents) }}</strong>
@@ -368,18 +401,21 @@ defineExpose({ openForm })
               'status-pill',
               expense.status === 'PAID' ? 'status-pill--paid' : 'status-pill--planned',
             ]"
-            >{{ expense.status === 'PAID' ? '已支付' : '預計支付' }}</span
+            >{{ expense.status === 'PAID' ? t('expenses.paid') : t('expenses.planned') }}</span
           >
           <span v-if="expense.frequency !== 'NONE'" class="frequency-pill">{{
-            EXPENSE_FREQUENCIES.find((item) => item.id === expense.frequency)?.label
+            expenseFrequencyLabel(
+              expense.frequency,
+              EXPENSE_FREQUENCIES.find((item) => item.id === expense.frequency)?.label,
+            )
           }}</span>
           <span v-if="expense.note" class="expense-card__note">{{ expense.note }}</span>
           <div class="expense-card__actions">
             <button type="button" class="payment-action" @click="togglePaid(expense)">
-              {{ expense.status === 'PAID' ? '改待付' : '標記已付' }}
+              {{ expense.status === 'PAID' ? t('expenses.markUnpaid') : t('expenses.markPaid') }}
             </button>
-            <button type="button" @click="openForm(expense)">編輯</button
-            ><button type="button" @click="removeExpense(expense)">刪除</button>
+            <button type="button" @click="openForm(expense)">{{ t('common.edit') }}</button
+            ><button type="button" @click="removeExpense(expense)">{{ t('common.delete') }}</button>
           </div>
         </div>
       </article>
@@ -391,20 +427,20 @@ defineExpose({ openForm })
       aria-labelledby="category-title"
     >
       <div class="section-heading">
-        <h2 id="category-title">花在哪裡</h2>
-        <small>僅計已支付</small>
+        <h2 id="category-title">{{ t('expenses.whereItWent') }}</h2>
+        <small>{{ t('expenses.paidOnly') }}</small>
       </div>
       <div class="category-breakdown">
         <div v-for="group in summary.byGroup" :key="group.id" class="category-row">
           <span class="category-icon"><van-icon :name="group.icon" /></span>
-          <span class="category-name">{{ group.label }}</span>
+          <span class="category-name">{{ expenseGroupLabel(group.id, group.label) }}</span>
           <strong>{{ formatAud(group.amountCents) }}</strong>
         </div>
       </div>
     </section>
 
     <p v-if="summary.investmentLossCents" class="investment-note">
-      已記錄投資虧損 {{ formatAud(summary.investmentLossCents) }}；不列入生活支出現金流。
+      {{ t('expenses.investmentLossRecorded', { amount: formatAud(summary.investmentLossCents) }) }}
     </p>
 
     <van-popup
@@ -417,9 +453,9 @@ defineExpose({ openForm })
       <form class="sheet-form" @submit.prevent="saveExpense">
         <div class="sheet-header">
           <div>
-            <h2>{{ editingId ? '編輯支出' : '記一筆支出' }}</h2>
+            <h2>{{ editingId ? t('expenses.edit') : t('expenses.add') }}</h2>
           </div>
-          <button type="button" aria-label="關閉" @click="showForm = false">
+          <button type="button" :aria-label="t('common.close')" @click="showForm = false">
             <van-icon name="cross" />
           </button>
         </div>
@@ -434,11 +470,16 @@ defineExpose({ openForm })
               inputmode="decimal"
               enterkeyhint="done"
               placeholder="0.00"
-              aria-label="金額 AUD"
+              :aria-label="t('expenses.amountAria')"
               autocomplete="off"
             />
           </label>
-          <div v-if="!showAllCategories" class="quick-categories" role="group" aria-label="分類">
+          <div
+            v-if="!showAllCategories"
+            class="quick-categories"
+            role="group"
+            :aria-label="t('expenses.quickCategoryAria')"
+          >
             <button
               v-for="item in quickCategories"
               :key="`${item.group}:${item.category}`"
@@ -446,14 +487,14 @@ defineExpose({ openForm })
               :class="{ selected: form.group === item.group && form.category === item.category }"
               @click="pickQuickCategory(item)"
             >
-              {{ item.label }}
+              {{ expenseCategoryLabel(item.category, item.label) }}
             </button>
             <button type="button" class="quick-categories__more" @click="showAllCategories = true">
-              更多分類
+              {{ t('expenses.moreCategories') }}
             </button>
           </div>
           <template v-else>
-            <p class="field-label">支出大類</p>
+            <p class="field-label">{{ t('expenses.group') }}</p>
             <div class="group-picker">
               <button
                 v-for="group in EXPENSE_GROUPS"
@@ -462,10 +503,12 @@ defineExpose({ openForm })
                 :class="{ selected: form.group === group.id }"
                 @click="selectGroup(group)"
               >
-                <van-icon :name="group.icon" /><span>{{ group.label }}</span>
+                <van-icon :name="group.icon" /><span>{{
+                  expenseGroupLabel(group.id, group.label)
+                }}</span>
               </button>
             </div>
-            <p class="field-label">支出小類</p>
+            <p class="field-label">{{ t('expenses.subcategory') }}</p>
             <div class="subcategory-picker">
               <button
                 v-for="category in selectedGroup.categories"
@@ -474,26 +517,26 @@ defineExpose({ openForm })
                 :class="{ selected: form.category === category.id }"
                 @click="selectCategory(category)"
               >
-                {{ category.label }}
+                {{ expenseCategoryLabel(category.id, category.label) }}
               </button>
             </div>
           </template>
           <p v-if="form.category === 'INVESTMENT_LOSS'" class="form-hint">
-            只記錄已實現虧損，不算生活支出。
+            {{ t('expenses.investmentHint') }}
           </p>
           <van-cell-group inset class="form-fields">
-            <van-field v-model="form.date" label="日期" type="date" required />
+            <van-field v-model="form.date" :label="t('common.date')" type="date" required />
             <van-field
               v-if="authToken && form.status === 'PAID'"
               v-model="form.paidAt"
-              label="實際付款日"
+              :label="t('expenses.paidOn')"
               type="date"
               required
             />
             <van-field
               v-model="form.title"
-              label="商家 / 標題"
-              placeholder="選填，例如 Woolworths"
+              :label="t('expenses.merchantLabel')"
+              :placeholder="t('expenses.merchantPlaceholder')"
               clearable
             />
           </van-cell-group>
@@ -503,22 +546,24 @@ defineExpose({ openForm })
             :aria-expanded="moreOptionsOpen"
             @click="moreOptionsOpen = !moreOptionsOpen"
           >
-            {{ moreOptionsOpen ? '收起更多選項' : '更多選項：固定支出、付款狀態、備註' }}
+            {{ moreOptionsOpen ? t('expenses.hideMore') : t('expenses.showMore') }}
             <van-icon :name="moreOptionsOpen ? 'arrow-up' : 'arrow-down'" />
           </button>
           <template v-if="moreOptionsOpen">
             <van-cell-group inset class="form-fields">
               <van-field
                 v-model="form.note"
-                label="備註"
+                :label="t('common.note')"
                 type="textarea"
                 rows="2"
                 autosize
-                placeholder="選填"
+                :placeholder="t('common.optional')"
                 clearable
               />
             </van-cell-group>
-            <p v-if="form.category !== 'INVESTMENT_LOSS'" class="field-label">支出頻率</p>
+            <p v-if="form.category !== 'INVESTMENT_LOSS'" class="field-label">
+              {{ t('expenses.frequency') }}
+            </p>
             <div v-if="form.category !== 'INVESTMENT_LOSS'" class="frequency-picker">
               <button
                 v-for="frequency in EXPENSE_FREQUENCIES"
@@ -527,13 +572,13 @@ defineExpose({ openForm })
                 :class="{ selected: form.frequency === frequency.id }"
                 @click="form.frequency = frequency.id"
               >
-                {{ frequency.label }}
+                {{ expenseFrequencyLabel(frequency.id, frequency.label) }}
               </button>
             </div>
             <van-cell-group v-if="form.frequency === 'CUSTOM'" inset class="interval-field"
               ><van-field
                 v-model="form.intervalDays"
-                label="每隔幾天"
+                :label="t('expenses.everyNDays')"
                 type="number"
                 inputmode="numeric"
                 placeholder="1–365"
@@ -542,54 +587,58 @@ defineExpose({ openForm })
             <van-cell-group v-if="form.frequency !== 'NONE'" inset class="interval-field">
               <van-field
                 v-model="form.endDate"
-                label="結束日期"
+                :label="t('dashboard.endDate')"
                 type="date"
-                placeholder="選填，不填表示持續"
+                :placeholder="t('expenses.endDatePlaceholder')"
                 clearable
               />
             </van-cell-group>
             <p v-if="form.frequency !== 'NONE'" class="form-hint">
-              從這天開始自動排程，每期付款後再標記已付。
+              {{ t('expenses.scheduleHint') }}
             </p>
-            <p v-if="form.category !== 'INVESTMENT_LOSS'" class="field-label">付款狀態</p>
+            <p v-if="form.category !== 'INVESTMENT_LOSS'" class="field-label">
+              {{ t('expenses.paymentStatus') }}
+            </p>
             <div v-if="form.category !== 'INVESTMENT_LOSS'" class="status-picker">
               <button
                 type="button"
                 :class="{ selected: form.status === 'PAID' }"
                 @click="form.status = 'PAID'"
               >
-                已支付</button
+                {{ t('expenses.paid') }}</button
               ><button
                 type="button"
                 :class="{ selected: form.status === 'PLANNED' }"
                 @click="form.status = 'PLANNED'"
               >
-                預計支付
+                {{ t('expenses.planned') }}
               </button>
             </div>
             <p v-if="form.category !== 'INVESTMENT_LOSS'" class="status-hint">
               {{
-                form.frequency === 'NONE'
-                  ? '預計支付不會算入本週已支付金額。'
-                  : '只設定第一筆，之後每期預設待付。'
+                form.frequency === 'NONE' ? t('expenses.plannedHint') : t('expenses.firstOnlyHint')
               }}
             </p>
           </template>
         </div>
         <div class="sheet-footer">
           <van-button type="primary" block native-type="submit">{{
-            editingId ? '儲存變更' : '儲存支出'
+            editingId ? t('expenses.saveChanges') : t('expenses.saveExpense')
           }}</van-button>
         </div>
       </form>
     </van-popup>
     <van-popup v-model:show="showPaymentForm" position="bottom" round safe-area-inset-bottom>
       <form class="sheet-form" @submit.prevent="savePayment">
-        <div class="sheet-header"><h2>標記實際付款</h2></div>
-        <p class="form-hint">到期日 {{ payingOccurrence?.date }}；首頁會依下方付款日計入支出。</p>
-        <van-field v-model="paymentDate" label="實際付款日" type="date" required />
+        <div class="sheet-header">
+          <h2>{{ t('expenses.markPayment') }}</h2>
+        </div>
+        <p class="form-hint">{{ t('expenses.paymentHint', { date: payingOccurrence?.date }) }}</p>
+        <van-field v-model="paymentDate" :label="t('expenses.paidOn')" type="date" required />
         <div class="sheet-footer">
-          <van-button block type="primary" native-type="submit">確認已付款</van-button>
+          <van-button block type="primary" native-type="submit">{{
+            t('expenses.confirmPaid')
+          }}</van-button>
         </div>
       </form>
     </van-popup>

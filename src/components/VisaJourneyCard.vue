@@ -1,6 +1,9 @@
 <script setup>
 // 首頁的集簽卡片。數字全部來自 getVisaJourneyProgress()；只是個人估算，不是官方認定。
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   /** 集簽設定；null＝尚未設定 */
@@ -28,8 +31,8 @@ const estimateText = computed(() => {
   const estimate = props.progress?.estimate
   if (!estimate?.date) return null
   return estimate.basis === 'REACHED'
-    ? `估計 ${formatDate(estimate.date)} 已達最低要求`
-    : `約 ${formatDate(estimate.date)}（依最近 4 週進度）`
+    ? t('visa.estimateReached', { date: formatDate(estimate.date) })
+    : t('visa.estimateBy', { date: formatDate(estimate.date) })
 })
 </script>
 
@@ -40,17 +43,17 @@ const estimateText = computed(() => {
       <div class="visa-card__head">
         <h2 id="visa-card-title">Visa Journey</h2>
       </div>
-      <p class="visa-card__lead">正在集二簽或三簽嗎？設定一次，系統會依你的班表估算進度。</p>
-      <van-button type="primary" size="small" class="visa-card__cta" @click="emit('setup')">設定集簽目標</van-button>
+      <p class="visa-card__lead">{{ t('visa.setupLead') }}</p>
+      <van-button type="primary" size="small" class="visa-card__cta" @click="emit('setup')">{{ t('visa.setGoal') }}</van-button>
     </template>
 
     <template v-else-if="tracking && progress">
       <div class="visa-card__head">
         <div>
-          <span class="visa-card__status">🏃 集簽中</span>
-          <h2 id="visa-card-title">{{ progress.label }}</h2>
+          <span class="visa-card__status">{{ t('visa.tracking') }}</span>
+          <h2 id="visa-card-title">{{ t(`visa.goals.${settings.goal}`) }}</h2>
         </div>
-        <button type="button" class="visa-card__icon" aria-label="修改集簽設定" @click="emit('setup')">
+        <button type="button" class="visa-card__icon" :aria-label="t('visa.editSettings')" @click="emit('setup')">
           <van-icon name="setting-o" />
         </button>
       </div>
@@ -58,16 +61,16 @@ const estimateText = computed(() => {
       <div class="visa-card__stats">
         <div>
           <strong>{{ recordedDays }}</strong>
-          <span>已記錄工作日</span>
+          <span>{{ t('visa.recordedDays') }}</span>
         </div>
         <div>
           <strong>{{ progress.remainingDays }}</strong>
-          <span>剩餘估算工作天</span>
+          <span>{{ t('visa.remainingEstimate') }}</span>
         </div>
       </div>
 
       <div class="visa-card__bar-label">
-        <span>歷史估算進度</span>
+        <span>{{ t('visa.progressLabel') }}</span>
         <strong>{{ progress.percent }}%</strong>
       </div>
       <van-progress
@@ -76,21 +79,21 @@ const estimateText = computed(() => {
         color="var(--color-primary)"
         track-color="var(--color-primary-soft)"
         stroke-width="8"
-        :aria-label="`歷史估算進度 ${progress.percent}%`"
+        :aria-label="t('visa.progressAria', { percent: progress.percent })"
       />
       <p class="visa-card__meta">
-        約需 {{ progress.requiredWorkDays }} 個全職工作天，且至少 {{ progress.minDays }} 個日曆天。
-        <template v-if="progress.counts?.historicalDays">其中 {{ progress.counts.historicalDays }} 天為補登。</template>
+        {{ t('visa.requirement', { workDays: progress.requiredWorkDays, minDays: progress.minDays }) }}
+        <template v-if="progress.counts?.historicalDays">{{ t('visa.historicalDays', { count: progress.counts.historicalDays }) }}</template>
       </p>
       <p class="visa-card__estimate">
         <van-icon name="clock-o" />
         <span v-if="estimateText">{{ estimateText }}</span>
-        <span v-else>預估完成日期：{{ progress.estimate?.reason || '資料不足' }}</span>
+        <span v-else>{{ t('visa.estimateUnknown', { reason: progress.estimate?.reason || t('visa.notEnoughData') }) }}</span>
       </p>
 
       <div v-if="showHistoryPrompt" class="visa-card__prompt">
-        <p>已經開始工作了嗎？補登過去的班表，系統就能協助估算集簽進度。</p>
-        <van-button type="primary" size="small" @click="emit('import-history')">補登歷史工作</van-button>
+        <p>{{ t('visa.historyPrompt') }}</p>
+        <van-button type="primary" size="small" @click="emit('import-history')">{{ t('visa.addHistory') }}</van-button>
       </div>
 
       <button
@@ -100,26 +103,26 @@ const estimateText = computed(() => {
         :aria-expanded="detailsOpen"
         @click="detailsOpen = !detailsOpen"
       >
-        <van-icon name="warning-o" /> {{ progress.reviewItems.length }} 項需要核對
+        <van-icon name="warning-o" /> {{ t('visa.reviewCount', { count: progress.reviewItems.length }) }}
         <van-icon :name="detailsOpen ? 'arrow-up' : 'arrow-down'" />
       </button>
       <button v-else type="button" class="visa-card__review is-quiet" :aria-expanded="detailsOpen" @click="detailsOpen = !detailsOpen">
-        估算依據 <van-icon :name="detailsOpen ? 'arrow-up' : 'arrow-down'" />
+        {{ t('visa.basis') }} <van-icon :name="detailsOpen ? 'arrow-up' : 'arrow-down'" />
       </button>
       <div v-if="detailsOpen" class="visa-card__details">
         <ul v-if="progress.reviewItems.length">
           <li v-for="item in progress.reviewItems" :key="item.code">{{ item.message }}</li>
         </ul>
-        <h3>估算依據</h3>
+        <h3>{{ t('visa.basis') }}</h3>
         <ul>
           <li v-for="text in progress.assumptions" :key="text">{{ text }}</li>
           <li v-if="progress.payslip.checkedPayslips">
-            已比對 {{ progress.payslip.checkedPayslips }} 張薪資單，{{ progress.payslip.supportedDays }} 天有薪資單佐證。
+            {{ t('visa.payslipChecked', { payslips: progress.payslip.checkedPayslips, days: progress.payslip.supportedDays }) }}
           </li>
         </ul>
-        <van-button v-if="!showHistoryPrompt" size="small" plain type="primary" @click="emit('import-history')">補登歷史工作</van-button>
+        <van-button v-if="!showHistoryPrompt" size="small" plain type="primary" @click="emit('import-history')">{{ t('visa.addHistory') }}</van-button>
       </div>
-      <p class="visa-card__disclaimer">個人估算，不代表 Home Affairs 認定。</p>
+      <p class="visa-card__disclaimer">{{ t('visa.disclaimer') }}</p>
     </template>
   </section>
 </template>

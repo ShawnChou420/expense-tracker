@@ -1,51 +1,54 @@
 <script setup>
 // 「更多」：放採買清單等延伸功能，讓底部分頁專注在收支。只列出已經能用的功能。
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+import LanguageSwitcher from './LanguageSwitcher.vue'
 import { CONTACT_EMAIL, FEEDBACK_URL } from '../config/beta.js'
 import { isSuperAdmin } from '../services/authSession.js'
 
 const emit = defineEmits(['navigate'])
+const { t } = useI18n()
 
-const baseTools = [
+const baseTools = computed(() => [
   {
     name: 'work-setup',
     icon: 'setting-o',
-    title: '工作設定',
-    description: '時薪、班別與 Smoko',
+    title: t('more.workSetup'),
+    description: t('more.workSetupDescription'),
   },
   {
     name: 'payslip',
     icon: 'description-o',
-    title: '匯入薪資單',
-    description: '上傳 PDF 自動設定時薪與加給',
+    title: t('more.importPayslip'),
+    description: t('more.importPayslipDescription'),
   },
   {
     name: 'visa',
     icon: 'flag-o',
-    title: '集簽追蹤',
-    description: '集二簽／集三簽目標與簽證資料',
+    title: t('more.visaTracker'),
+    description: t('more.visaDescription'),
   },
   {
     name: 'shopping',
     icon: 'cart-o',
-    title: '採買',
-    description: 'Woolworths 本週特價、採買清單與預估金額',
+    title: t('more.shoppingTitle'),
+    description: t('more.shoppingDescription'),
   },
   {
     name: 'privacy',
     icon: 'shield-o',
-    title: '隱私說明',
-    description: '保存哪些資料、怎麼刪除',
+    title: t('more.privacy'),
+    description: t('more.privacyDescription'),
   },
-]
+])
 
 
 // 管理後台入口只在 SUPER_ADMIN 登入時顯示；後端每個管理 API 仍會重新驗證權限
 const tools = computed(() => [
   ...(isSuperAdmin.value
-    ? [{ name: 'admin', icon: 'manager-o', title: '管理後台', description: '會員、操作紀錄與稽核（管理員）' }]
+    ? [{ name: 'admin', icon: 'manager-o', title: t('more.admin'), description: t('more.adminDescription') }]
     : []),
-  ...baseTools,
+  ...baseTools.value,
 ])
 </script>
 
@@ -53,13 +56,13 @@ const tools = computed(() => [
   <main class="more-page app-page">
     <header class="app-page__header">
       <div>
-        <h1>更多</h1>
-        <p>工作設定、薪資單與採買清單</p>
+        <h1>{{ t('more.title') }}</h1>
+        <p>{{ t('more.subtitle') }}</p>
       </div>
     </header>
 
     <section class="more-group">
-      <h2>工具</h2>
+      <h2>{{ t('more.tools') }}</h2>
       <button
         v-for="tool in tools"
         :key="tool.name"
@@ -84,25 +87,40 @@ const tools = computed(() => [
       >
         <span class="more-item__icon" aria-hidden="true"><van-icon name="chat-o" /></span>
         <span class="more-item__text">
-          <strong>意見回饋</strong>
-          <small>遇到問題或有想法，告訴我們</small>
+          <strong>{{ t('more.feedback') }}</strong>
+          <small>{{ t('more.feedbackDescription') }}</small>
         </span>
         <van-icon name="arrow" class="more-item__arrow" aria-hidden="true" />
       </a>
       <a v-if="CONTACT_EMAIL" :href="`mailto:${CONTACT_EMAIL}`" class="more-item app-page__card">
         <span class="more-item__icon" aria-hidden="true"><van-icon name="envelop-o" /></span>
         <span class="more-item__text">
-          <strong>聯絡我們</strong>
+          <strong>{{ t('more.contact') }}</strong>
           <small>{{ CONTACT_EMAIL }}</small>
         </span>
         <van-icon name="arrow" class="more-item__arrow" aria-hidden="true" />
       </a>
     </section>
 
+    <section class="more-group">
+      <h2>{{ t('more.languageSettings') }}</h2>
+      <van-cell-group inset class="more-language">
+        <LanguageSwitcher variant="cell" />
+      </van-cell-group>
+      <p class="more-language__hint">{{ t('language.hint') }}</p>
+    </section>
   </main>
 </template>
 
 <style scoped>
+.more-language {
+  margin: 0;
+}
+.more-language__hint {
+  margin: 8px 2px 0;
+  color: var(--color-muted, #6b7280);
+  font-size: 12px;
+}
 .more-group {
   margin-top: var(--page-section-gap);
 }

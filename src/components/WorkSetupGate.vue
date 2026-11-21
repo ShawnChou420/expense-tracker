@@ -1,4 +1,5 @@
 <script setup>
+import { useI18n } from 'vue-i18n'
 // 設定未完成時的提示：不執行自動排班或試算，也絕不改用任何預設費率。
 defineProps({
   show: Boolean,
@@ -7,6 +8,7 @@ defineProps({
   pendingLabel: { type: String, default: '' },
 })
 const emit = defineEmits(['update:show', 'upload-payslip', 'manual', 'schedule'])
+const { t } = useI18n()
 </script>
 
 <template>
@@ -21,26 +23,26 @@ const emit = defineEmits(['update:show', 'upload-payslip', 'manual', 'schedule']
       <span class="gate__icon" aria-hidden="true">
         <van-icon :name="needs === 'pay' ? 'balance-o' : 'clock-o'" />
       </span>
-      <h2>先完成工作設定</h2>
+      <h2>{{ t('gate.title') }}</h2>
       <p v-if="needs === 'pay'">
-        你還沒有設定薪資費率或預設班別，因此目前無法準確預估薪資。請先完成設定。
+        {{ t('gate.needsPay') }}
       </p>
-      <p v-else>費率已經設定好了，還需要選擇你的班別與每週工作日，才能自動排班。</p>
+      <p v-else>{{ t('gate.needsSchedule') }}</p>
       <p v-if="pendingLabel" class="gate__pending">
-        <van-icon name="replay" aria-hidden="true" />設定完成後可以直接繼續{{ pendingLabel }}
+        <van-icon name="replay" aria-hidden="true" />{{ t('gate.continueAfter', { action: pendingLabel }) }}
       </p>
       <template v-if="needs === 'pay'">
         <van-button type="primary" block class="gate__button" icon="description-o" @click="emit('upload-payslip')">
-          上傳 Payslip 自動設定費率
+          {{ t('gate.uploadPayslip') }}
         </van-button>
         <van-button plain type="primary" block class="gate__button" @click="emit('manual')">
-          手動設定費率
+          {{ t('gate.manualRates') }}
         </van-button>
       </template>
       <van-button v-else type="primary" block class="gate__button" icon="clock-o" @click="emit('schedule')">
-        設定班別
+        {{ t('payrollPage.setShifts') }}
       </van-button>
-      <button type="button" class="gate__later" @click="emit('update:show', false)">稍後再說</button>
+      <button type="button" class="gate__later" @click="emit('update:show', false)">{{ t('gate.later') }}</button>
     </div>
   </van-popup>
 </template>

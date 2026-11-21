@@ -112,14 +112,31 @@ export function formatDateLabel(/** @type {string} */ dateText) {
 }
 
 /** 問候語：只依時間，不評論使用者 */
-export function getGreeting(/** @type {Date} */ now, working = false) {
-  if (working) return '上班中，辛苦了'
+/**
+ * 問候語的翻譯 key（greeting.*），畫面用 t() 顯示
+ * @returns {'working' | 'lateNight' | 'morning' | 'afternoon' | 'evening'}
+ */
+export function getGreetingKey(/** @type {Date} */ now, working = false) {
+  if (working) return 'working'
   const hour = now.getHours()
-  if (hour < 5) return '夜深了，記得休息'
-  if (hour < 11) return '早安'
-  if (hour < 17) return '午安'
-  if (hour < 22) return '晚安'
-  return '夜深了，記得休息'
+  if (hour < 5) return 'lateNight'
+  if (hour < 11) return 'morning'
+  if (hour < 17) return 'afternoon'
+  if (hour < 22) return 'evening'
+  return 'lateNight'
+}
+
+const GREETINGS_ZH = {
+  working: '上班中，辛苦了',
+  lateNight: '夜深了，記得休息',
+  morning: '早安',
+  afternoon: '午安',
+  evening: '晚安',
+}
+
+/** 繁體中文問候語（保留給既有呼叫與測試） */
+export function getGreeting(/** @type {Date} */ now, working = false) {
+  return GREETINGS_ZH[getGreetingKey(now, working)]
 }
 
 /** 心情選項（顯示順序固定；只是私人紀錄，不換算成分數） */

@@ -1,6 +1,8 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { showToast } from 'vant'
+import { useI18n } from 'vue-i18n'
+import { localizeMessage } from '../i18n/messages.js'
 import { formatAud } from '../domain/money.js'
 import { selectionSummary } from '../domain/shoppingLists.js'
 import {
@@ -21,6 +23,7 @@ import {
 import { supermarketRepository } from '../repositories/supermarketRepository.js'
 
 const props = defineProps({ active: Boolean })
+const { t } = useI18n()
 const emit = defineEmits(['open-list'])
 
 const PAGE_SIZE = 20
@@ -80,7 +83,7 @@ async function load({ append = false } = {}) {
     today.value = result.today
     loaded.value = true
   } catch (failure) {
-    if (seq === requestSeq) error.value = failure.message || '無法讀取本週特價'
+    if (seq === requestSeq) error.value = localizeMessage(failure.message) || t('specials.loadFailed')
   } finally {
     if (seq === requestSeq) {
       loading.value = false
@@ -164,7 +167,7 @@ async function addToList(special) {
   try {
     await shoppingRepository.add(specialToShoppingItem(special, crypto.randomUUID()))
   } catch (failure) {
-    showToast(failure.message || '加入失敗')
+    showToast(localizeMessage(failure.message) || t('specials.addFailed'))
   } finally {
     markBusy(special.id, false)
   }
@@ -178,7 +181,7 @@ async function changeQuantity(special, delta) {
   if (next > 999) return
   if (next < Math.max(1, item.purchasedQuantity)) {
     if (item.purchasedQuantity > 0) {
-      showToast('已買過的數量不能再減少')
+      showToast(t('specials.cannotReduce'))
       return
     }
   }
@@ -187,7 +190,7 @@ async function changeQuantity(special, delta) {
     if (next < 1) await shoppingRepository.remove(item.id)
     else await shoppingRepository.save({ ...item, quantity: next })
   } catch (failure) {
-    showToast(failure.message || '更新失敗')
+    showToast(localizeMessage(failure.message) || t('shopping.updateFailed'))
   } finally {
     markBusy(special.id, false)
   }
@@ -195,15 +198,15 @@ async function changeQuantity(special, delta) {
 </script>
 
 <template>
-  <section class="specials" aria-label="Woolworths 本週特價">
+  <section class="specials" :aria-label="t('specials.sectionAria')">
     <header class="specials-head">
       <span class="specials-brand">Woolworths</span>
       <div class="specials-head__text">
         <strong
-          >本週特價<template v-if="syncInfo.period"> · {{ syncInfo.period }}</template></strong
+          >{{ t('shopping.weeklySpecials') }}<template v-if="syncInfo.period"> · {{ syncInfo.period }}</template></strong
         >
         <small
-          >{{ syncInfo.region || 'NSW' }} 地區價格<template v-if="syncInfo.updated">
+          >{{ t('specials.regionPrices', { region: syncInfo.region || 'NSW' }) }}<template v-if="syncInfo.updated">
             · {{ syncInfo.updated }}</template
           ></small
         >
@@ -218,12 +221,12 @@ async function changeQuantity(special, delta) {
       <van-search
         v-model="keyword"
         class="specials-search"
-        placeholder="搜尋商品或品牌"
+        :placeholder="t('specials.searchPlaceholder')"
         maxlength="60"
         shape="round"
-        aria-label="搜尋特價商品"
+        :aria-label="t('specials.searchAria')"
       />
-      <div class="specials-chips" role="group" aria-label="篩選">
+      <div class="specials-chips" role="group" :aria-label="t('specials.filterAria')">
         <button
           type="button"
           class="specials-chip"
@@ -231,22 +234,22 @@ async function changeQuantity(special, delta) {
           :aria-pressed="halfPriceOnly"
           @click="halfPriceOnly = !halfPriceOnly"
         >
-          只看半價
+          {{ t('specials.halfPriceOnly') }}
         </button>
         <label class="specials-select">
-          <span class="sr-only">分類</span>
-          <select v-model="category" aria-label="分類">
-            <option value="">全部分類</option>
+          <span class="sr-only">{{ t('specials.category') }}</span>
+          <select v-model="category" :aria-label="t('specials.category')">
+            <option value="">{{ t('specials.allCategories') }}</option>
             <option v-for="name in categories" :key="name" :value="name">
               {{ name }}
             </option>
           </select>
         </label>
         <label class="specials-select">
-          <span class="sr-only">排序</span>
-          <select v-model="sort" aria-label="排序">
+          <span class="sr-only">{{ t('specials.sort') }}</span>
+          <select v-model="sort" :aria-label="t('specials.sort')">
             <option v-for="option in SPECIAL_SORTS" :key="option.id" :value="option.id">
-              {{ option.label }}
+              {{ t(`specials.sorts.${option.id}`) }}
             </option>
           </select>
         </label>
@@ -254,29 +257,31 @@ async function changeQuantity(special, delta) {
     </div>
 
     <div v-if="loading && !items.length" class="specials-state" aria-live="polite">
-      <van-loading size="20" /> 正在讀取本週特價…
+      <van-loading size="20" /> {{ t('specials.loading') }}
     </div>
     <div v-else-if="error" class="specials-state specials-state--error" role="alert">
       <p>{{ error }}</p>
-      <van-button size="small" plain type="primary" @click="refresh">重新整理</van-button>
+      <van-button size="small" plain type="primary" @click="refresh">{{ t('common.refresh') }}</van-button>
     </div>
     <div v-else-if="!items.length" class="specials-state">
-      <p v-if="filtered">找不到符合條件的特價商品。</p>
-      <p v-else>本週還沒有特價資料。</p>
+      <p v-if="filtered">{{ t('specials.noMatches') }}</p>
+      <p v-else>{{ t('specials.noData') }}</p>
       <van-button v-if="filtered" size="small" plain type="primary" @click="clearFilters">
-        清除篩選
+        {{ t('specials.clearFilters') }}
       </van-button>
     </div>
 
     <template v-else>
-      <p class="specials-count">共 {{ total }} 項特價 · 價格為預估，以門市結帳為準</p>
+      <p class="specials-count">{{ t('specials.count', { count: total }) }}</p>
       <ul class="specials-list" :aria-busy="loading">
         <li v-for="special in items" :key="special.id" class="special-card app-page__card">
           <div class="special-card__body">
             <div class="special-card__tags">
-              <span v-if="isHalfPrice(special)" class="special-tag special-tag--half">半價</span>
+              <span v-if="isHalfPrice(special)" class="special-tag special-tag--half">{{ t('specials.promo.HALF_PRICE') }}</span>
               <span v-else class="special-tag">{{
-                PROMOTION_TYPE_LABELS[special.promotionType] || '特價'
+                PROMOTION_TYPE_LABELS[special.promotionType]
+                  ? t(`specials.promo.${special.promotionType}`)
+                  : t('specials.promo.OTHER')
               }}</span>
               <span v-if="special.category" class="special-card__category">{{
                 special.category
@@ -290,10 +295,10 @@ async function changeQuantity(special, delta) {
               <b>{{ formatAud(special.salePriceCents) }}</b>
               <s v-if="special.regularPriceCents">{{ formatAud(special.regularPriceCents) }}</s>
               <span v-if="savingsCents(special)" class="special-card__save"
-                >省 {{ formatAud(savingsCents(special)) }}（{{ discountPercent(special) }}%）</span
+                >{{ t('specials.save', { amount: formatAud(savingsCents(special)), percent: discountPercent(special) }) }}</span
               >
               <span v-else-if="!special.regularPriceCents" class="special-card__missing"
-                >原價未提供</span
+                >{{ t('specials.noRegularPrice') }}</span
               >
             </div>
             <span v-if="special.unitPriceText" class="special-card__unit">{{
@@ -305,12 +310,12 @@ async function changeQuantity(special, delta) {
             v-if="inList.has(special.id)"
             class="special-qty"
             role="group"
-            :aria-label="`${special.name} 數量`"
+            :aria-label="t('specials.quantityAria', { name: special.name })"
           >
             <button
               type="button"
               :disabled="addingIds.has(special.id)"
-              :aria-label="inList.get(special.id).quantity > 1 ? '減少一個' : '從清單移除'"
+              :aria-label="inList.get(special.id).quantity > 1 ? t('specials.decrease') : t('specials.removeFromList')"
               @click="changeQuantity(special, -1)"
             >
               <van-icon :name="inList.get(special.id).quantity > 1 ? 'minus' : 'delete-o'" />
@@ -319,7 +324,7 @@ async function changeQuantity(special, delta) {
             <button
               type="button"
               :disabled="addingIds.has(special.id)"
-              aria-label="增加一個"
+              :aria-label="t('specials.increase')"
               @click="changeQuantity(special, 1)"
             >
               <van-icon name="plus" />
@@ -333,9 +338,9 @@ async function changeQuantity(special, delta) {
             icon="plus"
             :loading="addingIds.has(special.id)"
             :disabled="addingIds.has(special.id)"
-            :aria-label="`把 ${special.name} 加入我的清單`"
+            :aria-label="t('specials.addAria', { name: special.name })"
             @click="addToList(special)"
-            >加入</van-button
+            >{{ t('specials.add') }}</van-button
           >
         </li>
       </ul>
@@ -347,20 +352,19 @@ async function changeQuantity(special, delta) {
         type="primary"
         :loading="loadingMore"
         @click="load({ append: true })"
-        >載入更多</van-button
+        >{{ t('specials.loadMore') }}</van-button
       >
       <p class="specials-disclaimer">
-        價格以門市與 Woolworths 官網為準，會依地區不同，這裡顯示的是 {{ syncInfo.region || 'NSW' }}
-        地區的預估價格，不是全澳統一價。資料由管理員整理同步，不是即時價格。
+        {{ t('specials.disclaimer', { region: syncInfo.region || 'NSW' }) }}
       </p>
     </template>
 
-    <div v-if="summary.count" class="specials-cart" role="region" aria-label="已選商品">
+    <div v-if="summary.count" class="specials-cart" role="region" :aria-label="t('specials.selectedAria')">
       <div>
-        <span>已選 {{ summary.count }} 項</span>
-        <strong>預估 {{ formatAud(summary.estimatedCents) }}</strong>
+        <span>{{ t('specials.selectedCount', { count: summary.count }) }}</span>
+        <strong>{{ t('shopping.estimateLine', { amount: formatAud(summary.estimatedCents) }) }}</strong>
       </div>
-      <van-button type="primary" size="small" @click="emit('open-list')">看清單</van-button>
+      <van-button type="primary" size="small" @click="emit('open-list')">{{ t('specials.viewList') }}</van-button>
     </div>
   </section>
 </template>

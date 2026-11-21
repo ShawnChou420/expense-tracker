@@ -1,6 +1,9 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { showConfirmDialog, showToast } from 'vant'
+import { useI18n } from 'vue-i18n'
+import { formatMonthDay, joinList } from '../i18n/format.js'
+import { localizeMessage } from '../i18n/messages.js'
 import { formatLocalDate, getWeekRange, parseLocalDate } from '../domain/date.js'
 import { dollarsToCents, formatAud, formatCentsInput } from '../domain/money.js'
 import { getTripStats } from '../domain/tripStats.js'
@@ -62,11 +65,13 @@ const stats = computed(() =>
   }),
 )
 
-const typeLabel = { WORK: '上班', LEISURE: '出遊', OTHER: '其他' }
-const modeLabel = { ONE_WAY: '單程', ROUND_TRIP: '來回', CUSTOM: '自訂' }
+const { t, locale } = useI18n()
+const typeLabel = (/** @type {string} */ type) => t(`trips.types.${type}`)
+const modeLabel = (/** @type {string} */ mode) => t(`trips.modes.${mode}`)
 const weekLabel = computed(() => {
-  if (!weekRange.value) return '選擇日期'
-  return `${weekRange.value.start.slice(5)} – ${weekRange.value.end.slice(5)}`
+  void locale.value
+  if (!weekRange.value) return t('trips.chooseDate')
+  return `${formatMonthDay(weekRange.value.start)} – ${formatMonthDay(weekRange.value.end)}`
 })
 
 function moveWeek(direction) {
@@ -135,7 +140,7 @@ async function savePassenger() {
     (passengerForm.value.oneWay !== '' && oneWay === null) ||
     (passengerForm.value.roundTrip !== '' && roundTrip === null)
   ) {
-    showToast('請輸入名稱與有效的非負車資')
+    showToast(t('trips.invalidPassenger'))
     return
   }
 
@@ -153,7 +158,7 @@ async function savePassenger() {
   await refreshData()
   showPassengerForm.value = false
   resetPassengerForm()
-  showToast('乘客已儲存')
+  showToast(t('trips.passengerSaved'))
 
   const changedModes = [
     ['ONE_WAY', 'defaultOneWayFareCents'],
@@ -164,20 +169,25 @@ async function savePassenger() {
   const candidates = getFareBackfillCandidates(trips.value, saved, weekRange.value, changedModes)
   if (!candidates.length) return
   const fareDetails = [
-    ...new Set(candidates.map((item) => `${modeLabel[item.mode]} ${formatAud(item.fareCents)}`)),
-  ].join('、')
+    ...new Set(candidates.map((item) => `${modeLabel(item.mode)} ${formatAud(item.fareCents)}`)),
+  ]
   try {
     await showConfirmDialog({
-      title: '補入當週未設定車資？',
-      message: `${weekRange.value.start} 至 ${weekRange.value.end} 有 ${candidates.length} 筆待收且明確未設定金額的行程。將套用 ${fareDetails}；已收、自訂、免費與舊版無法辨識的 0 元均不修改。`,
-      confirmButtonText: '確認補入',
+      title: t('trips.backfillTitle'),
+      message: t('trips.backfillMessage', {
+        start: weekRange.value.start,
+        end: weekRange.value.end,
+        count: candidates.length,
+        fares: joinList(fareDetails),
+      }),
+      confirmButtonText: t('trips.backfillConfirm'),
     })
     const updated = applyFareBackfill(trips.value, saved.id, candidates)
     for (let index = 0; index < updated.length; index++) {
       if (updated[index] !== trips.value[index]) await tripRepository.save(updated[index])
     }
     await refreshData()
-    showToast(`已補入 ${candidates.length} 筆車資`)
+    showToast(t('trips.backfilled', { count: candidates.length }))
   } catch {
     // Cancelling leaves existing trips unchanged; the new passenger default remains saved.
   }
@@ -264,7 +274,7 @@ watch(
 
 async function saveTrip() {
   if (!tripForm.value.date || selectedPassengerIds.value.length === 0) {
-    showToast('請選擇日期與至少一位乘客')
+    showToast(t('trips.needDateAndPassenger'))
     return
   }
   const charges = chargeForms.value.map((charge) => ({
@@ -275,17 +285,17 @@ async function saveTrip() {
     paidAt: charge.paymentStatus === 'PAID' ? charge.paidAt : undefined,
   }))
   if (charges.some((charge) => charge.amountCents === null)) {
-    showToast('每位乘客都需要有效的非負金額')
+    showToast(t('trips.invalidCharge'))
     return
   }
   if (
     charges.some((charge) => charge.paymentStatus === 'PAID' && charge.amountStatus === 'UNSET')
   ) {
-    showToast('已收車資請先設定金額；免費請明確輸入 0')
+    showToast(t('trips.paidNeedsAmount'))
     return
   }
   if (charges.some((charge) => charge.paymentStatus === 'PAID' && !parseLocalDate(charge.paidAt))) {
-    showToast('請為已收車資選擇有效的收款日期')
+    showToast(t('trips.paidNeedsDate'))
     return
   }
   const existing = trips.value.find((trip) => trip.id === editingTripId.value)
@@ -295,25 +305,32 @@ async function saveTrip() {
   await refreshData()
   showTripForm.value = false
   resetTripForm()
-  showToast('車資行程已儲存')
+  showToast(t('trips.tripSaved'))
 }
 
 async function removeTrip(trip) {
   try {
     await showConfirmDialog({
-      title: '刪除這筆車資行程？',
-      message: `${trip.date} 的紀錄將無法復原。${trip.charges.some((charge) => getChargeReceivedCents(charge) > 0) ? '此行程已有收款，刪除會一併移除收款紀錄並改變首頁統計。' : ''}`,
+      title: t('trips.deleteTitle'),
+      message:
+        t('trips.deleteMessage', { date: trip.date }) +
+        (trip.charges.some((charge) => getChargeReceivedCents(charge) > 0)
+          ? t('trips.deleteWithPayments')
+          : ''),
     })
     await tripRepository.remove(trip.id)
     await refreshData()
-    showToast('已刪除車資行程')
+    showToast(t('trips.deleted'))
   } catch (error) {
-    if (error !== 'cancel') showToast(error.message)
+    if (error !== 'cancel') showToast(localizeMessage(error.message))
   }
 }
 
 function getPassengerName(passengerId) {
-  return passengers.value.find((passenger) => passenger.id === passengerId)?.name || '已停用乘客'
+  return (
+    passengers.value.find((passenger) => passenger.id === passengerId)?.name ||
+    t('trips.inactivePassenger')
+  )
 }
 
 function getTripTotalCents(trip) {
@@ -339,7 +356,7 @@ async function savePayment() {
     amountCents <= 0 ||
     amountCents > paymentRemainingCents.value
   ) {
-    showToast('請輸入有效收款日期與不超過待收的金額')
+    showToast(t('trips.invalidPayment'))
     return
   }
   try {
@@ -349,24 +366,24 @@ async function savePayment() {
     })
     showPaymentForm.value = false
     await refreshData()
-    showToast('收款已記錄')
+    showToast(t('trips.paymentSaved'))
   } catch (error) {
-    showToast(error.message)
+    showToast(localizeMessage(error.message))
   }
 }
 
 let unsubscribeLedger = null
 onMounted(() => {
   unsubscribeLedger = subscribeToLedgerChanges(() =>
-    refreshData().catch((error) => showToast(error.message)),
+    refreshData().catch((error) => showToast(localizeMessage(error.message))),
   )
-  refreshData().catch((error) => showToast(error.message))
+  refreshData().catch((error) => showToast(localizeMessage(error.message)))
 })
 onUnmounted(() => unsubscribeLedger?.())
 watch(authToken, () => {
   passengers.value = []
   trips.value = []
-  refreshData().catch((error) => showToast(error.message))
+  refreshData().catch((error) => showToast(localizeMessage(error.message)))
 })
 
 // 讓首頁快捷操作可以直接打開新增表單
@@ -377,13 +394,13 @@ defineExpose({ openTripForm })
   <section class="trip-page app-page">
     <header class="trip-page__header app-page__header">
       <div>
-        <h1>車資紀錄</h1>
-        <p>每趟記清楚，收款不漏掉。</p>
+        <h1>{{ t('trips.title') }}</h1>
+        <p>{{ t('trips.subtitle') }}</p>
       </div>
       <div class="header-actions">
-        <van-button plain type="primary" size="small" @click="openPassengerForm()"
-          >新增乘客</van-button
-        >
+        <van-button plain type="primary" size="small" @click="openPassengerForm()">{{
+          t('trips.addPassenger')
+        }}</van-button>
         <van-button
           class="app-page__action"
           type="primary"
@@ -391,7 +408,7 @@ defineExpose({ openTripForm })
           icon="plus"
           :disabled="activePassengers.length === 0"
           @click="startNewTrip()"
-          >新增本趟</van-button
+          >{{ t('trips.addTrip') }}</van-button
         >
       </div>
     </header>
@@ -399,47 +416,55 @@ defineExpose({ openTripForm })
     <section class="overview app-page__card" aria-labelledby="overview-title">
       <div class="overview__top">
         <div>
-          <h2 id="overview-title">本週車資</h2>
+          <h2 id="overview-title">{{ t('trips.thisWeek') }}</h2>
         </div>
-        <button class="today-link" type="button" @click="selectCurrentWeek">回本週</button>
+        <button class="today-link" type="button" @click="selectCurrentWeek">
+          {{ t('expenses.backToThisWeek') }}
+        </button>
       </div>
-      <div class="week-switcher" aria-label="切換統計週期">
-        <button type="button" aria-label="上一週" @click="moveWeek(-1)">
+      <div class="week-switcher" :aria-label="t('expenses.switchWeekAria')">
+        <button type="button" :aria-label="t('common.previousWeek')" @click="moveWeek(-1)">
           <van-icon name="arrow-left" />
         </button>
         <div class="week-switcher__label">
           <strong>{{ weekLabel }}</strong>
-          <span>週一至週日</span>
+          <span>{{ t('expenses.monToSun') }}</span>
         </div>
-        <button type="button" aria-label="下一週" @click="moveWeek(1)">
+        <button type="button" :aria-label="t('common.nextWeek')" @click="moveWeek(1)">
           <van-icon name="arrow" />
         </button>
       </div>
       <div v-if="weeklyTrips.length" class="overview__hero">
-        <span>本週應收</span>
+        <span>{{ t('trips.receivable') }}</span>
         <strong>{{ formatAud(stats.receivableCents) }}</strong>
-        <small>全部行程的約定車資</small>
+        <small>{{ t('trips.agreedFares') }}</small>
       </div>
       <div v-if="weeklyTrips.length" class="summary-grid">
         <div class="summary-stat summary-stat--paid">
           <span class="stat-dot" aria-hidden="true"></span>
           <div>
-            <span>已收</span><strong>{{ formatAud(stats.paidCents) }}</strong>
+            <span>{{ t('trips.received') }}</span
+            ><strong>{{ formatAud(stats.paidCents) }}</strong>
           </div>
         </div>
         <div class="summary-stat summary-stat--pending">
           <span class="stat-dot" aria-hidden="true"></span>
           <div>
-            <span>待收</span><strong>{{ formatAud(stats.pendingCents) }}</strong>
+            <span>{{ t('trips.pending') }}</span
+            ><strong>{{ formatAud(stats.pendingCents) }}</strong>
           </div>
         </div>
       </div>
-      <p v-else class="overview__empty">本週還沒有行程。</p>
+      <p v-else class="overview__empty">{{ t('trips.noTrips') }}</p>
     </section>
 
     <section class="trip-section quick-people" aria-labelledby="quick-people-title">
-      <div class="section-heading"><h2 id="quick-people-title">常用乘客</h2></div>
-      <p v-if="!activePassengers.length" class="overview__empty">先新增乘客，再記錄行程。</p>
+      <div class="section-heading">
+        <h2 id="quick-people-title">{{ t('trips.frequentPassengers') }}</h2>
+      </div>
+      <p v-if="!activePassengers.length" class="overview__empty">
+        {{ t('trips.addPassengerFirst') }}
+      </p>
       <div v-else class="quick-people__list">
         <div
           v-for="passenger in activePassengers"
@@ -448,22 +473,22 @@ defineExpose({ openTripForm })
         >
           <div>
             <strong>{{ passenger.name }}</strong
-            ><small
-              >單程
-              {{
-                passenger.defaultOneWayFareCents === null
-                  ? '未設定'
-                  : formatAud(passenger.defaultOneWayFareCents)
-              }}
-              · 來回
-              {{
-                passenger.defaultRoundTripFareCents === null
-                  ? '未設定'
-                  : formatAud(passenger.defaultRoundTripFareCents)
-              }}</small
-            >
+            ><small>{{
+              t('trips.defaultFares', {
+                oneWay:
+                  passenger.defaultOneWayFareCents === null
+                    ? t('trips.notSet')
+                    : formatAud(passenger.defaultOneWayFareCents),
+                roundTrip:
+                  passenger.defaultRoundTripFareCents === null
+                    ? t('trips.notSet')
+                    : formatAud(passenger.defaultRoundTripFareCents),
+              })
+            }}</small>
           </div>
-          <button type="button" @click="startNewTrip(passenger.id)">新增本趟</button>
+          <button type="button" @click="startNewTrip(passenger.id)">
+            {{ t('trips.addTrip') }}
+          </button>
         </div>
       </div>
     </section>
@@ -472,11 +497,16 @@ defineExpose({ openTripForm })
       <div class="section-heading">
         <div>
           <h2 id="trips-title">
-            當週行程 <span class="section-count">{{ filteredWeeklyTrips.length }}</span>
+            {{ t('trips.weekTrips') }}
+            <span class="section-count">{{ filteredWeeklyTrips.length }}</span>
           </h2>
         </div>
-        <select v-model="selectedPassengerFilter" aria-label="篩選乘客" class="passenger-filter">
-          <option value="all">全部乘客</option>
+        <select
+          v-model="selectedPassengerFilter"
+          :aria-label="t('trips.filterAria')"
+          class="passenger-filter"
+        >
+          <option value="all">{{ t('trips.allPassengers') }}</option>
           <option v-for="passenger in passengers" :key="passenger.id" :value="passenger.id">
             {{ passenger.name }}
           </option>
@@ -484,12 +514,10 @@ defineExpose({ openTripForm })
       </div>
       <div v-if="filteredWeeklyTrips.length === 0" class="empty-card">
         <strong>{{
-          selectedPassengerFilter === 'all' ? '這週還沒有行程' : '這週沒有符合的乘客行程'
+          selectedPassengerFilter === 'all' ? t('trips.noTrips') : t('trips.noMatching')
         }}</strong>
         <span>{{
-          activePassengers.length
-            ? '可切換乘客或週期，或新增本趟資料。'
-            : '先新增常用乘客，就能開始記錄。'
+          activePassengers.length ? t('trips.switchHint') : t('trips.addPassengerHint')
         }}</span>
       </div>
       <article v-for="trip in filteredWeeklyTrips" :key="trip.id" class="trip-card">
@@ -497,8 +525,8 @@ defineExpose({ openTripForm })
           <div>
             <span class="trip-card__date">{{ trip.date }}</span>
             <div class="trip-card__meta">
-              {{ typeLabel[trip.type] }} · {{ modeLabel[trip.tripMode] }} ·
-              {{ trip.charges.length }} 位乘客
+              {{ typeLabel(trip.type) }} · {{ modeLabel(trip.tripMode) }} ·
+              {{ t('trips.passengerCount', { count: trip.charges.length }) }}
             </div>
           </div>
           <strong class="trip-card__amount">{{ formatAud(getTripTotalCents(trip)) }}</strong>
@@ -507,7 +535,7 @@ defineExpose({ openTripForm })
           <div v-for="charge in trip.charges" :key="charge.passengerId" class="charge-row">
             <span class="charge-row__name">{{ getPassengerName(charge.passengerId) }}</span>
             <span class="charge-row__amount">{{
-              charge.amountStatus === 'UNSET' ? '金額未設定' : formatAud(charge.amountCents)
+              charge.amountStatus === 'UNSET' ? t('trips.unsetFare') : formatAud(charge.amountCents)
             }}</span>
             <span
               :class="[
@@ -517,32 +545,38 @@ defineExpose({ openTripForm })
             >
               {{
                 charge.paymentStatus === 'PAID'
-                  ? '已收'
+                  ? t('trips.received')
                   : charge.paymentStatus === 'PARTIAL'
-                    ? '部分已收'
-                    : '待收'
+                    ? t('trips.partial')
+                    : t('trips.pending')
               }}
             </span>
-            <small v-if="charge.paymentStatus === 'PARTIAL'"
-              >已收 {{ formatAud(getChargeReceivedCents(charge)) }} · 待收
-              {{ formatAud(charge.amountCents - getChargeReceivedCents(charge)) }}</small
-            >
+            <small v-if="charge.paymentStatus === 'PARTIAL'">{{
+              t('trips.partialDetail', {
+                received: formatAud(getChargeReceivedCents(charge)),
+                pending: formatAud(charge.amountCents - getChargeReceivedCents(charge)),
+              })
+            }}</small>
             <van-button
               v-if="authToken && charge.amountCents > getChargeReceivedCents(charge)"
               size="small"
               plain
               type="primary"
               @click="openPaymentForm(trip, charge)"
-              >記錄收款</van-button
+              >{{ t('trips.recordPayment') }}</van-button
             >
           </div>
         </div>
-        <p v-if="trip.note" class="trip-card__note">備註：{{ trip.note }}</p>
+        <p v-if="trip.note" class="trip-card__note">
+          {{ t('trips.noteLine', { text: trip.note }) }}
+        </p>
         <div class="trip-card__actions">
           <button type="button" @click="openTripForm(trip)">
-            <van-icon name="edit" /> 編輯行程
+            <van-icon name="edit" /> {{ t('trips.editTrip') }}
           </button>
-          <button type="button" class="trip-card__delete" @click="removeTrip(trip)">刪除</button>
+          <button type="button" class="trip-card__delete" @click="removeTrip(trip)">
+            {{ t('common.delete') }}
+          </button>
         </div>
       </article>
     </section>
@@ -554,7 +588,7 @@ defineExpose({ openTripForm })
     >
       <div class="section-heading">
         <div>
-          <h2 id="pending-title">待收款項</h2>
+          <h2 id="pending-title">{{ t('trips.pendingTitle') }}</h2>
         </div>
       </div>
       <div class="pending-list">
@@ -578,8 +612,8 @@ defineExpose({ openTripForm })
       >
         <span class="people-toggle__icon"><van-icon name="friends-o" /></span>
         <span class="people-toggle__text"
-          ><strong id="people-title">常用乘客</strong
-          ><small>{{ activePassengers.length }} 位使用中 · 管理名稱與預設車資</small></span
+          ><strong id="people-title">{{ t('trips.frequentPassengers') }}</strong
+          ><small>{{ t('trips.activeCount', { count: activePassengers.length }) }}</small></span
         >
         <van-icon :name="showPassengerManager ? 'arrow-up' : 'arrow-down'" />
       </button>
@@ -591,9 +625,9 @@ defineExpose({ openTripForm })
           type="primary"
           icon="plus"
           @click="openPassengerForm()"
-          >新增乘客</van-button
+          >{{ t('trips.addPassenger') }}</van-button
         >
-        <div v-if="passengers.length === 0" class="people-empty">新增乘客後就能記錄車資。</div>
+        <div v-if="passengers.length === 0" class="people-empty">{{ t('trips.noPassengers') }}</div>
         <button
           v-for="passenger in passengers"
           :key="passenger.id"
@@ -606,8 +640,17 @@ defineExpose({ openTripForm })
             ><strong>{{ passenger.name }}</strong
             ><small>{{
               passenger.active
-                ? `單程 ${passenger.defaultOneWayFareCents === null ? '未設定' : formatAud(passenger.defaultOneWayFareCents)} · 來回 ${passenger.defaultRoundTripFareCents === null ? '未設定' : formatAud(passenger.defaultRoundTripFareCents)}`
-                : '已停用 · 歷史行程仍保留'
+                ? t('trips.defaultFares', {
+                    oneWay:
+                      passenger.defaultOneWayFareCents === null
+                        ? t('trips.notSet')
+                        : formatAud(passenger.defaultOneWayFareCents),
+                    roundTrip:
+                      passenger.defaultRoundTripFareCents === null
+                        ? t('trips.notSet')
+                        : formatAud(passenger.defaultRoundTripFareCents),
+                  })
+                : t('trips.inactiveKept')
             }}</small></span
           >
           <van-icon name="arrow" />
@@ -622,7 +665,7 @@ defineExpose({ openTripForm })
     >
       <div class="section-heading">
         <div>
-          <h2 id="passenger-stats-title">乘客統計</h2>
+          <h2 id="passenger-stats-title">{{ t('trips.passengerStats') }}</h2>
         </div>
       </div>
       <div class="passenger-stats">
@@ -633,7 +676,7 @@ defineExpose({ openTripForm })
         >
           <span
             ><strong>{{ summary.passengerName }}</strong
-            ><small>{{ summary.tripCount }} 趟</small></span
+            ><small>{{ t('trips.tripCount', { count: summary.tripCount }) }}</small></span
           >
           <span>{{ formatAud(summary.totalCents) }}</span>
         </div>
@@ -644,44 +687,49 @@ defineExpose({ openTripForm })
       <form class="sheet-form" @submit.prevent="savePassenger">
         <div class="sheet-header">
           <div>
-            <h2>{{ editingPassengerId ? '編輯乘客' : '新增乘客' }}</h2>
+            <h2>{{ editingPassengerId ? t('trips.editPassenger') : t('trips.addPassenger') }}</h2>
           </div>
-          <button type="button" aria-label="關閉" @click="showPassengerForm = false">
+          <button type="button" :aria-label="t('common.close')" @click="showPassengerForm = false">
             <van-icon name="cross" />
           </button>
         </div>
         <div class="sheet-scroll">
-          <p class="sheet-note">新增行程時自動帶入，可再調整。</p>
+          <p class="sheet-note">{{ t('trips.prefillNote') }}</p>
           <van-cell-group inset>
             <van-field
               v-model="passengerForm.name"
-              label="乘客名稱"
-              placeholder="例如 Kim"
+              :label="t('trips.passengerName')"
+              :placeholder="t('trips.namePlaceholder')"
               required
               clearable
             />
             <van-field
               v-model="passengerForm.oneWay"
-              label="單程 AUD"
+              :label="t('trips.oneWayAud')"
               type="number"
               inputmode="decimal"
               placeholder="0.00"
             />
             <van-field
               v-model="passengerForm.roundTrip"
-              label="來回 AUD"
+              :label="t('trips.roundTripAud')"
               type="number"
               inputmode="decimal"
               placeholder="0.00"
             />
-            <van-cell v-if="editingPassengerId" title="使用中" label="停用後不會出現在新行程選擇中"
+            <van-cell
+              v-if="editingPassengerId"
+              :title="t('trips.active')"
+              :label="t('trips.inactiveHint')"
               ><template #right-icon
                 ><van-switch v-model="passengerForm.active" size="22" /></template
             ></van-cell>
           </van-cell-group>
         </div>
         <div class="sheet-footer">
-          <van-button block type="primary" native-type="submit">儲存乘客</van-button>
+          <van-button block type="primary" native-type="submit">{{
+            t('trips.savePassenger')
+          }}</van-button>
         </div>
       </form>
     </van-popup>
@@ -690,38 +738,40 @@ defineExpose({ openTripForm })
       <form class="sheet-form" @submit.prevent="saveTrip">
         <div class="sheet-header">
           <div>
-            <h2>{{ editingTripId ? '編輯行程' : '新增車資行程' }}</h2>
+            <h2>{{ editingTripId ? t('trips.editTrip') : t('trips.newTrip') }}</h2>
           </div>
-          <button type="button" aria-label="關閉" @click="showTripForm = false">
+          <button type="button" :aria-label="t('common.close')" @click="showTripForm = false">
             <van-icon name="cross" />
           </button>
         </div>
         <div class="sheet-scroll">
           <div class="form-step">
             <span class="step-number">1</span>
-            <h3>行程資訊</h3>
+            <h3>{{ t('trips.tripInfo') }}</h3>
           </div>
           <van-cell-group inset
-            ><van-field v-model="tripForm.date" label="日期" type="date" required
+            ><van-field v-model="tripForm.date" :label="t('common.date')" type="date" required
           /></van-cell-group>
-          <p class="field-label">行程類型</p>
+          <p class="field-label">{{ t('trips.tripType') }}</p>
           <van-radio-group v-model="tripForm.type" class="choice-grid"
-            ><van-radio name="WORK">上班</van-radio><van-radio name="LEISURE">出遊</van-radio
-            ><van-radio name="OTHER">其他</van-radio></van-radio-group
+            ><van-radio name="WORK">{{ typeLabel('WORK') }}</van-radio
+            ><van-radio name="LEISURE">{{ typeLabel('LEISURE') }}</van-radio
+            ><van-radio name="OTHER">{{ typeLabel('OTHER') }}</van-radio></van-radio-group
           >
-          <p class="field-label">行程方式</p>
+          <p class="field-label">{{ t('trips.tripMode') }}</p>
           <van-radio-group v-model="tripForm.tripMode" class="choice-grid"
-            ><van-radio name="ONE_WAY">單程</van-radio><van-radio name="ROUND_TRIP">來回</van-radio
-            ><van-radio name="CUSTOM">自訂</van-radio></van-radio-group
+            ><van-radio name="ONE_WAY">{{ modeLabel('ONE_WAY') }}</van-radio
+            ><van-radio name="ROUND_TRIP">{{ modeLabel('ROUND_TRIP') }}</van-radio
+            ><van-radio name="CUSTOM">{{ modeLabel('CUSTOM') }}</van-radio></van-radio-group
           >
 
           <div class="form-step">
             <span class="step-number">2</span>
-            <h3>選擇乘客</h3>
-            <small>{{ selectedPassengerIds.length }} 位已選</small>
+            <h3>{{ t('trips.choosePassengers') }}</h3>
+            <small>{{ t('trips.selectedCount', { count: selectedPassengerIds.length }) }}</small>
           </div>
           <div v-if="activePassengers.length === 0" class="form-hint">
-            請先到「常用乘客」新增乘客。
+            {{ t('trips.addPassengersFirst') }}
           </div>
           <van-checkbox-group v-else v-model="selectedPassengerIds" class="person-choices"
             ><van-checkbox
@@ -735,7 +785,7 @@ defineExpose({ openTripForm })
           <template v-if="chargeForms.length">
             <div class="form-step">
               <span class="step-number">3</span>
-              <h3>金額與收款</h3>
+              <h3>{{ t('trips.amountAndPayment') }}</h3>
             </div>
             <div class="charge-editor">
               <div
@@ -743,31 +793,33 @@ defineExpose({ openTripForm })
                 :key="charge.passengerId"
                 class="charge-editor__row"
               >
-                <strong>乘客姓名：{{ getPassengerName(charge.passengerId) }}</strong>
+                <strong>{{
+                  t('trips.passengerLabel', { name: getPassengerName(charge.passengerId) })
+                }}</strong>
                 <van-field
                   :model-value="charge.amount"
                   type="number"
                   inputmode="decimal"
                   label="AUD $"
-                  placeholder="未設定；免費請輸入 0"
+                  :placeholder="t('trips.amountPlaceholder')"
                   @update:model-value="setChargeAmount(charge, $event)"
                 />
                 <p v-if="charge.paymentStatus === 'PARTIAL'" class="partial-note">
-                  已部分收款；請從行程卡片記錄剩餘款項。
+                  {{ t('trips.partiallyPaidHint') }}
                 </p>
                 <van-radio-group
                   v-else
                   :model-value="charge.paymentStatus"
                   class="payment-choices"
                   @update:model-value="setPaymentStatus(charge, $event)"
-                  ><van-radio name="PENDING">待收</van-radio
-                  ><van-radio name="PAID">已收</van-radio></van-radio-group
+                  ><van-radio name="PENDING">{{ t('trips.pending') }}</van-radio
+                  ><van-radio name="PAID">{{ t('trips.received') }}</van-radio></van-radio-group
                 >
                 <van-field
                   v-if="charge.paymentStatus === 'PAID'"
                   v-model="charge.paidAt"
                   type="date"
-                  label="收款日期"
+                  :label="t('trips.paymentDate')"
                 />
               </div>
             </div>
@@ -775,28 +827,40 @@ defineExpose({ openTripForm })
           <van-cell-group inset class="note-field"
             ><van-field
               v-model="tripForm.note"
-              label="備註"
+              :label="t('common.note')"
               type="textarea"
               autosize
-              placeholder="選填，例如：下班順路載回家"
+              :placeholder="t('trips.notePlaceholder')"
               clearable
           /></van-cell-group>
         </div>
         <div class="sheet-footer">
           <van-button block type="primary" native-type="submit">{{
-            editingTripId ? '儲存變更' : '儲存行程'
+            editingTripId ? t('expenses.saveChanges') : t('trips.saveTrip')
           }}</van-button>
         </div>
       </form>
     </van-popup>
     <van-popup v-model:show="showPaymentForm" position="bottom" round safe-area-inset-bottom>
       <form class="sheet-form" @submit.prevent="savePayment">
-        <h2>記錄車資收款</h2>
-        <p>尚待收 {{ formatAud(paymentRemainingCents) }}</p>
-        <van-field v-model="paymentForm.paidAt" label="收款日期" type="date" required />
-        <van-field v-model="paymentForm.amount" label="本次收款 AUD" type="number" required />
+        <h2>{{ t('trips.paymentTitle') }}</h2>
+        <p>{{ t('trips.remaining', { amount: formatAud(paymentRemainingCents) }) }}</p>
+        <van-field
+          v-model="paymentForm.paidAt"
+          :label="t('trips.paymentDate')"
+          type="date"
+          required
+        />
+        <van-field
+          v-model="paymentForm.amount"
+          :label="t('trips.paymentAmount')"
+          type="number"
+          required
+        />
         <div class="sheet-footer">
-          <van-button block type="primary" native-type="submit">儲存收款</van-button>
+          <van-button block type="primary" native-type="submit">{{
+            t('trips.savePayment')
+          }}</van-button>
         </div>
       </form>
     </van-popup>

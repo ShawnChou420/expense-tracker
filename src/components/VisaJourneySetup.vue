@@ -9,6 +9,10 @@ import {
   normalizeVisaJourney,
   validateVisaJourney,
 } from '../domain/visaJourney.js'
+import { useI18n } from 'vue-i18n'
+import { localizeMessage } from '../i18n/messages.js'
+
+const { t } = useI18n()
 
 const props = defineProps({
   show: Boolean,
@@ -25,11 +29,9 @@ const step = ref('goal')
 const form = ref(createEmptyVisaJourney())
 const saving = ref(false)
 
-const goals = [
-  { id: 'SECOND', title: '集二簽', detail: '3 個月，最低 88 天日曆期間等值' },
-  { id: 'THIRD', title: '集三簽', detail: '6 個月，最低 179 天日曆期間等值' },
-  { id: 'NONE', title: '目前不集簽', detail: '首頁不顯示進度，工作紀錄照常保留' },
-]
+const goals = computed(() =>
+  ['SECOND', 'THIRD', 'NONE'].map((id) => ({ id, title: t(`visa.goals.${id}`), detail: t(`visa.goalDetails.${id}`) })),
+)
 
 watch(
   () => props.show,
@@ -56,12 +58,12 @@ function chooseGoal(goal) {
 
 async function save() {
   const error = validateVisaJourney(form.value)
-  if (error) return showToast(error)
+  if (error) return showToast(localizeMessage(error))
   saving.value = true
   try {
     await props.submit({ ...form.value })
   } catch (error) {
-    showToast(error?.message || '儲存失敗')
+    showToast(localizeMessage(error?.message) || t('errors.saveFailed'))
   } finally {
     saving.value = false
   }
@@ -81,8 +83,8 @@ async function save() {
     <div class="visa-setup__body">
       <template v-if="step === 'goal'">
         <p class="visa-setup__eyebrow">Visa Journey</p>
-        <h2>你目前的集簽目標是？</h2>
-        <div class="visa-setup__options" role="radiogroup" aria-label="集簽目標">
+        <h2>{{ t('visa.goalQuestion') }}</h2>
+        <div class="visa-setup__options" role="radiogroup" :aria-label="t('visa.goalAria')">
           <button
             v-for="goal in goals"
             :key="goal.id"
@@ -105,45 +107,45 @@ async function save() {
           class="visa-setup__primary"
           :loading="saving"
           @click="save"
-          >儲存</van-button
+          >{{ t('common.save') }}</van-button
         >
       </template>
 
       <template v-else>
         <button type="button" class="visa-setup__back" @click="step = 'goal'">
-          <van-icon name="arrow-left" /> 重新選擇目標
+          <van-icon name="arrow-left" /> {{ t('visa.chooseAgain') }}
         </button>
-        <h2>{{ goalInfo?.label }}：基本資料</h2>
-        <p class="visa-setup__note">只需要這些資料；班別與排班會直接沿用你的工作設定。</p>
+        <h2>{{ t('visa.basicInfo', { goal: goalInfo ? t(`visa.goals.${goalInfo.id}`) : '' }) }}</h2>
+        <p class="visa-setup__note">{{ t('visa.setupNote') }}</p>
 
         <div class="visa-field">
-          <span class="visa-field__label">簽證類型</span>
+          <span class="visa-field__label">{{ t('visa.subclass') }}</span>
           <van-radio-group v-model="form.subclass" direction="horizontal">
             <van-radio name="417">417</van-radio>
             <van-radio name="462">462</van-radio>
           </van-radio-group>
         </div>
         <div class="visa-field">
-          <span class="visa-field__label">目前簽證階段</span>
+          <span class="visa-field__label">{{ t('visa.currentStage') }}</span>
           <van-radio-group v-model="form.stage" class="visa-field__stack">
             <van-radio v-for="stage in VISA_STAGES" :key="stage.id" :name="stage.id">{{
-              stage.label
+              t(`visa.stages.${stage.id}`)
             }}</van-radio>
           </van-radio-group>
         </div>
         <van-field v-model="form.stayUntil" type="date" label="Stay until" label-width="8.5em" required />
-        <van-field v-model="form.workStart" type="date" label="指定工作開始日" label-width="8.5em" required />
-        <p class="visa-setup__hint">填實際開始做指定工作（符合行業與郵遞區號）的日期。</p>
-        <van-cell center title="我已經開始集簽">
+        <van-field v-model="form.workStart" type="date" :label="t('visa.workStart')" label-width="8.5em" required />
+        <p class="visa-setup__hint">{{ t('visa.workStartHint') }}</p>
+        <van-cell center :title="t('visa.alreadyStarted')">
           <template #right-icon>
-            <van-switch v-model="form.started" size="22px" aria-label="我已經開始集簽" />
+            <van-switch v-model="form.started" size="22px" :aria-label="t('visa.alreadyStarted')" />
           </template>
         </van-cell>
         <p class="visa-setup__disclaimer">
-          進度只是依你的紀錄做的個人估算，不代表 Home Affairs 的認定。
+          {{ t('visa.setupDisclaimer') }}
         </p>
         <van-button block type="primary" class="visa-setup__primary" :loading="saving" @click="save"
-          >儲存並開始追蹤</van-button
+          >{{ t('visa.saveAndTrack') }}</van-button
         >
       </template>
     </div>

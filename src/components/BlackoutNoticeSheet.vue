@@ -2,8 +2,11 @@
 // 禁休公告：期間＋標題（選填）＋主管公告全文。只是提醒，不影響班表、薪資或集簽天數。
 import { computed, ref, watch } from 'vue'
 import { showConfirmDialog, showToast } from 'vant'
+import { useI18n } from 'vue-i18n'
+import { localizeMessage } from '../i18n/messages.js'
 import { NOTICE_BODY_MAX, NOTICE_TITLE_MAX, normalizeBlackoutNotice } from '../domain/leaveBlackouts.js'
 
+const { t } = useI18n()
 const props = defineProps({
   show: Boolean,
   /** 這天適用的公告（查看模式） */
@@ -32,7 +35,7 @@ watch(
   { immediate: true },
 )
 
-const formTitle = computed(() => (editing.value ? '編輯禁休公告' : '新增禁休公告'))
+const formTitle = computed(() => (editing.value ? t('blackout.editTitle') : t('payrollPage.addBlackout')))
 
 function startCreate() {
   editing.value = null
@@ -69,10 +72,10 @@ async function submit() {
   busy.value = true
   try {
     await props.save(notice, editing.value)
-    showToast('已儲存禁休公告')
+    showToast(t('blackout.saved'))
     emit('update:show', false)
   } catch (error) {
-    showToast(error?.message || '儲存失敗')
+    showToast(localizeMessage(error?.message) || t('errors.saveFailed'))
   } finally {
     busy.value = false
   }
@@ -81,8 +84,8 @@ async function submit() {
 async function confirmRemove(notice) {
   try {
     await showConfirmDialog({
-      title: '刪除禁休公告？',
-      message: `${notice.startDate} 至 ${notice.endDate} 的公告將刪除。班表與請假不受影響。`,
+      title: t('blackout.deleteTitle'),
+      message: t('blackout.deleteMessage', { start: notice.startDate, end: notice.endDate }),
     })
   } catch {
     return
@@ -90,10 +93,10 @@ async function confirmRemove(notice) {
   busy.value = true
   try {
     await props.remove(notice)
-    showToast('已刪除')
+    showToast(t('shopping.deleted'))
     emit('update:show', false)
   } catch (error) {
-    showToast(error?.message || '刪除失敗')
+    showToast(localizeMessage(error?.message) || t('shopping.deleteFailed'))
   } finally {
     busy.value = false
   }
@@ -112,44 +115,44 @@ async function confirmRemove(notice) {
   >
     <div class="notice-sheet__body">
       <template v-if="mode === 'view'">
-        <h2>禁休公告</h2>
+        <h2>{{ t('payrollPage.blackoutNotice') }}</h2>
         <article v-for="notice in notices" :key="notice.id" class="notice-card">
-          <p class="notice-card__period">{{ notice.startDate }} 至 {{ notice.endDate }}</p>
-          <h3>{{ notice.title || '禁休' }}</h3>
+          <p class="notice-card__period">{{ t('blackout.period', { start: notice.startDate, end: notice.endDate }) }}</p>
+          <h3>{{ notice.title || t('payrollPage.blackoutTag') }}</h3>
           <p v-if="notice.body" class="notice-card__text">{{ notice.body }}</p>
-          <p v-else class="notice-card__empty">沒有公告全文</p>
+          <p v-else class="notice-card__empty">{{ t('blackout.noBody') }}</p>
           <div class="notice-card__actions">
-            <van-button size="small" plain type="danger" :loading="busy" @click="confirmRemove(notice)">刪除</van-button>
-            <van-button size="small" plain type="primary" @click="startEdit(notice)">修改</van-button>
+            <van-button size="small" plain type="danger" :loading="busy" @click="confirmRemove(notice)">{{ t('common.delete') }}</van-button>
+            <van-button size="small" plain type="primary" @click="startEdit(notice)">{{ t('blackout.edit') }}</van-button>
           </div>
         </article>
-        <van-button block plain type="primary" class="notice-sheet__primary" @click="startCreate">新增其他禁休期間</van-button>
+        <van-button block plain type="primary" class="notice-sheet__primary" @click="startCreate">{{ t('blackout.addAnother') }}</van-button>
       </template>
 
       <template v-else>
         <h2>{{ formTitle }}</h2>
         <van-cell-group inset>
-          <van-field v-model="form.startDate" type="date" label="禁休開始" required />
-          <van-field v-model="form.endDate" type="date" label="禁休結束" required />
+          <van-field v-model="form.startDate" type="date" :label="t('blackout.start')" required />
+          <van-field v-model="form.endDate" type="date" :label="t('blackout.end')" required />
           <van-field
             v-model="form.title"
-            label="公告標題"
-            placeholder="選填，例如：年底旺季禁休"
+            :label="t('blackout.titleLabel')"
+            :placeholder="t('blackout.titlePlaceholder')"
             :maxlength="NOTICE_TITLE_MAX"
           />
           <van-field
             v-model="form.body"
             type="textarea"
-            label="公告全文"
-            placeholder="貼上或輸入主管公告全文（選填）"
+            :label="t('blackout.bodyLabel')"
+            :placeholder="t('blackout.bodyPlaceholder')"
             rows="5"
             autosize
             :maxlength="NOTICE_BODY_MAX"
             show-word-limit
           />
         </van-cell-group>
-        <p class="notice-sheet__note">禁休公告只是提醒，不會改變班表、薪資或集簽天數。</p>
-        <van-button block type="primary" class="notice-sheet__primary" :loading="busy" @click="submit">儲存公告</van-button>
+        <p class="notice-sheet__note">{{ t('blackout.note') }}</p>
+        <van-button block type="primary" class="notice-sheet__primary" :loading="busy" @click="submit">{{ t('blackout.save') }}</van-button>
       </template>
     </div>
   </van-popup>

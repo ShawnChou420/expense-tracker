@@ -3,6 +3,7 @@
 // 每次變更立即套用並交給父元件儲存；隱藏只影響首頁畫面，不會刪除任何資料。
 import { computed } from 'vue'
 import { showConfirmDialog } from 'vant'
+import { useI18n } from 'vue-i18n'
 import {
   DASHBOARD_MODES,
   DASHBOARD_MODULES,
@@ -21,13 +22,17 @@ const props = defineProps({
   context: { type: Object, default: () => ({}) },
 })
 const emit = defineEmits(['update:show', 'change'])
+const { t } = useI18n()
 
-const labels = Object.fromEntries(DASHBOARD_MODULES.map((module) => [module.id, module.label]))
+const labels = computed(() =>
+  Object.fromEntries(DASHBOARD_MODULES.map((module) => [module.id, t(`customize.modules.${module.id}`)])),
+)
+const modeName = (/** @type {string} */ id) => t(`customize.modes.${id}`)
 const rows = computed(() =>
   props.layout.modules.filter((module) => isModuleAvailable(module.id, props.context)),
 )
 const modeLabel = computed(
-  () => DASHBOARD_MODES.find((mode) => mode.id === props.layout.mode)?.label ?? '',
+  () => (props.layout.mode ? modeName(props.layout.mode) : ''),
 )
 
 function apply(/** @type {import('../domain/dashboardLayout.js').DashboardLayout} */ next) {
@@ -36,12 +41,12 @@ function apply(/** @type {import('../domain/dashboardLayout.js').DashboardLayout
 
 async function switchMode(/** @type {'PAY' | 'LIFE'} */ mode) {
   if (mode === props.layout.mode) return
-  const label = DASHBOARD_MODES.find((item) => item.id === mode)?.label ?? ''
+  const label = modeName(mode)
   try {
     await showConfirmDialog({
-      title: `切換成${label}？`,
-      message: `會套用${label}的預設順序與顯示，你之前的調整會被取代。`,
-      confirmButtonText: '切換',
+      title: t('customize.switchTitle', { mode: label }),
+      message: t('customize.switchMessage', { mode: label }),
+      confirmButtonText: t('customize.switch'),
     })
   } catch {
     return
@@ -52,9 +57,9 @@ async function switchMode(/** @type {'PAY' | 'LIFE'} */ mode) {
 async function resetLayout() {
   try {
     await showConfirmDialog({
-      title: '恢復預設？',
-      message: `回到「${modeLabel.value}」的預設順序與顯示。資料不會被刪除。`,
-      confirmButtonText: '恢復預設',
+      title: t('customize.resetTitle'),
+      message: t('customize.resetMessage', { mode: modeLabel.value }),
+      confirmButtonText: t('customize.reset'),
     })
   } catch {
     return
@@ -75,19 +80,19 @@ async function resetLayout() {
   >
     <div class="customize">
       <header class="customize__head">
-        <h2>自訂首頁</h2>
-        <button type="button" class="customize__reset" @click="resetLayout">恢復預設</button>
+        <h2>{{ t('dashboard.customize') }}</h2>
+        <button type="button" class="customize__reset" @click="resetLayout">{{ t('customize.reset') }}</button>
         <button
           type="button"
           class="customize__close"
-          aria-label="關閉"
+          :aria-label="t('common.close')"
           @click="emit('update:show', false)"
         >
           <van-icon name="cross" />
         </button>
       </header>
 
-      <div class="customize__modes" role="radiogroup" aria-label="首頁模式">
+      <div class="customize__modes" role="radiogroup" :aria-label="t('customize.modeAria')">
         <button
           v-for="mode in DASHBOARD_MODES"
           :key="mode.id"
@@ -97,7 +102,7 @@ async function resetLayout() {
           :class="{ 'is-active': layout.mode === mode.id }"
           @click="switchMode(mode.id)"
         >
-          {{ mode.label }}
+          {{ modeName(mode.id) }}
         </button>
       </div>
 
@@ -113,7 +118,7 @@ async function resetLayout() {
             <button
               type="button"
               class="customize__move"
-              :aria-label="`上移 ${labels[module.id]}`"
+              :aria-label="t('customize.moveUp', { name: labels[module.id] })"
               :disabled="index === 0"
               @click="apply(moveModule(layout, module.id, -1, context))"
             >
@@ -122,7 +127,7 @@ async function resetLayout() {
             <button
               type="button"
               class="customize__move"
-              :aria-label="`下移 ${labels[module.id]}`"
+              :aria-label="t('customize.moveDown', { name: labels[module.id] })"
               :disabled="index === rows.length - 1"
               @click="apply(moveModule(layout, module.id, 1, context))"
             >
@@ -131,13 +136,13 @@ async function resetLayout() {
             <van-switch
               :model-value="module.visible"
               size="22px"
-              :aria-label="`${module.visible ? '隱藏' : '顯示'} ${labels[module.id]}`"
+              :aria-label="t(module.visible ? 'customize.hide' : 'customize.show', { name: labels[module.id] })"
               @update:model-value="apply(setModuleVisible(layout, module.id, $event))"
             />
           </div>
         </li>
       </ol>
-      <p class="customize__note">隱藏只影響首頁畫面，不會刪除資料。</p>
+      <p class="customize__note">{{ t('customize.note') }}</p>
     </div>
   </van-popup>
 </template>

@@ -2,12 +2,15 @@
 // 登入／註冊／忘記密碼。後端有設定寄信服務時，註冊與重設密碼都需要 Email 驗證碼。
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { showToast } from 'vant'
+import { useI18n } from 'vue-i18n'
+import { localizeMessage } from '../i18n/messages.js'
 import { getAuthConfig, isApiAvailable, requestEmailCode, signIn } from '../services/authSession.js'
 import { passwordChecks, passwordPolicyError } from '../domain/password.js'
 
 const props = defineProps({ show: Boolean })
 const emit = defineEmits(['update:show', 'signed-in', 'open-privacy'])
 
+const { t } = useI18n()
 const MIN_PASSWORD = 8
 const mode = ref('login') // login | register | forgot
 const step = ref('form') // form | code
@@ -44,8 +47,8 @@ async function loadConfig() {
   return configLoaded.value
 }
 
-const titles = { login: '登入帳號', register: '建立帳號', forgot: '重設密碼' }
-const title = computed(() => titles[mode.value])
+const titles = { login: 'auth.titleLogin', register: 'auth.titleRegister', forgot: 'auth.titleForgot' }
+const title = computed(() => t(titles[mode.value]))
 const needsCode = computed(() => mode.value === 'forgot' || (mode.value === 'register' && emailVerification.value))
 const trimmedEmail = computed(() => email.value.trim())
 const emailValid = computed(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail.value))
@@ -72,7 +75,8 @@ function startCountdown(seconds) {
 }
 
 function fail(message, action = null) {
-  error.value = message
+  // domain／後端的繁中訊息轉成目前語系；不認得的原樣顯示
+  error.value = localizeMessage(message)
   errorAction.value = action
 }
 
@@ -88,10 +92,10 @@ async function sendCode() {
     step.value = 'code'
     code.value = ''
     startCountdown(result?.resendAfterSeconds ?? 60)
-    showToast('驗證碼已寄出')
+    showToast(t('auth.codeSent'))
   } catch (err) {
-    const message = err.message || '寄送失敗'
-    fail(message, message.includes('已經註冊過') ? { label: '改為登入', run: () => switchMode('login') } : null)
+    const message = err.message || t('errors.sendFailed')
+    fail(message, message.includes('已經註冊過') ? { label: t('auth.switchToLogin'), run: () => switchMode('login') } : null)
   } finally {
     busy.value = false
   }
@@ -117,8 +121,8 @@ async function submit() {
   try {
     const apiMode = mode.value === 'forgot' ? 'reset-password' : mode.value
     await signIn(apiMode, trimmedEmail.value, password.value, needsCode.value ? code.value.trim() : undefined)
-    if (mode.value === 'forgot') showToast('密碼已更新，已為你登入')
-    else if (mode.value === 'register') showToast('註冊完成，歡迎加入')
+    if (mode.value === 'forgot') showToast(t('auth.resetDone'))
+    else if (mode.value === 'register') showToast(t('auth.registerDone'))
     password.value = ''
     code.value = ''
     step.value = 'form'
@@ -126,18 +130,18 @@ async function submit() {
     emit('update:show', false)
     emit('signed-in')
   } catch (err) {
-    const message = err.message || '操作失敗'
+    const message = err.message || t('errors.operationFailed')
     if (mode.value === 'login' && message.includes('不正確')) {
       fail(
         'Email 或密碼不正確。',
-        emailVerification.value ? { label: '忘記密碼？用 Email 重設', run: () => switchMode('forgot') } : null,
+        emailVerification.value ? { label: t('auth.resetViaEmail'), run: () => switchMode('forgot') } : null,
       )
     } else if (message.includes('已經註冊過')) {
-      fail(message, { label: '改為登入', run: () => switchMode('login') })
+      fail(message, { label: t('auth.switchToLogin'), run: () => switchMode('login') })
     } else if (err?.code === 'TIMEOUT' && mode.value === 'register') {
       // 逾時不代表失敗：帳號可能已經建立，先用登入確認，避免重複註冊
       fail('伺服器回應逾時，帳號可能已經建立。請先試著登入；登入失敗再重新註冊。', {
-        label: '改為登入',
+        label: t('auth.switchToLogin'),
         run: () => switchMode('login'),
       })
     } else {
@@ -149,9 +153,9 @@ async function submit() {
 }
 
 const primaryLabel = computed(() => {
-  if (mode.value === 'login') return '登入'
-  if (needsCode.value && step.value === 'form') return '寄送驗證碼'
-  return mode.value === 'register' ? '完成註冊' : '重設密碼並登入'
+  if (mode.value === 'login') return t('account.login')
+  if (needsCode.value && step.value === 'form') return t('auth.sendCode')
+  return mode.value === 'register' ? t('auth.completeRegister') : t('auth.resetAndLogin')
 })
 </script>
 
@@ -169,23 +173,23 @@ const primaryLabel = computed(() => {
           v-if="mode !== 'login'"
           type="button"
           class="auth-sheet__back"
-          aria-label="返回登入"
+          :aria-label="t('auth.backToLogin')"
           @click="step === 'code' ? (step = 'form') : switchMode('login')"
         >
           <van-icon name="arrow-left" />
         </button>
         <h2>{{ title }}</h2>
-        <button type="button" aria-label="關閉" @click="emit('update:show', false)">
+        <button type="button" :aria-label="t('common.close')" @click="emit('update:show', false)">
           <van-icon name="cross" />
         </button>
       </div>
 
-      <p v-if="mode === 'login'">登入管理你的澳打旅程。</p>
+      <p v-if="mode === 'login'">{{ t('auth.loginIntro') }}</p>
       <p v-else-if="mode === 'register' && step === 'form'">
-        {{ emailVerification ? '我們會寄驗證碼到你的信箱。' : '建立帳號，管理你的澳打旅程。' }}
+        {{ emailVerification ? t('auth.registerIntroCode') : t('auth.registerIntro') }}
       </p>
-      <p v-else-if="mode === 'forgot' && step === 'form'">輸入註冊的 Email，我們會寄驗證碼給你。</p>
-      <p v-if="!isApiAvailable" class="auth-sheet__warning">此原生版本尚未設定 HTTPS API 位址，暫時無法登入。</p>
+      <p v-else-if="mode === 'forgot' && step === 'form'">{{ t('auth.forgotIntro') }}</p>
+      <p v-if="!isApiAvailable" class="auth-sheet__warning">{{ t('auth.apiMissing') }}</p>
 
       <template v-if="step === 'form'">
         <van-field
@@ -200,17 +204,17 @@ const primaryLabel = computed(() => {
         <van-field
           v-if="mode !== 'forgot'"
           v-model="password"
-          label="密碼"
+          :label="t('account.password')"
           :type="showPassword ? 'text' : 'password'"
           :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"
-          :placeholder="mode === 'login' ? '' : `至少 ${MIN_PASSWORD} 個字元，含大小寫、數字、符號`"
+          :placeholder="mode === 'login' ? '' : t('auth.passwordPlaceholder', { min: MIN_PASSWORD })"
           :right-icon="showPassword ? 'eye-o' : 'closed-eye'"
           :disabled="busy"
           @click-right-icon="showPassword = !showPassword"
         />
-        <ul v-if="showChecks" class="auth-sheet__rules" aria-label="密碼規則">
+        <ul v-if="showChecks" class="auth-sheet__rules" :aria-label="t('auth.passwordRules')">
           <li v-for="check in checks" :key="check.key" :class="{ 'is-ok': check.ok }">
-            <van-icon :name="check.ok ? 'success' : 'circle'" />{{ check.label }}
+            <van-icon :name="check.ok ? 'success' : 'circle'" />{{ t(`passwordRules.${check.key}`) }}
           </li>
         </ul>
       </template>
@@ -219,39 +223,39 @@ const primaryLabel = computed(() => {
         <div class="auth-sheet__sent">
           <van-icon name="envelop-o" aria-hidden="true" />
           <span>
-            驗證碼已寄到 <strong>{{ trimmedEmail }}</strong>
-            <small>10 分鐘內有效，沒收到請看垃圾郵件。</small>
+            {{ t('auth.codeSentTo') }} <strong>{{ trimmedEmail }}</strong>
+            <small>{{ t('auth.codeValidity') }}</small>
           </span>
         </div>
         <label class="auth-sheet__code">
-          <span>6 位數驗證碼</span>
+          <span>{{ t('auth.sixDigitCode') }}</span>
           <input
             v-model="code"
             inputmode="numeric"
             autocomplete="one-time-code"
             maxlength="6"
             placeholder="••••••"
-            aria-label="6 位數驗證碼"
+            :aria-label="t('auth.sixDigitCode')"
             @input="code = code.replace(/\D/g, '').slice(0, 6)"
           />
         </label>
         <van-field
           v-if="mode === 'forgot'"
           v-model="password"
-          label="新密碼"
+          :label="t('account.newPassword')"
           :type="showPassword ? 'text' : 'password'"
           autocomplete="new-password"
-          :placeholder="`至少 ${MIN_PASSWORD} 個字元，含大小寫、數字、符號`"
+          :placeholder="t('auth.passwordPlaceholder', { min: MIN_PASSWORD })"
           :right-icon="showPassword ? 'eye-o' : 'closed-eye'"
           @click-right-icon="showPassword = !showPassword"
         />
-        <ul v-if="mode === 'forgot' && showChecks" class="auth-sheet__rules" aria-label="密碼規則">
+        <ul v-if="mode === 'forgot' && showChecks" class="auth-sheet__rules" :aria-label="t('auth.passwordRules')">
           <li v-for="check in checks" :key="check.key" :class="{ 'is-ok': check.ok }">
-            <van-icon :name="check.ok ? 'success' : 'circle'" />{{ check.label }}
+            <van-icon :name="check.ok ? 'success' : 'circle'" />{{ t(`passwordRules.${check.key}`) }}
           </li>
         </ul>
         <button type="button" class="auth-sheet__resend" :disabled="resendIn > 0 || busy" @click="sendCode">
-          {{ resendIn > 0 ? `${resendIn} 秒後可重新寄送` : '重新寄送驗證碼' }}
+          {{ resendIn > 0 ? t('auth.resendIn', { seconds: resendIn }) : t('auth.resendCode') }}
         </button>
       </template>
 
@@ -264,8 +268,8 @@ const primaryLabel = computed(() => {
       </div>
 
       <p v-if="mode === 'register'" class="auth-sheet__consent">
-        註冊即表示你已閱讀
-        <button type="button" class="auth-sheet__link" @click="emit('open-privacy')">隱私說明</button>
+        {{ t('auth.agreePrefix') }}
+        <button type="button" class="auth-sheet__link" @click="emit('open-privacy')">{{ t('more.privacy') }}</button>
       </p>
       <van-button block type="primary" native-type="submit" :disabled="!isApiAvailable || busy" :loading="busy">
         {{ primaryLabel }}
@@ -273,10 +277,10 @@ const primaryLabel = computed(() => {
 
       <div class="auth-sheet__links">
         <template v-if="mode === 'login'">
-          <button type="button" class="auth-sheet__switch" @click="switchMode('register')">沒有帳號？註冊</button>
-          <button v-if="emailVerification" type="button" class="auth-sheet__link" @click="switchMode('forgot')">忘記密碼？</button>
+          <button type="button" class="auth-sheet__switch" @click="switchMode('register')">{{ t('auth.noAccount') }}</button>
+          <button v-if="emailVerification" type="button" class="auth-sheet__link" @click="switchMode('forgot')">{{ t('account.forgotPassword') }}</button>
         </template>
-        <button v-else type="button" class="auth-sheet__switch" @click="switchMode('login')">已有帳號？登入</button>
+        <button v-else type="button" class="auth-sheet__switch" @click="switchMode('login')">{{ t('auth.haveAccount') }}</button>
       </div>
     </form>
   </van-popup>

@@ -11,6 +11,10 @@ import {
   isValidPostcode,
   normalizeFuelPrefs,
 } from '../domain/fuel.js'
+import { useI18n } from 'vue-i18n'
+import { localizeMessage } from '../i18n/messages.js'
+
+const { t } = useI18n()
 
 const props = defineProps({
   now: { type: Date, required: true },
@@ -26,9 +30,17 @@ const locating = ref(false)
 
 const stations = computed(() => result.value?.stations ?? [])
 const gap = computed(() => getCheapestGap(stations.value))
-const freshness = computed(() => describeFuelFreshness(result.value?.fetchedAt, props.now))
+const freshness = computed(() => {
+  const text = describeFuelFreshness(result.value?.fetchedAt, props.now)
+  if (!text) return ''
+  const minutes = /^(\d+) 分鐘前更新$/.exec(text)
+  const hours = /^(\d+) 小時前更新$/.exec(text)
+  if (minutes) return t('fuel.minutesAgo', { minutes: minutes[1] })
+  if (hours) return t('fuel.hoursAgo', { hours: hours[1] })
+  return t('fuel.justUpdated')
+})
 const locationLabel = computed(() =>
-  prefs.value.mode === 'GPS' ? '目前位置 5 公里內' : `郵遞區號 ${prefs.value.postcode}`,
+  prefs.value.mode === 'GPS' ? t('fuel.nearby5km') : t('fuel.postcodeLabel', { postcode: prefs.value.postcode }),
 )
 
 function hasLocation(/** @type {ReturnType<typeof normalizeFuelPrefs>} */ value) {
@@ -44,13 +56,13 @@ function savePrefs(next) {
 function currentPosition() {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
-      reject(new Error('這台裝置無法取得位置，請改用郵遞區號'))
+      reject(new Error(t('fuel.noGeolocation')))
       return
     }
     navigator.geolocation.getCurrentPosition(
       (position) =>
         resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude }),
-      () => reject(new Error('沒有取得位置權限，請改用郵遞區號')),
+      () => reject(new Error(t('fuel.permissionDenied'))),
       { enableHighAccuracy: false, timeout: 10000, maximumAge: 10 * 60 * 1000 },
     )
   })
@@ -72,7 +84,7 @@ async function load() {
   } catch (failure) {
     if (seq === loadSeq) {
       result.value = null
-      error.value = failure instanceof Error ? failure.message : '暫時取不到油價'
+      error.value = failure instanceof Error ? localizeMessage(failure.message) : t('fuel.unavailable')
     }
   } finally {
     if (seq === loadSeq) loading.value = false
@@ -87,7 +99,7 @@ function chooseFuel(/** @type {string} */ fuelType) {
 
 function usePostcode() {
   if (!isValidPostcode(postcodeDraft.value.trim())) {
-    error.value = '請輸入 4 位數郵遞區號'
+    error.value = t('fuel.postcodeInvalid')
     return
   }
   savePrefs({ ...prefs.value, mode: 'POSTCODE', postcode: postcodeDraft.value.trim() })
@@ -104,7 +116,7 @@ async function useCurrentLocation() {
     editing.value = false
     load()
   } catch (failure) {
-    error.value = failure instanceof Error ? failure.message : '無法取得位置'
+    error.value = failure instanceof Error ? failure.message : t('fuel.locationFailed')
   } finally {
     locating.value = false
   }
@@ -118,22 +130,22 @@ onMounted(load)
     <div class="fuel-card__head">
       <span class="fuel-card__icon" aria-hidden="true"><van-icon name="logistics" /></span>
       <div class="fuel-card__titles">
-        <h2 id="fuel-card-title">附近油價</h2>
+        <h2 id="fuel-card-title">{{ t('fuel.title') }}</h2>
         <p v-if="!editing">{{ locationLabel }}<template v-if="freshness"> · {{ freshness }}</template></p>
-        <p v-else>選油種和位置，看最便宜的加油站</p>
+        <p v-else>{{ t('fuel.subtitle') }}</p>
       </div>
       <button
         v-if="!editing"
         type="button"
         class="fuel-card__edit"
-        aria-label="變更位置"
+        :aria-label="t('fuel.changeLocation')"
         @click="editing = true"
       >
         <van-icon name="location-o" aria-hidden="true" />
       </button>
     </div>
 
-    <div class="fuel-card__fuels" role="radiogroup" aria-label="油種">
+    <div class="fuel-card__fuels" role="radiogroup" :aria-label="t('fuel.fuelType')">
       <button
         v-for="option in FUEL_TYPE_OPTIONS"
         :key="option.id"
@@ -144,7 +156,7 @@ onMounted(load)
         :aria-checked="prefs.fuelType === option.id"
         @click="chooseFuel(option.id)"
       >
-        {{ option.label }}
+        {{ option.id === 'DL' ? t('fuel.diesel') : option.label }}
       </button>
     </div>
 
@@ -154,10 +166,10 @@ onMounted(load)
         type="text"
         inputmode="numeric"
         maxlength="4"
-        placeholder="郵遞區號，例如 2150"
-        aria-label="郵遞區號"
+        :placeholder="t('fuel.postcodeHint')"
+        :aria-label="t('fuel.postcode')"
       />
-      <van-button native-type="submit" size="small" type="primary">查詢</van-button>
+      <van-button native-type="submit" size="small" type="primary">{{ t('fuel.searchShort') }}</van-button>
       <van-button
         size="small"
         plain
@@ -166,7 +178,7 @@ onMounted(load)
         :loading="locating"
         @click="useCurrentLocation"
       >
-        用目前位置
+        {{ t('fuel.useMyLocation') }}
       </van-button>
     </form>
 
@@ -175,7 +187,7 @@ onMounted(load)
     <template v-if="!editing && !error">
       <van-skeleton v-if="loading && !result" :row="3" />
       <p v-else-if="result && stations.length === 0" class="fuel-card__empty">
-        這附近找不到這個油種的價格，試試換油種或郵遞區號。
+        {{ t('fuel.noPricesNearby') }}
       </p>
       <ol v-else-if="stations.length" class="fuel-card__list">
         <li v-for="(station, index) in stations" :key="`${station.name}-${station.address}`">
@@ -193,11 +205,11 @@ onMounted(load)
           </span>
         </li>
       </ol>
-      <p v-if="gap" class="fuel-card__hint">第 1 名比第 2 名每公升便宜 {{ gap }}¢</p>
-      <p v-if="result?.stale" class="fuel-card__hint">油價服務暫時沒有回應，先顯示上次的資料。</p>
+      <p v-if="gap" class="fuel-card__hint">{{ t('fuel.cheaperBy', { gap }) }}</p>
+      <p v-if="result?.stale" class="fuel-card__hint">{{ t('fuel.stale') }}</p>
     </template>
 
-    <p class="fuel-card__source">資料來源：NSW FuelCheck，價格以加油站現場為準。</p>
+    <p class="fuel-card__source">{{ t('fuel.source') }}</p>
   </section>
 </template>
 

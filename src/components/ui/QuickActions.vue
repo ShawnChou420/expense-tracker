@@ -7,7 +7,7 @@ const emit = defineEmits(['select'])
 </script>
 
 <template>
-  <nav class="quick-actions" aria-label="快捷操作">
+  <nav class="quick-actions" :aria-label="$t('dashboard.quickActionsAria')">
     <button
       v-for="action in actions"
       :key="action.key"

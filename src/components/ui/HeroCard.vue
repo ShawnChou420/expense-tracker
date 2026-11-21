@@ -1,6 +1,7 @@
 <script setup>
 // 首頁主卡：藍底白字，最大的數字放在最上層；沒有資料時顯示空狀態與行動按鈕。
 // 右上角可放額外按鈕（slot「corner」，例如幣別），不會觸發整張卡的點擊。
+// 卡片底部可放次要按鈕（slot「foot」，例如計算說明），同樣不觸發整張卡的點擊。
 import { useSlots } from 'vue'
 const slots = useSlots()
 defineProps({
@@ -37,6 +38,7 @@ const emit = defineEmits(['open', 'action'])
         </span>
         <van-icon name="arrow" class="hero-card__arrow" aria-hidden="true" />
       </button>
+      <div v-if="slots.foot" class="hero-card__foot"><slot name="foot" /></div>
     </template>
     <div v-else class="hero-card__empty">
       <span class="hero-card__label">{{ label }}</span>
@@ -125,7 +127,7 @@ const emit = defineEmits(['open', 'action'])
 }
 .hero-card__item small {
   color: #e7f0fb;
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 .hero-card__item strong {
   font-size: 17px;
@@ -152,6 +154,9 @@ const emit = defineEmits(['open', 'action'])
   z-index: 1;
   top: 14px;
   right: 14px;
+}
+.hero-card__foot {
+  padding: 0 0 16px;
 }
 .hero-card__empty {
   display: grid;

@@ -32,17 +32,18 @@ export const DASHBOARD_MODES = [
   { id: 'LIFE', label: '生活優先' },
 ]
 
-/** 各模式預設顯示的模組與順序；不在清單裡的模組預設隱藏 */
+/**
+ * 各模式預設顯示的模組與順序；不在清單裡的模組預設隱藏。
+ * 薪資優先只放「班與班之間看一眼」需要的模組；待辦、每日小語可在自訂首頁打開（生活優先預設就有）。
+ */
 const PRESETS = {
   PAY: [
     'weekly-pay',
-    'latest-payslip',
     'today-shift',
+    'quick-actions',
+    'latest-payslip',
     'savings-goal',
     'fuel-prices',
-    'today-tasks',
-    'daily-quote',
-    'quick-actions',
     'visa-progress',
     'advanced',
   ],
@@ -119,6 +120,28 @@ export function getVisibleModuleIds(layout, context = {}) {
   return layout.modules
     .filter((module) => module.visible && isModuleAvailable(module.id, context))
     .map((module) => module.id)
+}
+
+/**
+ * 實際顯示順序：今天有班時，今日班表移到最前面（不改使用者儲存的版面）。
+ * @param {string[]} visibleIds getVisibleModuleIds 的結果
+ * @param {{ hasShiftToday?: boolean }} [today]
+ * @returns {string[]}
+ */
+export function getDisplayOrder(visibleIds, today = {}) {
+  if (!today.hasShiftToday || !visibleIds.includes('today-shift')) return [...visibleIds]
+  return ['today-shift', ...visibleIds.filter((id) => id !== 'today-shift')]
+}
+
+/**
+ * 固定提示卡（薪資單入口、下一步）的位置：放在一般模組之後、進階統計之前，不再擠在首屏。
+ * 回傳 CSS order 用的基準值（模組 order 為 index × 10）。
+ * @param {string[]} orderedIds getDisplayOrder 的結果
+ */
+export function getPromptOrder(orderedIds) {
+  const advanced = orderedIds.indexOf('advanced')
+  const slot = advanced < 0 ? orderedIds.length : advanced
+  return slot * 10 - 5
 }
 
 /**

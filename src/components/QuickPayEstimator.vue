@@ -277,7 +277,7 @@ const effectiveLabel = wage.effectiveDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '
 .quick-pay__hint {
   margin: -4px 0 0;
   color: var(--color-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 .quick-pay__hint.is-error {
   color: var(--color-expense);
@@ -323,7 +323,7 @@ const effectiveLabel = wage.effectiveDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '
 .quick-pay__fine {
   margin: 0;
   color: var(--color-muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
   line-height: 1.6;
 }
 .quick-pay__fine a {

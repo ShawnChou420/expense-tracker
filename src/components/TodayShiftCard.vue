@@ -198,7 +198,7 @@ const restMessage = computed(() =>
   border-radius: 999px;
   background: var(--color-income-soft);
   color: var(--color-income);
-  font-size: 12px;
+  font-size: var(--font-caption);
   font-weight: 800;
 }
 .today-shift__body {

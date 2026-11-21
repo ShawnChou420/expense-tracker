@@ -117,13 +117,15 @@ public class FinanceController {
         long owner = LedgerController.owner(auth);
         Map<String, Object> result = new HashMap<>();
         var preferences = db.query(
-            "SELECT display_currency, work_day_target, dashboard_layout::text FROM user_preferences WHERE user_seq=?",
-            (rs, row) -> new Object[] { rs.getString(1), rs.getObject(2), rs.getString(3) }, owner);
+            "SELECT display_currency, work_day_target, dashboard_layout::text, language FROM user_preferences WHERE user_seq=?",
+            (rs, row) -> new Object[] { rs.getString(1), rs.getObject(2), rs.getString(3), rs.getString(4) }, owner);
         result.put("displayCurrency", preferences.isEmpty() ? "AUD" : ((String) preferences.get(0)[0]).trim());
         result.put("workDayTarget", preferences.isEmpty() ? null : preferences.get(0)[1]);
         // 首頁自訂：NULL＝沿用系統預設
         String layout = preferences.isEmpty() ? null : (String) preferences.get(0)[2];
         result.put("dashboardLayout", layout == null ? null : json.readValue(layout, Map.class));
+        // 介面語言：NULL＝尚未選擇，由前端沿用瀏覽器或本機設定
+        result.put("language", preferences.isEmpty() ? null : preferences.get(0)[3]);
         var goals = db.query("""
             SELECT name, target_cents, initial_cents, start_date, end_date FROM saving_goal
             WHERE user_seq=?
@@ -152,6 +154,21 @@ public class FinanceController {
               updated_at=now()
             """, LedgerController.owner(auth), currency);
         return Map.of("currency", currency);
+    }
+
+    static final List<String> SUPPORTED_LANGUAGES = List.of("zh-TW", "en-AU", "ja", "ko");
+
+    /** 介面語言偏好：只影響畫面文字，與顯示貨幣、薪資或財務資料無關 */
+    @PutMapping("/dashboard-settings/language")
+    Map<String, String> saveLanguage(Authentication auth, @RequestBody Map<String, Object> body) {
+        String language = LedgerController.text(body, "language");
+        if (!SUPPORTED_LANGUAGES.contains(language))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "不支援的語言");
+        db.update("""
+            INSERT INTO user_preferences(user_seq, language) VALUES (?, ?)
+            ON CONFLICT (user_seq) DO UPDATE SET language=EXCLUDED.language, updated_at=now()
+            """, LedgerController.owner(auth), language);
+        return Map.of("language", language);
     }
 
     /** 首頁自訂：整份覆寫（模式＋模組顯示與順序）；只影響畫面，不刪除任何資料 */

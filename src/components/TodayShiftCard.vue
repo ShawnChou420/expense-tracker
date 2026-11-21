@@ -12,7 +12,7 @@ const props = defineProps({
   money: { type: Function, required: true },
   currency: { type: String, default: 'AUD' },
 })
-const emit = defineEmits(['open-payroll', 'import-payslip', 'work-setup', 'add-shift'])
+const emit = defineEmits(['open-payroll', 'import-payslip', 'work-setup', 'add-shift', 'adjust-shift'])
 
 const focus = computed(() => getFocusShift(props.records, props.now))
 const shift = computed(() => focus.value.shift)
@@ -90,6 +90,17 @@ const restMessage = computed(() =>
           <strong>{{ currency }} {{ money(shift.grossCents) }}</strong>
         </span>
       </button>
+      <van-button
+        class="today-shift__adjust"
+        size="small"
+        plain
+        type="primary"
+        icon="underway-o"
+        block
+        @click="emit('adjust-shift', shift.workDate)"
+      >
+        調整上下班時間
+      </van-button>
       <div v-if="!payReady" class="today-shift__setup" role="note">
         <p>尚未設定薪資費率，請先上傳 Payslip 或手動設定。</p>
         <div>
@@ -108,6 +119,18 @@ const restMessage = computed(() =>
       <span>下一班 · {{ describeStart(shift, now) }}</span>
       <van-icon name="arrow" aria-hidden="true" />
     </button>
+    <van-button
+      v-if="!showDetail && shift"
+      class="today-shift__adjust"
+      size="small"
+      plain
+      type="primary"
+      icon="underway-o"
+      block
+      @click="emit('adjust-shift', shift.workDate)"
+    >
+      調整下一班時間
+    </van-button>
     <button
       v-else-if="!showDetail"
       type="button"
@@ -121,6 +144,10 @@ const restMessage = computed(() =>
 </template>
 
 <style scoped>
+.today-shift__adjust {
+  min-height: var(--touch-target);
+  border-radius: 12px;
+}
 .today-shift {
   display: grid;
   gap: 12px;

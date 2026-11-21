@@ -76,6 +76,7 @@ const emit = defineEmits([
   'navigate',
   'open-account',
   'quick-action',
+  'adjust-shift',
   'import-payslip',
   'work-setup',
   'visa-setup',
@@ -546,6 +547,7 @@ async function saveTarget() {
         @import-payslip="emit('import-payslip')"
         @work-setup="emit('work-setup', 1)"
         @add-shift="emit('quick-action', 'shift')"
+        @adjust-shift="emit('adjust-shift', $event)"
       />
 
     </div>

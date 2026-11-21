@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.mock;
@@ -203,7 +204,7 @@ class TodayFeaturesTest {
     @Test
     void sameDayReturnsTheStoredQuoteWithoutPickingAgain() {
         var service = new DailyQuoteService(db);
-        Map<String, Object> stored = new HashMap<>(Map.of("quoteId", 9L, "content", "休息一下"));
+        Map<String, Object> stored = new HashMap<>(Map.of("quoteId", 9L, "content", "No worries", "language", "en-AU"));
         when(db.query(startsWith("SELECT q.id"), any(RowMapper.class), eq(7L), eq(DAY))).thenReturn(List.of(stored));
         assertEquals(9L, service.today(7, DAY).get("quoteId"));
         verify(db, never()).update(startsWith("INSERT INTO user_daily_quote"), any(Object[].class));
@@ -211,9 +212,41 @@ class TodayFeaturesTest {
 
     @SuppressWarnings("unchecked")
     @Test
+    void todaysQuoteInTheOldLanguageIsReplacedWithoutUsingARefresh() {
+        var service = new DailyQuoteService(db);
+        Map<String, Object> stale = new HashMap<>(Map.of("quoteId", 1L, "content", "休息一下", "language", "zh-TW"));
+        Map<String, Object> fresh = new HashMap<>(Map.of("quoteId", 2L, "content", "No worries", "language", "en-AU"));
+        when(db.query(startsWith("SELECT q.id"), any(RowMapper.class), eq(7L), eq(DAY)))
+            .thenReturn(List.of(stale), List.of(fresh));
+        when(db.queryForList(startsWith("SELECT id FROM daily_quote"), eq(Long.class), eq("en-AU")))
+            .thenReturn(List.of(2L));
+        when(db.queryForList(startsWith("SELECT DISTINCT quote_id"), eq(Long.class), eq(7L), any(LocalDate.class)))
+            .thenReturn(List.of());
+        when(db.update(startsWith("UPDATE user_daily_quote SET quote_id = ?, updated_at"), eq(2L), eq(7L), eq(DAY), eq(1L)))
+            .thenReturn(1);
+        assertEquals("en-AU", service.today(7, DAY).get("language"));
+        // 不扣換一句次數、不新增一筆
+        verify(db, never()).update(contains("refresh_count + 1"), any(Object[].class));
+        verify(db, never()).update(startsWith("INSERT INTO user_daily_quote"), any(Object[].class));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void oldLanguageQuoteIsKeptWhenNoQuotesInTheCurrentLanguage() {
+        var service = new DailyQuoteService(db);
+        Map<String, Object> stale = new HashMap<>(Map.of("quoteId", 1L, "content", "休息一下", "language", "zh-TW"));
+        when(db.query(startsWith("SELECT q.id"), any(RowMapper.class), eq(7L), eq(DAY))).thenReturn(List.of(stale));
+        when(db.queryForList(startsWith("SELECT id FROM daily_quote"), eq(Long.class), eq("en-AU")))
+            .thenReturn(List.of());
+        assertEquals(1L, service.today(7, DAY).get("quoteId"));
+        verify(db, never()).update(startsWith("UPDATE user_daily_quote"), any(Object[].class));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
     void refreshStopsAtTheDailyLimit() {
         var service = new DailyQuoteService(db);
-        Map<String, Object> stored = new HashMap<>(Map.of("quoteId", 1L, "content", "休息一下"));
+        Map<String, Object> stored = new HashMap<>(Map.of("quoteId", 1L, "content", "No worries", "language", "en-AU"));
         when(db.query(startsWith("SELECT q.id"), any(RowMapper.class), eq(7L), eq(DAY))).thenReturn(List.of(stored));
         when(db.queryForList(startsWith("SELECT id FROM daily_quote"), eq(Long.class), eq("en-AU")))
             .thenReturn(List.of(1L, 2L));

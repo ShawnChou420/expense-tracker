@@ -1241,7 +1241,11 @@
     "invalidPaidDate": "支払日が無効です",
     "endBeforePaid": "終了日は支払済みの記録より前にできません",
     "invalidRecurringStart": "固定支出の開始日が無効です",
-    "invalidInterval": "固定支出の間隔日数が無効です"
+    "invalidInterval": "固定支出の間隔日数が無効です",
+    "leaveTypeRequired": "休暇の種類を選択してください",
+    "blackoutStartRequired": "休暇禁止の開始日を選択してください",
+    "blackoutEndRequired": "休暇禁止の終了日を選択してください",
+    "blackoutEndBeforeStart": "休暇禁止の終了日は開始日より前にできません"
   },
   "passwordRules": {
     "length": "8 文字以上",
@@ -1389,5 +1393,78 @@
     "selectedAria": "選択した商品",
     "selectedCount": "{count} 件選択中",
     "viewList": "リストを見る"
+  },
+  "leaveTypes": {
+    "PERSONAL": "私用休暇",
+    "SICK": "病欠",
+    "HOLIDAY": "休暇・旅行",
+    "UNPAID_OTHER": "その他の無給休暇",
+    "REST_DAY": "通常の休日"
+  },
+  "leaveTypesShort": {
+    "PERSONAL": "私用",
+    "SICK": "病欠",
+    "HOLIDAY": "休暇",
+    "UNPAID_OTHER": "無給",
+    "REST_DAY": "休日"
+  },
+  "leaveSheet": {
+    "title": "休暇",
+    "oneDay": "{date}、1 日",
+    "manyDays": "{start} – {end}、計 {days} 日",
+    "chooseDates": "日付を選択してください",
+    "endBeforeStart": "終了日は開始日より前にできません",
+    "maxDays": "一度に最大 {max} 日",
+    "noChange": "選択した日付はすべて勤務記録があるため、変更はありません",
+    "pickRange": "開始日と終了日を選択",
+    "calendarTitle": "休暇の日付を選択",
+    "confirm": "確定",
+    "tapEnd": "終了日をタップしてください",
+    "hint": "開始日、終了日の順にタップします。1 日だけなら同じ日を 2 回タップ。",
+    "type": "休暇の種類",
+    "note": "休暇はすべて無給で、勤務時間・給与は発生せず、ビザの勤務日数にも含まれません。",
+    "createCount": "{count} 日追加",
+    "updateCount": "休暇 {count} 日を更新",
+    "conflictCount": "{count} 日は勤務記録あり",
+    "conflictTitle": "次の日付には勤務記録があります：",
+    "skip": "勤務記録は残し、他の日付だけ休暇にする（おすすめ）",
+    "replace": "これらの日付も休暇にする（元の時間は保持され、後で戻せます）",
+    "apply": "休暇を適用"
+  },
+  "blackout": {
+    "editTitle": "休暇禁止のお知らせを編集",
+    "saved": "休暇禁止のお知らせを保存しました",
+    "deleteTitle": "休暇禁止のお知らせを削除しますか？",
+    "deleteMessage": "{start}～{end} のお知らせを削除します。シフトと休暇には影響しません。",
+    "period": "{start}～{end}",
+    "noBody": "本文なし",
+    "edit": "編集",
+    "addAnother": "別の休暇禁止期間を追加",
+    "start": "休暇禁止の開始",
+    "end": "休暇禁止の終了",
+    "titleLabel": "お知らせのタイトル",
+    "titlePlaceholder": "任意（例：年末繁忙期のため休暇不可）",
+    "bodyLabel": "お知らせ本文",
+    "bodyPlaceholder": "上司からのお知らせを貼り付けまたは入力（任意）",
+    "note": "休暇禁止のお知らせはリマインダーで、シフト・給与・ビザ日数は変わりません。",
+    "save": "お知らせを保存"
+  },
+  "fillPreview": {
+    "newShifts": "追加するシフト",
+    "countUnit": " 件",
+    "paidHours": "支払対象時間",
+    "hoursUnit": " 時間",
+    "estimatedGross": "予測（税引前）",
+    "excludedNote": "{items}は含みません。レート確認後に追加したシフトのみ計上されます",
+    "dayOff": "休み",
+    "shift": "シフト",
+    "keepExisting": "記録のある {count} 日は上書きされません",
+    "offDays": "、{count} 日は休日です",
+    "editLater": "。追加後も 1 日ずつ編集できます。",
+    "nothingToAdd": "追加するシフトはありません",
+    "emptyExisting": "この期間は {count} 日分の記録があります",
+    "emptyOff": "{count} 日は休日です",
+    "adjustShifts": "シフトを調整",
+    "addRecords": "{count} 件の記録を追加"
   }
 }

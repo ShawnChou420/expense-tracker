@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { applyAccountLocale } from './services/localePreference.js'
 import { joinList, weekdayShort } from './i18n/format.js'
+import { leaveTypeLabel, leaveTypeShortLabel } from './i18n/labels.js'
 import * as XLSX from 'xlsx'
 import TripTracker from './components/TripTracker.vue'
 import ExpenseTracker from './components/ExpenseTracker.vue'
@@ -1014,7 +1015,7 @@ const holidayCalendarFormatter = (day) => {
 
   // 請假：沒有假日／禁休／清潔班標籤時，把假別放上方（下方留給淨額）
   if (record?.shiftType === 'leave' && !holidayLabel && !isBlackout) {
-    day.topInfo = record.leaveType ? getLeaveLabel(record).slice(0, 2) : t('payrollPage.leaveTag')
+    day.topInfo = record.leaveType ? leaveTypeShortLabel(record.leaveType, getLeaveLabel(record).slice(0, 2)) : t('payrollPage.leaveTag')
   }
 
   // 2. 下方：每日預估淨額（工作收入＋車資應收－生活支出）；沒有任何紀錄就留白
@@ -1886,7 +1887,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
             <div class="calendar-day-actions__heading">
               <div>
                 <strong>{{ workDate }} <small>{{ getDayOfWeek(workDate) }}</small></strong>
-                <p v-if="selectedRecord?.shiftType === 'leave'">{{ t('payrollPage.leaveUnpaid', { label: getLeaveLabel(selectedRecord) }) }}</p>
+                <p v-if="selectedRecord?.shiftType === 'leave'">{{ t('payrollPage.leaveUnpaid', { label: leaveTypeLabel(selectedRecord.leaveType, getLeaveLabel(selectedRecord)) }) }}</p>
                 <p v-else-if="selectedRecord">{{ t('payrollPage.rostered', { start: selectedRecord.startTime, end: selectedRecord.endTime }) }}</p>
                 <p v-else>{{ t('payrollPage.notRostered') }}</p>
                 <button v-for="notice in selectedNotices" :key="notice.id" type="button" class="calendar-day-actions__blackout" @click="openFromDaySheet(openBlackoutEditor)">

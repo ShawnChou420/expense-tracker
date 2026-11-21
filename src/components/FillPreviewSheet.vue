@@ -1,7 +1,8 @@
 <script setup>
 // 填滿本週／本月前的預覽：使用者確認後才寫入；既有班表與休假不會被覆蓋。
+import { useI18n } from 'vue-i18n'
 import { formatAud } from '../domain/money.js'
-import { formatHours } from '../domain/home.js'
+import { formatHoursLabel as formatHours, joinList, weekdayShort } from '../i18n/format.js'
 
 defineProps({
   show: Boolean,
@@ -9,10 +10,14 @@ defineProps({
   preview: { type: Object, default: null },
 })
 const emit = defineEmits(['update:show', 'confirm', 'edit-setup'])
-const weekdays = ['日', '一', '二', '三', '四', '五', '六']
+const { t } = useI18n()
 const weekdayOf = (date) => {
   const [y, m, d] = date.split('-').map(Number)
-  return weekdays[new Date(y, m - 1, d).getDay()]
+  return weekdayShort(new Date(y, m - 1, d))
+}
+const paidHoursNumber = (minutes) => {
+  const hours = Math.round((minutes / 60) * 10) / 10
+  return Number.isInteger(hours) ? hours : hours.toFixed(1)
 }
 </script>
 
@@ -34,32 +39,32 @@ const weekdayOf = (date) => {
       <div v-if="preview.summary.shiftCount + preview.summary.leaveCount > 0" class="fill__body">
         <div class="fill__stats">
           <div>
-            <small>新增班表</small>
-            <strong>{{ preview.summary.shiftCount }}<em> 筆</em></strong>
+            <small>{{ t('fillPreview.newShifts') }}</small>
+            <strong>{{ preview.summary.shiftCount }}<em>{{ t('fillPreview.countUnit') }}</em></strong>
           </div>
           <div>
-            <small>計薪工時</small>
-            <strong>{{ formatHours(preview.summary.paidMinutes).replace(' 小時', '') }}<em> 小時</em></strong>
+            <small>{{ t('fillPreview.paidHours') }}</small>
+            <strong>{{ paidHoursNumber(preview.summary.paidMinutes) }}<em>{{ t('fillPreview.hoursUnit') }}</em></strong>
           </div>
           <div class="fill__stats--money">
-            <small>預估稅前</small>
+            <small>{{ t('fillPreview.estimatedGross') }}</small>
             <strong>{{ formatAud(preview.summary.grossCents) }}</strong>
           </div>
         </div>
         <p v-if="preview.summary.rateFlags.provisional.length" class="fill__flag">
-          <van-icon name="info-o" />含未確認費率，僅供參考（{{ preview.summary.rateFlags.provisional.join('、') }}）
+          <van-icon name="info-o" />{{ t('payrollPage.provisionalNote', { items: joinList(preview.summary.rateFlags.provisional) }) }}
         </p>
         <p v-if="preview.summary.rateFlags.excluded.length" class="fill__flag fill__flag--warn">
-          <van-icon name="warning-o" />未含 {{ preview.summary.rateFlags.excluded.join('、') }}，費率確認後再新增的班才會計入
+          <van-icon name="warning-o" />{{ t('fillPreview.excludedNote', { items: joinList(preview.summary.rateFlags.excluded) }) }}
         </p>
         <ul class="fill__list">
           <li v-for="record in preview.records" :key="record.workDate">
-            <span class="fill__date">{{ record.workDate.slice(5).replace('-', '/') }}<small>週{{ weekdayOf(record.workDate) }}</small></span>
+            <span class="fill__date">{{ record.workDate.slice(5).replace('-', '/') }}<small>{{ weekdayOf(record.workDate) }}</small></span>
             <span class="fill__shift">
-              <template v-if="record.shiftType === 'leave'">休假</template>
+              <template v-if="record.shiftType === 'leave'">{{ t('fillPreview.dayOff') }}</template>
               <template v-else>
-                <strong>{{ record.shiftName || '班表' }}</strong>
-                <small><span class="nowrap">{{ record.startTime }}–{{ record.endTime }}{{ record.endTime <= record.startTime ? ' 隔天' : '' }}</span> · <span class="nowrap">{{ formatHours(record.paidMinutes) }}</span></small>
+                <strong>{{ record.shiftName || t('fillPreview.shift') }}</strong>
+                <small><span class="nowrap">{{ record.startTime }}–{{ record.endTime }}{{ record.endTime <= record.startTime ? t('payrollPage.nextDayShort') : '' }}</span> · <span class="nowrap">{{ formatHours(record.paidMinutes) }}</span></small>
               </template>
             </span>
             <span class="fill__pay">{{ record.shiftType === 'leave' ? '' : formatAud(Math.round(record.grossPay * 100)) }}</span>
@@ -67,20 +72,20 @@ const weekdayOf = (date) => {
         </ul>
         <p class="fill__note">
           <van-icon name="shield-o" />
-          已有紀錄的 {{ preview.skippedExisting }} 天不會被覆蓋{{ preview.offDays ? `，${preview.offDays} 天是休息日` : '' }}。新增後仍可逐日修改。
+          {{ t('fillPreview.keepExisting', { count: preview.skippedExisting }) }}{{ preview.offDays ? t('fillPreview.offDays', { count: preview.offDays }) : '' }}{{ t('fillPreview.editLater') }}
         </p>
       </div>
       <div v-else class="fill__empty">
         <van-icon name="passed" />
-        <strong>沒有需要新增的班表</strong>
+        <strong>{{ t('fillPreview.nothingToAdd') }}</strong>
         <p>
-          這段期間{{ preview.skippedExisting ? `已有 ${preview.skippedExisting} 天紀錄` : '' }}{{ preview.skippedExisting && preview.offDays ? '，' : '' }}{{ preview.offDays ? `${preview.offDays} 天是休息日` : '' }}。
+          {{ joinList([preview.skippedExisting ? t('fillPreview.emptyExisting', { count: preview.skippedExisting }) : '', preview.offDays ? t('fillPreview.emptyOff', { count: preview.offDays }) : ''].filter(Boolean)) }}
         </p>
       </div>
 
       <footer class="fill__footer">
         <button type="button" class="fill__edit" @click="emit('edit-setup')">
-          <van-icon name="setting-o" />調整班別
+          <van-icon name="setting-o" />{{ t('fillPreview.adjustShifts') }}
         </button>
         <van-button
           v-if="preview.records.length"
@@ -89,9 +94,9 @@ const weekdayOf = (date) => {
           class="fill__confirm"
           @click="emit('confirm')"
         >
-          加入 {{ preview.records.length }} 筆紀錄
+          {{ t('fillPreview.addRecords', { count: preview.records.length }) }}
         </van-button>
-        <van-button v-else plain block class="fill__confirm" @click="emit('update:show', false)">關閉</van-button>
+        <van-button v-else plain block class="fill__confirm" @click="emit('update:show', false)">{{ t('common.close') }}</van-button>
       </footer>
     </div>
   </van-popup>

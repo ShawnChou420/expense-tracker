@@ -1241,7 +1241,11 @@
     "invalidPaidDate": "Invalid payment date",
     "endBeforePaid": "The end date can't be before a paid entry",
     "invalidRecurringStart": "Invalid start date for the recurring expense",
-    "invalidInterval": "Invalid interval for the recurring expense"
+    "invalidInterval": "Invalid interval for the recurring expense",
+    "leaveTypeRequired": "Choose a leave type",
+    "blackoutStartRequired": "Choose when the blackout starts",
+    "blackoutEndRequired": "Choose when the blackout ends",
+    "blackoutEndBeforeStart": "The blackout end can't be before its start"
   },
   "passwordRules": {
     "length": "At least 8 characters",
@@ -1389,5 +1393,78 @@
     "selectedAria": "Selected items",
     "selectedCount": "{count} selected",
     "viewList": "View list"
+  },
+  "leaveTypes": {
+    "PERSONAL": "Personal leave",
+    "SICK": "Sick leave",
+    "HOLIDAY": "Holiday / travel",
+    "UNPAID_OTHER": "Other unpaid leave",
+    "REST_DAY": "Regular day off"
+  },
+  "leaveTypesShort": {
+    "PERSONAL": "Leave",
+    "SICK": "Sick",
+    "HOLIDAY": "Hol",
+    "UNPAID_OTHER": "Unpaid",
+    "REST_DAY": "Off"
+  },
+  "leaveSheet": {
+    "title": "Leave",
+    "oneDay": "{date}, 1 day",
+    "manyDays": "{start} – {end}, {days} days",
+    "chooseDates": "Choose dates",
+    "endBeforeStart": "The end date can't be before the start date",
+    "maxDays": "Up to {max} days at a time",
+    "noChange": "All selected dates already have work records — nothing changed",
+    "pickRange": "Pick start and end",
+    "calendarTitle": "Choose leave dates",
+    "confirm": "Confirm",
+    "tapEnd": "Now tap the end date",
+    "hint": "Tap the start date, then the end date. For one day, tap the same date twice.",
+    "type": "Leave type",
+    "note": "Leave is always unpaid: no hours or pay, and it doesn't count towards visa work days.",
+    "createCount": "Add {count} days",
+    "updateCount": "Update {count} days of leave",
+    "conflictCount": "{count} days already have work records",
+    "conflictTitle": "These dates already have work records:",
+    "skip": "Keep the work records and set only the other dates as leave (recommended)",
+    "replace": "Change these dates to leave too (original times are kept and can be restored)",
+    "apply": "Apply leave"
+  },
+  "blackout": {
+    "editTitle": "Edit leave blackout",
+    "saved": "Leave blackout saved",
+    "deleteTitle": "Delete this leave blackout?",
+    "deleteMessage": "The notice for {start} to {end} will be deleted. Your roster and leave aren't affected.",
+    "period": "{start} to {end}",
+    "noBody": "No full text",
+    "edit": "Edit",
+    "addAnother": "Add another blackout period",
+    "start": "Blackout starts",
+    "end": "Blackout ends",
+    "titleLabel": "Notice title",
+    "titlePlaceholder": "Optional, e.g. no leave during the year-end peak",
+    "bodyLabel": "Full notice",
+    "bodyPlaceholder": "Paste or type your manager's notice (optional)",
+    "note": "Leave blackouts are reminders only — they don't change your roster, pay or visa days.",
+    "save": "Save notice"
+  },
+  "fillPreview": {
+    "newShifts": "New shifts",
+    "countUnit": " shifts",
+    "paidHours": "Paid hours",
+    "hoursUnit": " h",
+    "estimatedGross": "Est. gross",
+    "excludedNote": "Excludes {items}; only shifts added after the rates are confirmed will include them",
+    "dayOff": "Day off",
+    "shift": "Shift",
+    "keepExisting": "{count} days that already have records won't be overwritten",
+    "offDays": "; {count} are days off",
+    "editLater": ". You can still edit each day afterwards.",
+    "nothingToAdd": "No shifts to add",
+    "emptyExisting": "{count} days in this period already have records",
+    "emptyOff": "{count} are days off",
+    "adjustShifts": "Adjust shifts",
+    "addRecords": "Add {count} records"
   }
 }

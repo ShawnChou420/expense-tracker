@@ -2,10 +2,14 @@
 // 請假（單日或一段期間）：選日期區間與請假類型。已有實際工作的日期列為衝突，由使用者決定略過或改成請假。
 import { computed, ref, watch } from 'vue'
 import { showToast } from 'vant'
+import { useI18n } from 'vue-i18n'
+import { formatDateLabel } from '../i18n/format.js'
+import { leaveTypeLabel } from '../i18n/labels.js'
 import { LEAVE_TYPES, planBatchLeave } from '../domain/leaveTypes.js'
 import { addDays, daysBetweenInclusive } from '../domain/visaJourney.js'
 import { formatLocalDate, parseLocalDate } from '../domain/date.js'
 
+const { t, locale } = useI18n()
 const props = defineProps({
   show: Boolean,
   records: { type: Array, required: true },
@@ -55,25 +59,20 @@ function onCalendarConfirm(value) {
   end.value = second ? formatLocalDate(second) : start.value
   calendarOpen.value = false
 }
-const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六']
 const rangeLabel = computed(() => {
-  const label = (/** @type {string} */ text) => {
-    const date = parseLocalDate(text)
-    return date
-      ? `${date.getMonth() + 1}/${date.getDate()}（${WEEKDAY_LABELS[date.getDay()]}）`
-      : ''
-  }
+  void locale.value
+  const label = (/** @type {string} */ text) => (parseLocalDate(text) ? formatDateLabel(text) : '')
   if (!start.value) return ''
   const days = daysBetweenInclusive(start.value, end.value)
   return start.value === end.value
-    ? `${label(start.value)}，1 天`
-    : `${label(start.value)} – ${label(end.value)}，共 ${days} 天`
+    ? t('leaveSheet.oneDay', { date: label(start.value) })
+    : t('leaveSheet.manyDays', { start: label(start.value), end: label(end.value), days })
 })
 
 const rangeError = computed(() => {
-  if (!start.value || !end.value) return '請選擇日期'
-  if (end.value < start.value) return '結束日期不可早於開始日期'
-  if (daysBetweenInclusive(start.value, end.value) > MAX_DAYS) return `一次最多 ${MAX_DAYS} 天`
+  if (!start.value || !end.value) return t('leaveSheet.chooseDates')
+  if (end.value < start.value) return t('leaveSheet.endBeforeStart')
+  if (daysBetweenInclusive(start.value, end.value) > MAX_DAYS) return t('leaveSheet.maxDays', { max: MAX_DAYS })
   return ''
 })
 const dates = computed(() => {
@@ -90,7 +89,7 @@ function apply() {
     plan.value.create.length +
     plan.value.updateLeave.length +
     (conflictMode.value === 'REPLACE' ? plan.value.conflicts.length : 0)
-  if (!changed) return showToast('選取的日期都已有工作紀錄，沒有變更')
+  if (!changed) return showToast(t('leaveSheet.noChange'))
   emit('apply', {
     dates: dates.value,
     leaveType: leaveType.value,
@@ -110,34 +109,34 @@ function apply() {
     @update:show="emit('update:show', $event)"
   >
     <div class="leave-sheet__body">
-      <h2>請假</h2>
+      <h2>{{ t('leaveSheet.title') }}</h2>
       <button type="button" class="leave-range" @click="calendarOpen = true">
         <van-icon name="calendar-o" />
-        <span class="leave-range__text">{{ rangeLabel || '選擇日期' }}</span>
-        <span class="leave-range__action">選擇起訖日</span>
+        <span class="leave-range__text">{{ rangeLabel || t('trips.chooseDate') }}</span>
+        <span class="leave-range__action">{{ t('leaveSheet.pickRange') }}</span>
       </button>
       <van-calendar
         v-model:show="calendarOpen"
         :key="calendarKey"
         type="range"
         teleport="body"
-        title="選擇請假日期"
+        :title="t('leaveSheet.calendarTitle')"
         :subtitle="undefined"
         allow-same-day
         :default-date="calendarDefault"
         :min-date="calendarMin"
         :max-date="calendarMax"
         :max-range="MAX_DAYS"
-        :range-prompt="`一次最多 ${MAX_DAYS} 天`"
-        confirm-text="確定"
-        confirm-disabled-text="請再點結束日"
+        :range-prompt="t('leaveSheet.maxDays', { max: MAX_DAYS })"
+        :confirm-text="t('leaveSheet.confirm')"
+        :confirm-disabled-text="t('leaveSheet.tapEnd')"
         @confirm="onCalendarConfirm"
       />
-      <p class="leave-sheet__hint">點開始日、再點結束日；只請一天就點同一天兩次。</p>
+      <p class="leave-sheet__hint">{{ t('leaveSheet.hint') }}</p>
       <p v-if="rangeError" class="leave-sheet__error">{{ rangeError }}</p>
 
-      <h3>請假類型</h3>
-      <div class="leave-types" role="radiogroup" aria-label="請假類型">
+      <h3>{{ t('leaveSheet.type') }}</h3>
+      <div class="leave-types" role="radiogroup" :aria-label="t('leaveSheet.type')">
         <button
           v-for="type in LEAVE_TYPES"
           :key="type.id"
@@ -148,20 +147,20 @@ function apply() {
           :aria-checked="leaveType === type.id"
           @click="leaveType = type.id"
         >
-          {{ type.label }}
+          {{ leaveTypeLabel(type.id, type.label) }}
         </button>
       </div>
-      <p class="leave-sheet__note">請假一律無薪，不產生工時與薪資，也不計入集簽工作天。</p>
+      <p class="leave-sheet__note">{{ t('leaveSheet.note') }}</p>
 
       <div v-if="dates.length" class="leave-plan">
-        <span>新增 {{ plan.create.length }} 天</span>
-        <span v-if="plan.updateLeave.length">更新 {{ plan.updateLeave.length }} 天請假</span>
+        <span>{{ t('leaveSheet.createCount', { count: plan.create.length }) }}</span>
+        <span v-if="plan.updateLeave.length">{{ t('leaveSheet.updateCount', { count: plan.updateLeave.length }) }}</span>
         <span v-if="plan.conflicts.length" class="leave-plan__conflict">
-          {{ plan.conflicts.length }} 天已有工作紀錄
+          {{ t('leaveSheet.conflictCount', { count: plan.conflicts.length }) }}
         </span>
       </div>
       <div v-if="plan.conflicts.length" class="leave-conflict" role="alert">
-        <strong>這些日期已有工作紀錄：</strong>
+        <strong>{{ t('leaveSheet.conflictTitle') }}</strong>
         <p>
           {{
             plan.conflicts
@@ -170,13 +169,13 @@ function apply() {
           }}
         </p>
         <van-radio-group v-model="conflictMode" class="leave-conflict__options">
-          <van-radio name="SKIP">保留工作紀錄，只把其他日期設為請假（建議）</van-radio>
-          <van-radio name="REPLACE">這些日期也改成請假（原本的時間會保留，之後可以恢復）</van-radio>
+          <van-radio name="SKIP">{{ t('leaveSheet.skip') }}</van-radio>
+          <van-radio name="REPLACE">{{ t('leaveSheet.replace') }}</van-radio>
         </van-radio-group>
       </div>
 
       <van-button block type="primary" class="leave-sheet__primary" @click="apply"
-        >套用請假</van-button
+        >{{ t('leaveSheet.apply') }}</van-button
       >
     </div>
   </van-popup>

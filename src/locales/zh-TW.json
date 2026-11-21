@@ -1241,7 +1241,11 @@
     "invalidPaidDate": "付款日期無效",
     "endBeforePaid": "結束日期不可早於已付紀錄",
     "invalidRecurringStart": "固定支出的起始日期無效",
-    "invalidInterval": "固定支出的間隔天數無效"
+    "invalidInterval": "固定支出的間隔天數無效",
+    "leaveTypeRequired": "請選擇請假類型",
+    "blackoutStartRequired": "請選擇禁休開始日",
+    "blackoutEndRequired": "請選擇禁休結束日",
+    "blackoutEndBeforeStart": "禁休結束日不可早於開始日"
   },
   "passwordRules": {
     "length": "8 個字元以上",
@@ -1389,5 +1393,78 @@
     "selectedAria": "已選商品",
     "selectedCount": "已選 {count} 項",
     "viewList": "看清單"
+  },
+  "leaveTypes": {
+    "PERSONAL": "事假",
+    "SICK": "病假",
+    "HOLIDAY": "Holiday／旅行",
+    "UNPAID_OTHER": "其他無薪假",
+    "REST_DAY": "正常休息日"
+  },
+  "leaveTypesShort": {
+    "PERSONAL": "事假",
+    "SICK": "病假",
+    "HOLIDAY": "Ho",
+    "UNPAID_OTHER": "其他",
+    "REST_DAY": "正常"
+  },
+  "leaveSheet": {
+    "title": "請假",
+    "oneDay": "{date}，1 天",
+    "manyDays": "{start} – {end}，共 {days} 天",
+    "chooseDates": "請選擇日期",
+    "endBeforeStart": "結束日期不可早於開始日期",
+    "maxDays": "一次最多 {max} 天",
+    "noChange": "選取的日期都已有工作紀錄，沒有變更",
+    "pickRange": "選擇起訖日",
+    "calendarTitle": "選擇請假日期",
+    "confirm": "確定",
+    "tapEnd": "請再點結束日",
+    "hint": "點開始日、再點結束日；只請一天就點同一天兩次。",
+    "type": "請假類型",
+    "note": "請假一律無薪，不產生工時與薪資，也不計入集簽工作天。",
+    "createCount": "新增 {count} 天",
+    "updateCount": "更新 {count} 天請假",
+    "conflictCount": "{count} 天已有工作紀錄",
+    "conflictTitle": "這些日期已有工作紀錄：",
+    "skip": "保留工作紀錄，只把其他日期設為請假（建議）",
+    "replace": "這些日期也改成請假（原本的時間會保留，之後可以恢復）",
+    "apply": "套用請假"
+  },
+  "blackout": {
+    "editTitle": "編輯禁休公告",
+    "saved": "已儲存禁休公告",
+    "deleteTitle": "刪除禁休公告？",
+    "deleteMessage": "{start} 至 {end} 的公告將刪除。班表與請假不受影響。",
+    "period": "{start} 至 {end}",
+    "noBody": "沒有公告全文",
+    "edit": "修改",
+    "addAnother": "新增其他禁休期間",
+    "start": "禁休開始",
+    "end": "禁休結束",
+    "titleLabel": "公告標題",
+    "titlePlaceholder": "選填，例如：年底旺季禁休",
+    "bodyLabel": "公告全文",
+    "bodyPlaceholder": "貼上或輸入主管公告全文（選填）",
+    "note": "禁休公告只是提醒，不會改變班表、薪資或集簽天數。",
+    "save": "儲存公告"
+  },
+  "fillPreview": {
+    "newShifts": "新增班表",
+    "countUnit": " 筆",
+    "paidHours": "計薪工時",
+    "hoursUnit": " 小時",
+    "estimatedGross": "預估稅前",
+    "excludedNote": "未含 {items}，費率確認後再新增的班才會計入",
+    "dayOff": "休假",
+    "shift": "班表",
+    "keepExisting": "已有紀錄的 {count} 天不會被覆蓋",
+    "offDays": "，{count} 天是休息日",
+    "editLater": "。新增後仍可逐日修改。",
+    "nothingToAdd": "沒有需要新增的班表",
+    "emptyExisting": "這段期間已有 {count} 天紀錄",
+    "emptyOff": "{count} 天是休息日",
+    "adjustShifts": "調整班別",
+    "addRecords": "加入 {count} 筆紀錄"
   }
 }

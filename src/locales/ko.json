@@ -1241,7 +1241,11 @@
     "invalidPaidDate": "지급일이 올바르지 않아요",
     "endBeforePaid": "종료일은 지급 기록보다 앞설 수 없어요",
     "invalidRecurringStart": "고정 지출 시작일이 올바르지 않아요",
-    "invalidInterval": "고정 지출 간격이 올바르지 않아요"
+    "invalidInterval": "고정 지출 간격이 올바르지 않아요",
+    "leaveTypeRequired": "휴가 유형을 선택해 주세요",
+    "blackoutStartRequired": "휴가 금지 시작일을 선택해 주세요",
+    "blackoutEndRequired": "휴가 금지 종료일을 선택해 주세요",
+    "blackoutEndBeforeStart": "휴가 금지 종료일은 시작일보다 앞설 수 없어요"
   },
   "passwordRules": {
     "length": "8자 이상",
@@ -1389,5 +1393,78 @@
     "selectedAria": "선택한 상품",
     "selectedCount": "{count}개 선택",
     "viewList": "목록 보기"
+  },
+  "leaveTypes": {
+    "PERSONAL": "개인 휴가",
+    "SICK": "병가",
+    "HOLIDAY": "휴가/여행",
+    "UNPAID_OTHER": "기타 무급 휴가",
+    "REST_DAY": "정규 휴무"
+  },
+  "leaveTypesShort": {
+    "PERSONAL": "개인",
+    "SICK": "병가",
+    "HOLIDAY": "휴가",
+    "UNPAID_OTHER": "무급",
+    "REST_DAY": "휴무"
+  },
+  "leaveSheet": {
+    "title": "휴가",
+    "oneDay": "{date}, 1일",
+    "manyDays": "{start} – {end}, 총 {days}일",
+    "chooseDates": "날짜를 선택해 주세요",
+    "endBeforeStart": "종료일은 시작일보다 앞설 수 없어요",
+    "maxDays": "한 번에 최대 {max}일",
+    "noChange": "선택한 날짜에 모두 근무 기록이 있어 변경 사항이 없어요",
+    "pickRange": "시작일과 종료일 선택",
+    "calendarTitle": "휴가 날짜 선택",
+    "confirm": "확인",
+    "tapEnd": "종료일을 눌러 주세요",
+    "hint": "시작일을 누른 뒤 종료일을 누르세요. 하루만이면 같은 날을 두 번 누르세요.",
+    "type": "휴가 유형",
+    "note": "휴가는 모두 무급이며 근무시간·급여가 생기지 않고 비자 근무일에도 포함되지 않아요.",
+    "createCount": "{count}일 추가",
+    "updateCount": "휴가 {count}일 수정",
+    "conflictCount": "{count}일은 이미 근무 기록이 있어요",
+    "conflictTitle": "다음 날짜에 근무 기록이 있어요:",
+    "skip": "근무 기록은 두고 나머지 날짜만 휴가로 설정 (추천)",
+    "replace": "이 날짜도 휴가로 변경 (원래 시간은 보관되어 나중에 복원 가능)",
+    "apply": "휴가 적용"
+  },
+  "blackout": {
+    "editTitle": "휴가 금지 공지 편집",
+    "saved": "휴가 금지 공지를 저장했어요",
+    "deleteTitle": "휴가 금지 공지를 삭제할까요?",
+    "deleteMessage": "{start}~{end} 공지가 삭제돼요. 근무표와 휴가에는 영향이 없어요.",
+    "period": "{start}~{end}",
+    "noBody": "공지 전문 없음",
+    "edit": "수정",
+    "addAnother": "다른 휴가 금지 기간 추가",
+    "start": "휴가 금지 시작",
+    "end": "휴가 금지 종료",
+    "titleLabel": "공지 제목",
+    "titlePlaceholder": "선택, 예: 연말 성수기 휴가 금지",
+    "bodyLabel": "공지 전문",
+    "bodyPlaceholder": "관리자 공지를 붙여넣거나 입력 (선택)",
+    "note": "휴가 금지 공지는 알림일 뿐 근무표, 급여, 비자 일수를 바꾸지 않아요.",
+    "save": "공지 저장"
+  },
+  "fillPreview": {
+    "newShifts": "추가 근무",
+    "countUnit": "건",
+    "paidHours": "유급 시간",
+    "hoursUnit": "시간",
+    "estimatedGross": "예상 세전",
+    "excludedNote": "{items} 미포함, 요율 확인 후 추가한 근무만 반영돼요",
+    "dayOff": "휴무",
+    "shift": "근무",
+    "keepExisting": "기록이 있는 {count}일은 덮어쓰지 않아요",
+    "offDays": ", {count}일은 휴무일",
+    "editLater": ". 추가한 뒤에도 하루씩 수정할 수 있어요.",
+    "nothingToAdd": "추가할 근무가 없어요",
+    "emptyExisting": "이 기간에 {count}일 기록이 있어요",
+    "emptyOff": "{count}일은 휴무일이에요",
+    "adjustShifts": "근무 유형 조정",
+    "addRecords": "기록 {count}건 추가"
   }
 }

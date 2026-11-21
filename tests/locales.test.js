@@ -31,8 +31,14 @@ describe.each(SUPPORTED_LOCALES)('語系 %s', (locale) => {
 
   it('key 與繁體中文完全一致', () => {
     const keys = Object.keys(messages)
-    expect(referenceKeys.filter((key) => !(key in messages)), '缺少的 key').toEqual([])
-    expect(keys.filter((key) => !(key in reference)), '多出的 key').toEqual([])
+    expect(
+      referenceKeys.filter((key) => !(key in messages)),
+      '缺少的 key',
+    ).toEqual([])
+    expect(
+      keys.filter((key) => !(key in reference)),
+      '多出的 key',
+    ).toEqual([])
   })
 
   it('每個值都是非空字串', () => {

@@ -30,7 +30,9 @@ describe('resolveInitialLocale', () => {
   })
 
   it('儲存值無效或瀏覽器語言都不支援時用繁體中文', () => {
-    expect(resolveInitialLocale({ saved: 'xx', browserLanguages: ['fr-FR', 'zh-CN'] })).toBe('zh-TW')
+    expect(resolveInitialLocale({ saved: 'xx', browserLanguages: ['fr-FR', 'zh-CN'] })).toBe(
+      'zh-TW',
+    )
     expect(resolveInitialLocale()).toBe('zh-TW')
   })
 })

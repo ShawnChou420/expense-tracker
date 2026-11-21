@@ -143,9 +143,9 @@ async function deleteAccount() {
         </button>
       </div>
 
-      <van-loading v-if="loading && !account" class="account-page__loading" size="24px"
-        >{{ t('account.loadingProfile') }}</van-loading
-      >
+      <van-loading v-if="loading && !account" class="account-page__loading" size="24px">{{
+        t('account.loadingProfile')
+      }}</van-loading>
       <div v-else-if="loadError && !account" class="account-card-block">
         <p class="account-page__error">{{ loadError }}</p>
         <van-button block plain type="primary" @click="load">{{ t('common.retry') }}</van-button>
@@ -220,7 +220,9 @@ async function deleteAccount() {
             />
             <ul class="account-page__rules" :aria-label="t('account.newPasswordRules')">
               <li v-for="check in checks" :key="check.key" :class="{ 'is-ok': check.ok }">
-                <van-icon :name="check.ok ? 'success' : 'circle'" />{{ t(`passwordRules.${check.key}`) }}
+                <van-icon :name="check.ok ? 'success' : 'circle'" />{{
+                  t(`passwordRules.${check.key}`)
+                }}
               </li>
             </ul>
             <small>{{ t('account.passwordChangeNote') }}</small>
@@ -244,7 +246,12 @@ async function deleteAccount() {
         <small>{{ t('language.hint') }}</small>
       </section>
 
-      <van-button block plain type="danger" class="account-page__signout" @click="emit('sign-out')"
+      <van-button
+        block
+        plain
+        type="danger"
+        class="account-page__signout"
+        @click="emit('sign-out')"
         >{{ t('account.logout') }}</van-button
       >
 
@@ -254,9 +261,7 @@ async function deleteAccount() {
         aria-labelledby="account-delete-title"
       >
         <h3 id="account-delete-title">{{ t('account.deleteAccount') }}</h3>
-        <small
-          >{{ t('account.deleteWarning') }}</small
-        >
+        <small>{{ t('account.deleteWarning') }}</small>
         <form class="account-page__form" @submit.prevent="deleteAccount">
           <van-field
             v-model="deletePassword"

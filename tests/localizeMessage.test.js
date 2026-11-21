@@ -14,7 +14,9 @@ describe('localizeMessage', () => {
   it('domain 驗證訊息會轉成目前語系', () => {
     applyLocale('en-AU', { persist: false })
     expect(localizeMessage(passwordChangeError({}))).toBe('Enter your current password')
-    expect(localizeMessage(nicknameError('x'.repeat(100)))).toMatch(/^Display names can be at most \d+ characters$/)
+    expect(localizeMessage(nicknameError('x'.repeat(100)))).toMatch(
+      /^Display names can be at most \d+ characters$/,
+    )
     expect(localizeMessage('操作失敗（503）')).toBe('Request failed (503)')
   })
 

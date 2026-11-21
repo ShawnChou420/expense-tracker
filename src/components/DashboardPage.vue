@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } fr
 import { useI18n } from 'vue-i18n'
 import LanguageSwitcher from './LanguageSwitcher.vue'
 import { formatDateRange, formatHoursLabel, formatLongDate, joinList } from '../i18n/format.js'
+import { expenseGroupLabel } from '../i18n/labels.js'
 import { showConfirmDialog, showToast } from 'vant'
 import { formatLocalDate, parseLocalDate } from '../domain/date.js'
 import {
@@ -182,6 +183,13 @@ const summary = computed(() =>
     salaryDeposits: salaryDeposits.value,
   }),
 )
+// 支出分布圖的分類名稱依目前語系顯示（資料只存 id）
+const localizedDistribution = computed(() => {
+  void locale.value
+  const localize = (entry) => ({ ...entry, label: expenseGroupLabel(entry.id, entry.label) })
+  const distribution = summary.value.distribution
+  return { ...distribution, chart: distribution.chart.map(localize), detail: distribution.detail.map(localize) }
+})
 const transactions = computed(() =>
   getActualTransactions({ trips: trips.value, expenses: expenses.value, salaryDeposits: salaryDeposits.value }),
 )
@@ -949,13 +957,13 @@ async function saveTarget() {
             <ExpenseDonutChart
               :format="money"
               v-if="summary.distribution.totalCents > 0"
-              :distribution="summary.distribution"
+              :distribution="localizedDistribution"
               :active="active"
               @select="selectedExpenseGroup = $event"
             />
             <p v-else class="empty-copy">{{ t('dashboard.noPaidExpenses') }}</p>
             <p v-if="selectedExpenseGroup" class="chart-selection">
-              {{ selectedExpenseGroup.label }} · {{ money(selectedExpenseGroup.amountCents) }}
+              {{ expenseGroupLabel(selectedExpenseGroup.id, selectedExpenseGroup.label) }} · {{ money(selectedExpenseGroup.amountCents) }}
             </p>
             <div v-if="summary.distribution.detail.length" class="category-list">
               <button
@@ -965,7 +973,7 @@ async function saveTarget() {
                 @click="selectedExpenseGroup = entry"
               >
                 <span class="category-name"
-                  ><i :style="{ background: entry.color }"></i>{{ entry.label }}</span
+                  ><i :style="{ background: entry.color }"></i>{{ expenseGroupLabel(entry.id, entry.label) }}</span
                 >
                 <span>{{ money(entry.amountCents) }} · {{ entry.percent }}%</span>
               </button>

@@ -3,10 +3,12 @@
 // 與首頁「今天」用同一個 todayRepository，所以在這裡修改，首頁同一天也會看到。
 // 日記內容要按「儲存」；父元件用 dirty／save／reset 接上當天面板的未儲存提醒。
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { showToast } from 'vant'
 import { todayRepository } from '../repositories/todayRepository.js'
 import { MOODS, REPEAT_OPTIONS } from '../domain/today.js'
 
+const { t } = useI18n()
 const props = defineProps({
   // 本地日期 YYYY-MM-DD
   date: { type: String, required: true },
@@ -40,7 +42,7 @@ async function load() {
     savedText.value = journalText.value
   } catch (error) {
     if (seq !== loadSeq) return
-    loadError.value = error.message || '暫時無法載入'
+    loadError.value = error.message || t('today.loadFailedShort')
   } finally {
     if (seq === loadSeq) loading.value = false
   }
@@ -118,14 +120,14 @@ defineExpose({ dirty, save, reset })
 
 <template>
   <section class="day-life" aria-labelledby="day-life-title">
-    <h2 id="day-life-title">生活紀錄</h2>
+    <h2 id="day-life-title">{{ t('calendar.dailyLife') }}</h2>
     <van-skeleton v-if="loading" :row="3" />
     <p v-else-if="loadError" class="day-life__error" role="alert">
-      生活紀錄暫時載入不了：{{ loadError }}
-      <van-button size="mini" plain type="primary" @click="load">重試</van-button>
+      {{ t('dayLife.loadFailed', { error: loadError }) }}
+      <van-button size="mini" plain type="primary" @click="load">{{ t('common.retry') }}</van-button>
     </p>
     <template v-else>
-      <div class="day-life__moods" role="group" aria-label="心情">
+      <div class="day-life__moods" role="group" :aria-label="t('today.mood')">
         <button
           v-for="option in MOODS"
           :key="option.value"
@@ -136,21 +138,21 @@ defineExpose({ dirty, save, reset })
           @click="chooseMood(option.value)"
         >
           <span aria-hidden="true">{{ option.emoji }}</span>
-          <small>{{ option.label }}</small>
+          <small>{{ t(`today.moods.${option.value}`) }}</small>
         </button>
       </div>
 
       <label class="day-life__journal">
-        <span>日記／備註</span>
+        <span>{{ t('today.journal') }}</span>
         <textarea
           v-model="journalText"
           rows="3"
           maxlength="2000"
-          placeholder="記一下這天發生的事"
+          :placeholder="t('today.journalPlaceholder')"
         ></textarea>
       </label>
       <div class="day-life__journal-foot">
-        <small>{{ dirty ? '尚未儲存' : savedText ? '已儲存' : '' }}</small>
+        <small>{{ dirty ? t('common.unsaved') : savedText ? t('common.saved') : '' }}</small>
         <van-button
           size="small"
           type="primary"
@@ -159,13 +161,13 @@ defineExpose({ dirty, save, reset })
           :loading="savingJournal"
           @click="save"
         >
-          儲存日記
+          {{ t('dayLife.saveJournal') }}
         </van-button>
       </div>
 
       <div class="day-life__tasks">
         <h3>
-          待辦事項
+          {{ t('dayLife.tasks') }}
           <small v-if="tasks.length">{{ doneCount }}/{{ tasks.length }}</small>
         </h3>
         <ul v-if="tasks.length">
@@ -176,7 +178,7 @@ defineExpose({ dirty, save, reset })
               class="day-life__check"
               :class="{ 'is-done': task.completed }"
               :aria-checked="task.completed"
-              :aria-label="`${task.completed ? '取消完成' : '完成'}：${task.title}`"
+              :aria-label="t(task.completed ? 'today.untoggleTask' : 'today.toggleTask', { title: task.title })"
               @click="toggle(task)"
             >
               <van-icon v-if="task.completed" name="success" aria-hidden="true" />
@@ -184,20 +186,20 @@ defineExpose({ dirty, save, reset })
             <span :class="{ 'is-done': task.completed }">
               {{ task.title }}
               <small v-if="task.repeatType && task.repeatType !== 'NONE'">
-                {{ REPEAT_OPTIONS.find((option) => option.value === task.repeatType)?.label }}
+                {{ t(`today.repeats.${task.repeatType}`) }}
               </small>
             </span>
           </li>
         </ul>
-        <p v-else class="day-life__empty">這天沒有待辦。</p>
+        <p v-else class="day-life__empty">{{ t('dayLife.noTasks') }}</p>
         <form class="day-life__add" @submit.prevent="quickAdd">
           <input
             v-model="quickTitle"
             type="text"
             maxlength="80"
             enterkeyhint="done"
-            placeholder="新增這天的待辦"
-            aria-label="新增這天的待辦"
+            :placeholder="t('dayLife.addTaskPlaceholder')"
+            :aria-label="t('dayLife.addTaskPlaceholder')"
           />
           <van-button
             native-type="submit"
@@ -206,7 +208,7 @@ defineExpose({ dirty, save, reset })
             :loading="adding"
             :disabled="!quickTitle.trim()"
           >
-            新增
+            {{ t('common.add') }}
           </van-button>
         </form>
       </div>

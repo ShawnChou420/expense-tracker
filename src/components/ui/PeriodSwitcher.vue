@@ -1,4 +1,5 @@
 <script setup>
+import { useI18n } from 'vue-i18n'
 // 本週／本月切換＋上一期／下一期＋返回本期。
 defineProps({
   period: { type: String, required: true }, // week | month
@@ -6,37 +7,38 @@ defineProps({
   isCurrent: Boolean,
 })
 const emit = defineEmits(['update:period', 'move', 'reset'])
+const { t } = useI18n()
 </script>
 
 <template>
-  <section class="period-switcher app-page__card" aria-label="日期篩選">
+  <section class="period-switcher app-page__card" :aria-label="t('period.filterAria')">
     <div class="period-switcher__modes">
       <button
         type="button"
         :class="{ selected: period === 'week' }"
         @click="emit('update:period', 'week')"
       >
-        本週
+        {{ t('common.thisWeek') }}
       </button>
       <button
         type="button"
         :class="{ selected: period === 'month' }"
         @click="emit('update:period', 'month')"
       >
-        本月
+        {{ t('common.thisMonth') }}
       </button>
     </div>
     <div class="period-switcher__nav">
-      <button type="button" aria-label="上一期" @click="emit('move', -1)">
+      <button type="button" :aria-label="t('period.previous')" @click="emit('move', -1)">
         <van-icon name="arrow-left" />
       </button>
       <strong>{{ rangeLabel }}</strong>
-      <button type="button" aria-label="下一期" @click="emit('move', 1)">
+      <button type="button" :aria-label="t('period.next')" @click="emit('move', 1)">
         <van-icon name="arrow" />
       </button>
     </div>
     <button v-if="!isCurrent" class="period-switcher__reset" type="button" @click="emit('reset')">
-      返回本期
+      {{ t('period.backToCurrent') }}
     </button>
   </section>
 </template>

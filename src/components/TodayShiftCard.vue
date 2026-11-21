@@ -2,7 +2,9 @@
 // 首頁「今日工作」：正在上班／今天稍後／今天剛下班／下一班／休息。
 // 金額直接用班表上已算好的稅前薪資（useShiftCalculator），不在這裡重新計薪。
 import { computed } from 'vue'
-import { describeStart, formatDateLabel, formatDuration, getFocusShift } from '../domain/today.js'
+import { useI18n } from 'vue-i18n'
+import { getFocusShift } from '../domain/today.js'
+import { describeStart, formatDateLabel, formatDuration } from '../i18n/format.js'
 
 const props = defineProps({
   records: { type: Array, required: true },
@@ -14,6 +16,7 @@ const props = defineProps({
 })
 const emit = defineEmits(['open-payroll', 'import-payslip', 'work-setup', 'add-shift', 'adjust-shift'])
 
+const { t } = useI18n()
 const focus = computed(() => getFocusShift(props.records, props.now))
 const shift = computed(() => focus.value.shift)
 
@@ -21,17 +24,17 @@ const title = computed(() => {
   const night = shift.value?.crossesMidnight
   switch (focus.value.kind) {
     case 'current':
-      return night ? '夜班進行中' : '正在上班'
+      return night ? t('shiftCard.nightInProgress') : t('shiftCard.working')
     case 'later-today':
-      return night ? '今日夜班' : '今日班次'
+      return night ? t('dashboard.nightShift') : t('dashboard.todayShift')
     case 'finished':
-      return '今天的班已結束'
+      return t('shiftCard.finished')
     case 'leave':
-      return '今天休假'
+      return t('shiftCard.onLeave')
     case 'next':
-      return '今天休息'
+      return t('shiftCard.offToday')
     default:
-      return '今天休息'
+      return t('shiftCard.offToday')
   }
 })
 
@@ -40,9 +43,9 @@ const status = computed(() => {
   if (!value) return ''
   if (focus.value.kind === 'current') {
     const left = Math.max(0, Math.round((value.end.getTime() - props.now.getTime()) / 60000))
-    return `還有 ${formatDuration(left)}下班`
+    return t('shiftCard.timeLeft', { duration: formatDuration(left) })
   }
-  if (focus.value.kind === 'finished') return '辛苦了，好好休息'
+  if (focus.value.kind === 'finished') return t('shiftCard.wellDone')
   return describeStart(value, props.now)
 })
 
@@ -50,11 +53,11 @@ const status = computed(() => {
 const showDetail = computed(() => ['current', 'later-today', 'finished'].includes(focus.value.kind))
 const shiftLabel = computed(() =>
   shift.value
-    ? `${shift.value.startTime} → ${shift.value.endTime}${shift.value.crossesMidnight ? '（隔日）' : ''}`
+    ? `${shift.value.startTime} → ${shift.value.endTime}${shift.value.crossesMidnight ? t('shiftCard.nextDay') : ''}`
     : '',
 )
 const restMessage = computed(() =>
-  focus.value.kind === 'leave' ? '今天不用上班，照顧好自己。' : '今天休息，享受自己的時間。',
+  focus.value.kind === 'leave' ? t('shiftCard.leaveMessage') : t('shiftCard.restMessage'),
 )
 </script>
 
@@ -73,20 +76,20 @@ const restMessage = computed(() =>
         <p v-if="showDetail">{{ formatDateLabel(shift.workDate) }} · {{ status }}</p>
         <p v-else>{{ restMessage }}</p>
       </div>
-      <span v-if="focus.kind === 'current'" class="today-shift__live">上班中</span>
+      <span v-if="focus.kind === 'current'" class="today-shift__live">{{ t('dashboard.onShift') }}</span>
     </div>
 
     <template v-if="showDetail">
       <button type="button" class="today-shift__body" @click="emit('open-payroll')">
         <strong class="today-shift__time">{{ shiftLabel }}</strong>
         <span class="today-shift__meta">
-          預估計薪 {{ formatDuration(shift.paidMinutes) }}
+          {{ t('shiftCard.paidTime', { duration: formatDuration(shift.paidMinutes) }) }}
           <template v-if="shift.smokoDeductMinutes > 0">
-            · 已扣 Smoko {{ formatDuration(shift.smokoDeductMinutes) }}
+            {{ t('shiftCard.smokoDeducted', { duration: formatDuration(shift.smokoDeductMinutes) }) }}
           </template>
         </span>
         <span v-if="payReady" class="today-shift__pay">
-          <small>預估稅前薪資</small>
+          <small>{{ t('shiftCard.estimatedGross') }}</small>
           <strong>{{ currency }} {{ money(shift.grossCents) }}</strong>
         </span>
       </button>
@@ -99,13 +102,13 @@ const restMessage = computed(() =>
         block
         @click="emit('adjust-shift', shift.workDate)"
       >
-        調整上下班時間
+        {{ t('shiftCard.adjustTimes') }}
       </van-button>
       <div v-if="!payReady" class="today-shift__setup" role="note">
-        <p>尚未設定薪資費率，請先上傳 Payslip 或手動設定。</p>
+        <p>{{ t('shiftCard.noRates') }}</p>
         <div>
-          <van-button size="small" type="primary" @click="emit('import-payslip')">上傳 Payslip</van-button>
-          <van-button size="small" plain type="primary" @click="emit('work-setup')">手動設定</van-button>
+          <van-button size="small" type="primary" @click="emit('import-payslip')">{{ t('shiftCard.uploadPayslip') }}</van-button>
+          <van-button size="small" plain type="primary" @click="emit('work-setup')">{{ t('shiftCard.manualSetup') }}</van-button>
         </div>
       </div>
     </template>
@@ -116,7 +119,7 @@ const restMessage = computed(() =>
       class="today-shift__next"
       @click="emit('open-payroll')"
     >
-      <span>下一班 · {{ describeStart(shift, now) }}</span>
+      <span>{{ t('shiftCard.next', { when: describeStart(shift, now) }) }}</span>
       <van-icon name="arrow" aria-hidden="true" />
     </button>
     <van-button
@@ -129,7 +132,7 @@ const restMessage = computed(() =>
       block
       @click="emit('adjust-shift', shift.workDate)"
     >
-      調整下一班時間
+      {{ t('shiftCard.adjustNext') }}
     </van-button>
     <button
       v-else-if="!showDetail"
@@ -137,7 +140,7 @@ const restMessage = computed(() =>
       class="today-shift__next"
       @click="emit('add-shift')"
     >
-      <span>還沒有之後的班表，記錄一下</span>
+      <span>{{ t('shiftCard.noUpcoming') }}</span>
       <van-icon name="arrow" aria-hidden="true" />
     </button>
   </section>

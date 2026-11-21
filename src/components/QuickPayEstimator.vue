@@ -1,6 +1,8 @@
 <script setup>
 // 訪客首頁：雙滑桿快速試算（時薪 × 每週工時）。只是 UI 試算狀態，不寫入任何正式設定或班表。
 import { computed, onMounted, ref, watchEffect } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { joinList } from '../i18n/format.js'
 import { getMinimumWage } from '../domain/minimumWage.js'
 import {
   QUICK_ESTIMATE_EXCLUDES,
@@ -14,6 +16,12 @@ import {
 import { formatLocalDate } from '../domain/date.js'
 
 const emit = defineEmits(['start', 'import-payslip', 'open-account'])
+const { t } = useI18n()
+// 與 QUICK_ESTIMATE_EXCLUDES 同順序的翻譯 key
+const EXCLUDE_KEYS = ['casualLoading', 'nightLoading', 'weekendHoliday', 'overtime', 'smoko', 'allowances', 'payg']
+const excludesText = computed(() =>
+  joinList(QUICK_ESTIMATE_EXCLUDES.map((label, index) => (EXCLUDE_KEYS[index] ? t(`guest.excludes.${EXCLUDE_KEYS[index]}`) : label))),
+)
 
 const wage = getMinimumWage(formatLocalDate(new Date()))
 // 以整數保存：時薪 cents、工時 1/100 小時，滑桿與輸入框共用同一個值，不會被四捨五入成整數
@@ -82,8 +90,8 @@ function labelSlider(
 }
 onMounted(() =>
   watchEffect(() => {
-    labelSlider(rateSlider.value, '時薪', `A$${formatRate(quickRateCents.value)}／小時`)
-    labelSlider(hoursSlider.value, '每週工時', `${formatQuickHours(quickHoursHundredths.value)} 小時`)
+    labelSlider(rateSlider.value, t('guest.hourlyRate'), t('guest.rateAria', { rate: `$${formatRate(quickRateCents.value)}` }))
+    labelSlider(hoursSlider.value, t('guest.hoursPerWeek'), t('guest.hoursAria', { hours: formatQuickHours(quickHoursHundredths.value) }))
   }),
 )
 const effectiveLabel = wage.effectiveDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')
@@ -91,13 +99,13 @@ const effectiveLabel = wage.effectiveDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '
 
 <template>
   <section class="quick-pay" aria-labelledby="quick-pay-title">
-    <h1 id="quick-pay-title" class="quick-pay__title">來澳洲打工，這週能賺多少？💰</h1>
-    <p class="quick-pay__lede">動動滑桿，馬上試算你的每週薪水！</p>
+    <h1 id="quick-pay-title" class="quick-pay__title">{{ t('guest.title') }}</h1>
+    <p class="quick-pay__lede">{{ t('guest.subtitle') }}</p>
 
     <div class="quick-pay__card">
       <div class="quick-pay__field">
         <div class="quick-pay__row">
-          <label for="quick-rate" class="quick-pay__label">時薪</label>
+          <label for="quick-rate" class="quick-pay__label">{{ t('guest.hourlyRate') }}</label>
           <span class="quick-pay__value">
             A$<input
               id="quick-rate"
@@ -111,7 +119,7 @@ const effectiveLabel = wage.effectiveDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '
               aria-describedby="quick-rate-hint"
               @blur="commitRate"
               @keydown="blurOnEnter"
-            /><small>／小時</small>
+            /><small>{{ t('guest.perHour') }}</small>
           </span>
         </div>
         <van-slider
@@ -125,13 +133,13 @@ const effectiveLabel = wage.effectiveDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '
           @update:model-value="onRateSlide"
         />
         <p id="quick-rate-hint" class="quick-pay__hint" :class="{ 'is-error': rateError }">
-          {{ rateError ? '請輸入 20 到 60 之間的數字，例如 31.67' : '可直接點數字輸入，例如 31.67' }}
+          {{ rateError ? t('guest.rateError') : t('guest.rateHint') }}
         </p>
       </div>
 
       <div class="quick-pay__field">
         <div class="quick-pay__row">
-          <label for="quick-hours" class="quick-pay__label">每週工時</label>
+          <label for="quick-hours" class="quick-pay__label">{{ t('guest.hoursPerWeek') }}</label>
           <span class="quick-pay__value">
             <input
               id="quick-hours"
@@ -145,7 +153,7 @@ const effectiveLabel = wage.effectiveDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '
               aria-describedby="quick-hours-hint"
               @blur="commitHours"
               @keydown="blurOnEnter"
-            /><small>小時</small>
+            /><small>{{ t('guest.hoursUnit') }}</small>
           </span>
         </div>
         <van-slider
@@ -159,34 +167,34 @@ const effectiveLabel = wage.effectiveDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '
           @update:model-value="onHoursSlide"
         />
         <p id="quick-hours-hint" class="quick-pay__hint" :class="{ 'is-error': hoursError }">
-          {{ hoursError ? '請輸入 0 到 70 之間的數字，例如 37.5' : '以 0.25 小時為單位' }}
+          {{ hoursError ? t('guest.hoursError') : t('guest.hoursHint') }}
         </p>
       </div>
 
       <div class="quick-pay__result" aria-live="polite">
-        <span class="quick-pay__result-label">本週預估稅前薪資</span>
+        <span class="quick-pay__result-label">{{ t('guest.estimatedGross') }}</span>
         <strong class="quick-pay__amount">{{ formatMoney(quickGrossPayCents) }}</strong>
-        <button v-if="!isDefault" type="button" class="quick-pay__reset" @click="reset">重設</button>
+        <button v-if="!isDefault" type="button" class="quick-pay__reset" @click="reset">{{ t('common.reset') }}</button>
       </div>
       <p class="quick-pay__fine">
-        只算時薪 × 工時，未含 {{ QUICK_ESTIMATE_EXCLUDES.join('、') }}。僅供試算，不是法定週薪或合規判定。
+        {{ t('guest.estimateFine', { items: excludesText }) }}
       </p>
       <p class="quick-pay__fine">
-        預設時薪為全國最低工資 A${{ formatRate(wage.hourlyCents) }}（{{ effectiveLabel }} 起，{{ wage.employmentBasis }}），
+        {{ t('guest.minimumWageFine', { rate: `$${formatRate(wage.hourlyCents)}`, date: effectiveLabel, basis: t('guest.minimumWageBasis') }) }}
         <a :href="wage.sourceUrl" target="_blank" rel="noopener">Fair Work</a>。
       </p>
     </div>
 
     <van-button type="primary" block round class="quick-pay__start" @click="emit('start')">
-      開始安排我的班表
+      {{ t('guest.startScheduling') }}
     </van-button>
     <button type="button" class="quick-pay__link" @click="emit('import-payslip')">
-      有薪資單？上傳後自動設定時薪
+      {{ t('guest.importPayslip') }}
     </button>
     <p class="quick-pay__account">
-      想保存每週班表與薪資？
+      {{ t('guest.savePrompt') }}
       <button type="button" class="quick-pay__link quick-pay__link--inline" @click="emit('open-account')">
-        免費建立帳號
+        {{ t('guest.signUpFree') }}
       </button>
     </p>
   </section>

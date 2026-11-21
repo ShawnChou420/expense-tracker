@@ -2,6 +2,8 @@
 // 首頁「今天」：今日待辦、給今天的你一句話、心情與備註。
 // 會員資料存在資料庫（一次 /api/today 取回）；小語載入失敗不影響其他卡片。
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { formatDateLabel } from '../i18n/format.js'
 import { showConfirmDialog, showToast } from 'vant'
 import { todayRepository } from '../repositories/todayRepository.js'
 import { authToken } from '../services/authSession.js'
@@ -9,10 +11,10 @@ import {
   MOODS,
   REPEAT_OPTIONS,
   addDays,
-  formatDateLabel,
   getTaskProgress,
 } from '../domain/today.js'
 
+const { t } = useI18n()
 const props = defineProps({
   // 裝置本地的今天 YYYY-MM-DD（跨日時父元件會更新）
   today: { type: String, required: true },
@@ -56,7 +58,7 @@ async function load() {
     applyJournal(data.journal)
   } catch (error) {
     if (seq !== loadSeq) return
-    loadError.value = error.message || '暫時無法載入'
+    loadError.value = error.message || t('today.loadFailedShort')
   } finally {
     if (seq === loadSeq) loading.value = false
   }
@@ -121,11 +123,11 @@ function openEditor(task = null) {
 async function saveEditor() {
   const form = editor.value
   if (!form.title.trim()) {
-    showToast('請輸入待辦內容')
+    showToast(t('today.enterTask'))
     return
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(form.taskDate)) {
-    showToast('請選擇日期')
+    showToast(t('today.chooseDate'))
     return
   }
   form.saving = true
@@ -140,7 +142,7 @@ async function saveEditor() {
     else await todayRepository.updateTask(form.id, body)
     form.show = false
     await reloadTasks()
-    showToast(form.id === null ? '已新增' : '已儲存')
+    showToast(form.id === null ? t('today.added') : t('common.saved'))
   } catch (error) {
     showToast(error.message)
   } finally {
@@ -151,11 +153,11 @@ async function saveEditor() {
 async function removeTask(task) {
   try {
     await showConfirmDialog({
-      title: '刪除這個待辦？',
+      title: t('today.deleteTaskTitle'),
       message:
         task.repeatType && task.repeatType !== 'NONE'
-          ? `「${task.title}」是重複待辦，刪除後之後每一次都不會再出現。`
-          : `「${task.title}」將被刪除。`,
+          ? t('today.deleteRepeatMessage', { title: task.title })
+          : t('today.deleteTaskMessage', { title: task.title }),
     })
   } catch {
     return
@@ -185,7 +187,7 @@ async function postponeOverdue(task) {
   try {
     await todayRepository.updateTask(task.id, { taskDate: props.today })
     await reloadTasks()
-    showToast('已移到今天')
+    showToast(t('today.movedToToday'))
   } catch (error) {
     showToast(error.message)
   }
@@ -244,7 +246,7 @@ function formatTime(iso) {
 async function moveJournal(days) {
   if (dirty.value) {
     try {
-      await showConfirmDialog({ title: '還沒儲存', message: '切換日期會放棄這次還沒儲存的備註，確定嗎？' })
+      await showConfirmDialog({ title: t('today.unsavedTitle'), message: t('today.unsavedSwitchDate') })
     } catch {
       return
     }
@@ -284,20 +286,20 @@ async function saveJournal() {
     savedText.value = content
     savedAt.value = saved?.updatedAt ? formatTime(saved.updatedAt) : ''
     journalState.value = 'saved'
-    showToast('備註已儲存')
+    showToast(t('today.noteSaved'))
   } catch (error) {
     // 內容保留在輸入框，不會消失
     journalState.value = 'failed'
-    showToast(error.message || '儲存失敗')
+    showToast(error.message || t('today.saveFailed'))
   }
 }
 
 const journalStatus = computed(() => {
-  if (journalState.value === 'saving') return '儲存中…'
-  if (journalState.value === 'failed') return '儲存失敗，內容還在，請再按一次儲存'
-  if (dirty.value) return '尚未儲存'
-  if (journalState.value === 'saved') return savedAt.value ? `已儲存 ${savedAt.value}` : '已儲存'
-  return isMember.value ? '只有你看得到' : '訪客模式：重新整理後會消失'
+  if (journalState.value === 'saving') return t('common.saving')
+  if (journalState.value === 'failed') return t('today.saveFailedRetry')
+  if (dirty.value) return t('common.unsaved')
+  if (journalState.value === 'saved') return savedAt.value ? t('today.savedAt', { time: savedAt.value }) : t('common.saved')
+  return isMember.value ? t('today.privateNote') : t('today.guestTemporary')
 })
 
 watch(
@@ -322,19 +324,19 @@ defineExpose({ reload: load })
       aria-labelledby="today-tasks-title"
     >
       <div class="today-card__head">
-        <h2 id="today-tasks-title">今日待辦</h2>
+        <h2 id="today-tasks-title">{{ t('today.tasks') }}</h2>
         <span v-if="!loading && progress.total > 0" class="today-card__count">
-          {{ progress.done }} / {{ progress.total }} 已完成
+          {{ t('today.doneOfTotal', { done: progress.done, total: progress.total }) }}
         </span>
-        <button type="button" class="today-card__icon-button" aria-label="新增待辦（可選日期與重複）" @click="openEditor()">
+        <button type="button" class="today-card__icon-button" :aria-label="t('today.addTaskAria')" @click="openEditor()">
           <van-icon name="plus" />
         </button>
       </div>
 
       <van-skeleton v-if="loading" :row="3" />
       <div v-else-if="loadError" class="today-card__error" role="alert">
-        <p>今天的資料暫時載入不了：{{ loadError }}</p>
-        <van-button size="small" type="primary" plain @click="load">重試</van-button>
+        <p>{{ t('today.loadFailed', { error: loadError }) }}</p>
+        <van-button size="small" type="primary" plain @click="load">{{ t('common.retry') }}</van-button>
       </div>
       <template v-else>
         <button
@@ -344,7 +346,7 @@ defineExpose({ reload: load })
           @click="showOverdue = true"
         >
           <van-icon name="info-o" aria-hidden="true" />
-          <span>還有 {{ overdue.length }} 件之前未完成的事項</span>
+          <span>{{ t('today.overdueCount', { count: overdue.length }) }}</span>
           <van-icon name="arrow" aria-hidden="true" />
         </button>
 
@@ -356,7 +358,7 @@ defineExpose({ reload: load })
               class="today-task__check"
               :class="{ 'today-task__check--done': task.completed }"
               :aria-checked="task.completed"
-              :aria-label="`${task.completed ? '取消完成' : '完成'}：${task.title}`"
+              :aria-label="t(task.completed ? 'today.untoggleTask' : 'today.toggleTask', { title: task.title })"
               @click="toggle(task)"
             >
               <van-icon v-if="task.completed" name="success" aria-hidden="true" />
@@ -369,12 +371,12 @@ defineExpose({ reload: load })
             >
               {{ task.title }}
               <small v-if="task.repeatType && task.repeatType !== 'NONE'">
-                {{ REPEAT_OPTIONS.find((option) => option.value === task.repeatType)?.label }}
+                {{ t(`today.repeats.${task.repeatType}`) }}
               </small>
             </button>
           </li>
         </ul>
-        <p v-else class="today-card__empty">今天還沒有待辦，想到什麼就記一下。</p>
+        <p v-else class="today-card__empty">{{ t('today.noTasks') }}</p>
 
         <form class="today-quick-add" @submit.prevent="quickAdd">
           <input
@@ -382,8 +384,8 @@ defineExpose({ reload: load })
             type="text"
             maxlength="80"
             enterkeyhint="done"
-            placeholder="新增一件小事，例如：買菜"
-            aria-label="快速新增今日待辦"
+            :placeholder="t('today.addTaskPlaceholder')"
+            :aria-label="t('today.quickAddAria')"
           />
           <van-button
             native-type="submit"
@@ -392,7 +394,7 @@ defineExpose({ reload: load })
             :loading="adding"
             :disabled="!quickTitle.trim()"
           >
-            新增
+            {{ t('common.add') }}
           </van-button>
         </form>
       </template>
@@ -406,7 +408,7 @@ defineExpose({ reload: load })
       aria-labelledby="today-quote-title"
     >
       <div class="today-card__head">
-        <h2 id="today-quote-title">給今天的你，一句話</h2>
+        <h2 id="today-quote-title">{{ t('today.quote') }}</h2>
         <button
           v-if="isMember && quote && quote.refreshesLeft > 0"
           type="button"
@@ -414,7 +416,7 @@ defineExpose({ reload: load })
           :disabled="refreshing"
           @click="refreshQuote"
         >
-          <van-icon name="replay" aria-hidden="true" />換一句
+          <van-icon name="replay" aria-hidden="true" />{{ t('today.anotherQuote') }}
         </button>
       </div>
       <van-skeleton v-if="loading" :row="2" />
@@ -423,8 +425,8 @@ defineExpose({ reload: load })
         <footer v-if="quote.source || quote.author">—— {{ quote.source || quote.author }}</footer>
       </blockquote>
       <div v-else-if="quoteFailed" class="today-card__error">
-        <p>今天的小語暫時載入不了。</p>
-        <van-button size="small" plain type="primary" @click="retryQuote">重試</van-button>
+        <p>{{ t('today.quoteUnavailable') }}</p>
+        <van-button size="small" plain type="primary" @click="retryQuote">{{ t('common.retry') }}</van-button>
       </div>
     </section>
 
@@ -436,14 +438,14 @@ defineExpose({ reload: load })
       aria-labelledby="today-mood-title"
     >
       <div class="today-card__head">
-        <h2 id="today-mood-title">{{ isJournalToday ? '今天感覺如何？' : `${formatDateLabel(journalDate)} 的紀錄` }}</h2>
+        <h2 id="today-mood-title">{{ isJournalToday ? t('today.moodQuestion') : t('today.dayRecord', { date: formatDateLabel(journalDate) }) }}</h2>
         <div class="today-date-nav">
-          <button type="button" aria-label="前一天" @click="moveJournal(-1)">
+          <button type="button" :aria-label="t('today.previousDay')" @click="moveJournal(-1)">
             <van-icon name="arrow-left" />
           </button>
           <button
             type="button"
-            aria-label="後一天"
+            :aria-label="t('today.nextDay')"
             :disabled="isJournalToday"
             @click="moveJournal(1)"
           >
@@ -453,7 +455,7 @@ defineExpose({ reload: load })
       </div>
       <van-skeleton v-if="loading || journalLoading" :row="3" />
       <template v-else-if="!loadError">
-        <div class="today-moods" role="group" aria-label="心情">
+        <div class="today-moods" role="group" :aria-label="t('today.mood')">
           <button
             v-for="option in MOODS"
             :key="option.value"
@@ -464,16 +466,16 @@ defineExpose({ reload: load })
             @click="chooseMood(option.value)"
           >
             <span aria-hidden="true">{{ option.emoji }}</span>
-            <small>{{ option.label }}</small>
+            <small>{{ t(`today.moods.${option.value}`) }}</small>
           </button>
         </div>
         <label class="today-journal">
-          <span class="today-journal__label">{{ isJournalToday ? '今天的備註' : '備註' }}</span>
+          <span class="today-journal__label">{{ isJournalToday ? t('today.todayNote') : t('common.note') }}</span>
           <textarea
             v-model="journalText"
             rows="3"
             maxlength="2000"
-            placeholder="記一下今天發生的事，例如：下午去 Woolworths 買菜。"
+            :placeholder="t('today.journalTodayPlaceholder')"
           ></textarea>
         </label>
         <div class="today-journal__foot">
@@ -491,7 +493,7 @@ defineExpose({ reload: load })
             :disabled="!dirty && journalState !== 'failed'"
             @click="saveJournal"
           >
-            儲存
+            {{ t('common.save') }}
           </van-button>
         </div>
       </template>
@@ -507,30 +509,30 @@ defineExpose({ reload: load })
       class="today-popup"
     >
       <form class="today-editor" @submit.prevent="saveEditor">
-        <h3>{{ editor.id === null ? '新增待辦' : '編輯待辦' }}</h3>
+        <h3>{{ editor.id === null ? t('today.newTask') : t('today.editTask') }}</h3>
         <van-field
           v-model="editor.title"
-          label="內容"
+          :label="t('today.taskContent')"
           maxlength="80"
-          placeholder="例如：上班前磨刀"
+          :placeholder="t('today.taskPlaceholder')"
           required
         />
         <van-field
           v-model="editor.description"
-          label="備註"
+          :label="t('common.note')"
           type="textarea"
           rows="2"
           autosize
           maxlength="500"
-          placeholder="選填"
+          :placeholder="t('common.optional')"
         />
         <label class="today-editor__row">
-          <span>日期</span>
+          <span>{{ t('common.date') }}</span>
           <input v-model="editor.taskDate" type="date" required />
         </label>
         <div class="today-editor__row">
-          <span>重複</span>
-          <div class="today-editor__chips" role="radiogroup" aria-label="重複">
+          <span>{{ t('today.repeat') }}</span>
+          <div class="today-editor__chips" role="radiogroup" :aria-label="t('today.repeat')">
             <button
               v-for="option in REPEAT_OPTIONS"
               :key="option.value"
@@ -540,12 +542,12 @@ defineExpose({ reload: load })
               :class="{ active: editor.repeatType === option.value }"
               @click="editor.repeatType = option.value"
             >
-              {{ option.label }}
+              {{ t(`today.repeats.${option.value}`) }}
             </button>
           </div>
         </div>
         <p v-if="editor.repeatType !== 'NONE'" class="today-editor__hint">
-          重複待辦每一次分開勾選，今天完成不會影響之後。
+          {{ t('today.repeatHint') }}
         </p>
         <div class="today-editor__actions">
           <van-button
@@ -554,9 +556,9 @@ defineExpose({ reload: load })
             plain
             @click="removeTask({ id: editor.id, title: editor.title, repeatType: editor.repeatType })"
           >
-            刪除
+            {{ t('common.delete') }}
           </van-button>
-          <van-button native-type="submit" type="primary" block :loading="editor.saving">儲存</van-button>
+          <van-button native-type="submit" type="primary" block :loading="editor.saving">{{ t('common.save') }}</van-button>
         </div>
       </form>
     </van-popup>
@@ -572,19 +574,19 @@ defineExpose({ reload: load })
       class="today-popup"
     >
       <div class="today-editor">
-        <h3>之前未完成的事項</h3>
-        <p class="today-editor__hint">不會自動刪除或改日期，由你決定怎麼處理。</p>
+        <h3>{{ t('today.overdueTitle') }}</h3>
+        <p class="today-editor__hint">{{ t('today.overdueHint') }}</p>
         <ul class="today-overdue-list">
           <li v-for="task in overdue" :key="task.id">
             <div>
               <strong>{{ task.title }}</strong>
-              <small>原訂 {{ formatDateLabel(task.taskDate) }}</small>
+              <small>{{ t('today.originalDate', { date: formatDateLabel(task.taskDate) }) }}</small>
             </div>
             <div class="today-overdue-list__actions">
-              <van-button size="small" type="primary" @click="completeOverdue(task)">完成</van-button>
-              <van-button size="small" plain type="primary" @click="postponeOverdue(task)">移到今天</van-button>
-              <van-button size="small" plain @click="keepOverdue(task)">保留原日期</van-button>
-              <van-button size="small" plain type="danger" @click="removeTask(task)">刪除</van-button>
+              <van-button size="small" type="primary" @click="completeOverdue(task)">{{ t('common.done') }}</van-button>
+              <van-button size="small" plain type="primary" @click="postponeOverdue(task)">{{ t('today.moveToToday') }}</van-button>
+              <van-button size="small" plain @click="keepOverdue(task)">{{ t('today.keepDate') }}</van-button>
+              <van-button size="small" plain type="danger" @click="removeTask(task)">{{ t('common.delete') }}</van-button>
             </div>
           </li>
         </ul>

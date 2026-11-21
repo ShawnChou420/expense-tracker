@@ -1,0 +1,6 @@
+external_product_id,name,brand,package_size,category,regular_price,sale_price,unit_price,promotion_type,promotion_start,promotion_end,product_url
+TEST-0001,範例 全脂牛奶,範例品牌,2L,Dairy,4.00,3.10,$1.55 / 1L,PRICE_DROP,2026-11-26,2026-12-02,
+TEST-0002,範例 巧克力餅乾,範例品牌,200g,Biscuits,5.00,2.50,$1.25 / 100g,HALF_PRICE,2026-11-26,2026-12-02,
+TEST-0003,範例 汽水,範例品牌,375ml x 10,Drinks,22.00,13.00,,PRICE_DROP,2026-11-26,2026-12-02,
+TEST-0004,範例 汽水,範例品牌,1.25L,Drinks,4.00,2.00,,,2026-11-26,2026-12-02,
+TEST-0005,"範例 洗衣精, 補充包",,1L,Household,,8.00,,OTHER,2026-11-26,2026-12-02,

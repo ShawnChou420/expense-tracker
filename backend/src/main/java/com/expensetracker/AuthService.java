@@ -256,6 +256,8 @@ public class AuthService {
         "DELETE FROM leave_blackout WHERE user_seq = ?",
         "DELETE FROM leave_blackout_notice WHERE user_seq = ?",
         "DELETE FROM visa_journey WHERE user_seq = ?",
+        "DELETE FROM shopping_list_item WHERE user_seq = ?", // 參照 shopping_list，先刪
+        "DELETE FROM shopping_list WHERE user_seq = ?",
         "DELETE FROM shopping_item WHERE user_seq = ?",
         "DELETE FROM daily_task_completion WHERE user_seq = ?", // 參照 daily_task，先刪
         "DELETE FROM daily_task WHERE user_seq = ?",

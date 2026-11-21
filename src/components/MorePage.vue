@@ -28,8 +28,8 @@ const baseTools = [
   {
     name: 'shopping',
     icon: 'cart-o',
-    title: '採買清單',
-    description: '這次／下次要買的東西，買完打勾',
+    title: '採買',
+    description: 'Woolworths 本週特價、採買清單與預估金額',
   },
   {
     name: 'privacy',

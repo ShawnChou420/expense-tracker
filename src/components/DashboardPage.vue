@@ -47,6 +47,7 @@ import {
 } from '../repositories/appRepositories.js'
 import VisaJourneyCard from './VisaJourneyCard.vue'
 import TodayShiftCard from './TodayShiftCard.vue'
+import FuelPriceCard from './FuelPriceCard.vue'
 import TodaySection from './TodaySection.vue'
 import { getFocusShift, getGreeting } from '../domain/today.js'
 import { formatCentsIn } from '../domain/displayCurrency.js'
@@ -550,6 +551,10 @@ async function saveTarget() {
         @adjust-shift="emit('adjust-shift', $event)"
       />
 
+    </div>
+
+    <div v-if="show('fuel-prices')" class="home-module" :style="orderStyle('fuel-prices')">
+      <FuelPriceCard :now="now" />
     </div>
 
     <TodaySection :today="liveToday" :parts="todayParts" />

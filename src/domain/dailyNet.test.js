@@ -168,18 +168,43 @@ describe('getEstimatedDailyNet', () => {
     ])
   })
 
-  it('excludes realized investment loss and records outside the range', () => {
+  it('deducts realized investment loss from the net, listed apart from living expenses', () => {
     const days = getEstimatedDailyNet({
       range,
-      workRecords: [shift('2026-10-31', 200)],
+      workRecords: [shift('2026-11-18', 203)],
       expenses: [
         expense({
-          date: '2026-11-10',
+          date: '2026-11-18',
+          amountCents: 100000,
+          group: 'FINANCE',
+          category: 'INVESTMENT_LOSS',
+        }),
+        expense({ date: '2026-11-18', amountCents: 4800 }),
+        expense({
+          date: '2026-11-19',
           amountCents: 5000,
           group: 'FINANCE',
           category: 'INVESTMENT_LOSS',
         }),
       ],
+    })
+    const day = dayIn(days, '2026-11-18')
+    expect(day.expenseCents).toBe(4800)
+    expect(day.investmentLossCents).toBe(100000)
+    expect(day.investmentLossItems).toHaveLength(1)
+    expect(day.expenseItems).toHaveLength(1)
+    expect(day.netCents).toBe(20300 - 4800 - 100000)
+    expect(formatDailyNet(day.netCents).text).toBe('−845')
+    // 只有投資虧損的日子也算有資料
+    expect(hasDailyNetActivity(dayIn(days, '2026-11-19'))).toBe(true)
+    expect(dayIn(days, '2026-11-19').netCents).toBe(-5000)
+  })
+
+  it('ignores records outside the range', () => {
+    const days = getEstimatedDailyNet({
+      range,
+      workRecords: [shift('2026-10-31', 200)],
+      expenses: [expense({ date: '2026-12-01', amountCents: 5000 })],
     })
     expect(days.size).toBe(0)
   })

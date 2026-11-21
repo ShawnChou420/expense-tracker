@@ -8,14 +8,16 @@ import { formatCalendarAmount } from '../utils/calendarMoney.js'
  * 生活日曆的「每日淨收支」。
  *
  * 目前只有「預估」模式（ESTIMATED）：
- *   每日預估淨額 = 當日預估工作收入（稅前）+ 當日車資應收 − 當日生活支出
+ *   每日預估淨額 = 當日預估工作收入（稅前）+ 當日車資應收 − 當日生活支出 − 當日已實現投資虧損
  *
  * 口徑（避免重複計算）：
  * - 工作收入：班表上已由 useShiftCalculator 算好的 grossPay（稅前），與首頁 Dashboard 的
  *   「預估工作收入」相同；歸屬日＝班表的 workDate（跨午夜夜班算在上班那天），請假不計。
  * - 車資應收：依搭車日期（trip.date）計整趟應收；已收多少只是明細資訊，不再另外加一次。
  * - 生活支出：依支出的到期／發生日期（getExpenseOccurrences），已付與待付都算一次；
- *   付款紀錄（payments）只改變狀態，不會在付款日再扣一次。已實現投資虧損不是現金支出，不計。
+ *   付款紀錄（payments）只改變狀態，不會在付款日再扣一次。
+ * - 已實現投資虧損：使用者決定「虧出去的就是少了」，計入每日淨額，但和生活支出分開列
+ *   （investmentLossItems），首頁 Dashboard 的生活支出統計仍不含它。
  * - 發薪入帳（salary deposits）是實際入帳，不計入預估淨額，只列在明細供對照。
  *
  * 之後若要加「實際現金流」模式（ACTUAL_CASH：依收款／付款日），另寫一個函式並沿用同樣的回傳格式。
@@ -29,10 +31,12 @@ export const DAILY_NET_MODES = Object.freeze({ ESTIMATED: 'ESTIMATED' })
  * @property {number} fareCents 車資應收
  * @property {number} expenseCents 生活支出（已付＋待付）
  * @property {number} plannedExpenseCents 其中尚未付款的部分
+ * @property {number} investmentLossCents 已實現投資虧損
  * @property {number} netCents
  * @property {Array<any>} workItems
  * @property {Array<any>} fareItems
  * @property {Array<any>} expenseItems
+ * @property {Array<any>} investmentLossItems
  * @property {Array<any>} salaryDeposits 當日發薪入帳（不計入 netCents）
  */
 
@@ -44,21 +48,27 @@ function emptyDay(date) {
     fareCents: 0,
     expenseCents: 0,
     plannedExpenseCents: 0,
+    investmentLossCents: 0,
     netCents: 0,
     workItems: [],
     fareItems: [],
     expenseItems: [],
+    investmentLossItems: [],
     salaryDeposits: [],
   }
 }
 
 /**
- * 有任何會影響淨額的紀錄（班、車資、支出）才算「有資料」；只有發薪入帳不算。
+ * 有任何會影響淨額的紀錄（班、車資、支出、投資虧損）才算「有資料」；只有發薪入帳不算。
  * @param {DailyNet | null | undefined} day
  */
 export function hasDailyNetActivity(day) {
   return Boolean(
-    day && (day.workItems.length > 0 || day.fareItems.length > 0 || day.expenseItems.length > 0),
+    day &&
+    (day.workItems.length > 0 ||
+      day.fareItems.length > 0 ||
+      day.expenseItems.length > 0 ||
+      day.investmentLossItems.length > 0),
   )
 }
 
@@ -124,8 +134,11 @@ export function getEstimatedDailyNet({
   }
 
   for (const occurrence of getExpenseOccurrences(expenses, range)) {
-    if (occurrence.category === 'INVESTMENT_LOSS') continue
-    dayOf(occurrence.date).expenseItems.push({
+    const items =
+      occurrence.category === 'INVESTMENT_LOSS'
+        ? dayOf(occurrence.date).investmentLossItems
+        : dayOf(occurrence.date).expenseItems
+    items.push({
       occurrenceId: occurrence.occurrenceId,
       sourceId: occurrence.sourceId,
       title:
@@ -154,7 +167,8 @@ export function getEstimatedDailyNet({
     day.plannedExpenseCents = sumCents(
       day.expenseItems.filter((item) => item.status !== 'PAID').map((item) => item.amountCents),
     )
-    day.netCents = day.workCents + day.fareCents - day.expenseCents
+    day.investmentLossCents = sumCents(day.investmentLossItems.map((item) => item.amountCents))
+    day.netCents = day.workCents + day.fareCents - day.expenseCents - day.investmentLossCents
   }
   return days
 }

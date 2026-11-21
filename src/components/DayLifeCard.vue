@@ -385,8 +385,7 @@ defineExpose({ dirty, save, reset })
 .day-life__quote {
   margin: 0;
   padding: 10px 12px;
-  border-left: 3px solid var(--color-primary);
-  border-radius: 0 10px 10px 0;
+  border-radius: 12px;
   background: var(--color-primary-soft);
   color: var(--color-heading);
   font-size: 14px;

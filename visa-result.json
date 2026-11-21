@@ -1,0 +1,31 @@
+{
+  "result": {
+    "historyRangeDefaults": true,
+    "historyDraftSkipsExisting": true,
+    "historyDraftNoDuplicate": true,
+    "batchHoliday": true,
+    "singleDayEdit": true,
+    "noHorizontalScroll390": true,
+    "cardShowsTracking": true,
+    "cardShowsEstimateOrReason": true,
+    "historySourceSaved": true,
+    "holidaySaved": true,
+    "existingUntouched": true,
+    "crossMidnightSaved": true,
+    "savedRecords": 26,
+    "conflictKeepsWork": true,
+    "noticeSaved": true,
+    "noticeDoesNotChangeVisa": true,
+    "reloginKeepsJourney": true,
+    "noHorizontalScroll360": true,
+    "wizardNoHorizontalScroll360": true,
+    "noHorizontalScroll430": true,
+    "wizardNoHorizontalScroll430": true,
+    "isolationJourney": true,
+    "isolationNotices": true,
+    "isolationRecords": true,
+    "notTrackingHidesCard": true,
+    "noPageErrors": true
+  },
+  "errors": []
+}

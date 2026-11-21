@@ -35,6 +35,16 @@ describe('getDefaultLayout', () => {
     ])
   })
 
+  it('新增的附近油價模組：兩種模式預設顯示，舊的已儲存版面會補在最後', () => {
+    expect(getVisibleModuleIds(getDefaultLayout('PAY'))).toContain('fuel-prices')
+    expect(getVisibleModuleIds(getDefaultLayout('LIFE'))).toContain('fuel-prices')
+    const saved = normalizeLayout({ mode: 'PAY', modules: [{ id: 'weekly-pay', visible: true }] })
+    expect(saved.modules.find((module) => module.id === 'fuel-prices')).toEqual({
+      id: 'fuel-prices',
+      visible: true,
+    })
+  })
+
   it('沒有集簽設定時不顯示集簽進度；設定後才出現', () => {
     const layout = getDefaultLayout('PAY')
     expect(getVisibleModuleIds(layout)).not.toContain('visa-progress')

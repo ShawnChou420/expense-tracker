@@ -291,8 +291,8 @@ class TodayFeaturesTest {
             assertTrue(content.matches("[\\x20-\\x7E’]+"), "句子應為英文：" + content);
             contents.add(content);
         }
-        assertEquals(60, count, "每一列都要符合格式");
-        assertEquals(60, contents.size(), "句子不可重複");
+        assertEquals(90, count, "每一列都要符合格式");
+        assertEquals(90, contents.size(), "句子不可重複");
         // 至少要多於「避開最近 30 天」的天數，否則去重很快失效
         assertTrue(contents.size() > DailyQuoteService.AVOID_DAYS);
     }

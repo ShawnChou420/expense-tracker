@@ -1,4 +1,4 @@
--- 每日小語第二版：澳洲英文小句子（含中文翻譯與用法說明），language = 'en-AU'。
+-- 每日小語第二版：90 句澳洲英文小句子（含中文翻譯與用法說明），language = 'en-AU'。
 -- 新增 translation、note 兩個欄位（可為 NULL，舊的中文小語不受影響）；DailyQuoteService 改為只抽 en-AU。
 -- 句子中的撇號一律使用 ’（U+2019），不使用 SQL 需要跳脫的半形單引號。
 ALTER TABLE daily_quote ADD COLUMN translation VARCHAR(200);
@@ -64,5 +64,35 @@ INSERT INTO daily_quote(content, translation, note, category, language, source_t
     ('Let’s have a yarn after work.', '下班後聊一下吧。', 'yarn 在澳洲口語裡是聊天、閒聊。', 'LIFE', 'en-AU', 'ORIGINAL'),
     ('I’m knackered, I’m gonna hit the sack.', '我累死了，要去睡了。', 'knackered 是累壞了；hit the sack 是去睡覺。', 'LIFE', 'en-AU', 'ORIGINAL'),
     ('Can you show me how to do this one more time?', '可以再示範一次怎麼做嗎？', '剛上工時多問一次沒關係，做對比做快更重要。', 'WORKING_HOLIDAY', 'en-AU', 'ORIGINAL'),
-    ('Where do I put my PPE at the end of the shift?', '下班時防護裝備要放哪裡？', 'PPE 是個人防護裝備，例如手套、護目鏡、安全鞋。', 'WORKING_HOLIDAY', 'en-AU', 'ORIGINAL')
+    ('Where do I put my PPE at the end of the shift?', '下班時防護裝備要放哪裡？', 'PPE 是個人防護裝備，例如手套、護目鏡、安全鞋。', 'WORKING_HOLIDAY', 'en-AU', 'ORIGINAL'),
+    ('Can I pay by card?', '可以刷卡嗎？', '澳洲大部分店家都能感應付款（tap），小額消費也很常刷卡。', 'LIFE', 'en-AU', 'ORIGINAL'),
+    ('Is there a surcharge for paying by card?', '刷卡要加手續費嗎？', '有些店刷卡會另外加 surcharge（手續費），結帳前可以先問。', 'LIFE', 'en-AU', 'ORIGINAL'),
+    ('Could I get that to take away?', '可以外帶嗎？', '澳洲說 take away（外帶）；內用說 eat in 或 have it here。', 'LIFE', 'en-AU', 'ORIGINAL'),
+    ('Could we get the bill, please?', '可以幫我們結帳嗎？', '餐廳結帳說 bill；在澳洲一般不需要給小費。', 'LIFE', 'en-AU', 'ORIGINAL'),
+    ('Do you have this in a bigger size?', '這個有大一點的尺寸嗎？', '買衣服、鞋子時很好用。', 'LIFE', 'en-AU', 'ORIGINAL'),
+    ('Which platform is the train to Central?', '往 Central 的火車在哪個月台？', 'Central 是雪梨中央車站；platform 是月台。', 'LIFE', 'en-AU', 'ORIGINAL'),
+    ('Does this bus go into the city?', '這班公車有到市區嗎？', '澳洲人說 the city 通常指市中心（CBD）。', 'LIFE', 'en-AU', 'ORIGINAL'),
+    ('I’d like to open a bank account, please.', '我想開一個銀行帳戶。', '開戶通常需要護照和澳洲地址，很多銀行可以先在網路上申請。', 'LIFE', 'en-AU', 'ORIGINAL'),
+    ('I’ve applied for my TFN, it should arrive next week.', '我已經申請 TFN 了，下週應該會收到。', 'TFN 是稅號（Tax File Number）；沒有提供給雇主時，會被用較高的稅率預扣。', 'WORKING_HOLIDAY', 'en-AU', 'ORIGINAL'),
+    ('Here are my super fund details.', '這是我的退休金帳戶資料。', 'super 是退休金（superannuation），由雇主在薪水之外另外存入。', 'WORKING_HOLIDAY', 'en-AU', 'ORIGINAL'),
+    ('Am I being paid the award rate?', '我的時薪有照 award 標準嗎？', 'award 是各行業的最低薪資標準，可以在 Fair Work 網站查詢。', 'WORKING_HOLIDAY', 'en-AU', 'ORIGINAL'),
+    ('Do we get paid for smoko?', 'Smoko 有算薪水嗎？', '短暫的休息（rest break）通常有薪，用餐休息（meal break）通常沒有，實際依 award 而定。', 'WORKING_HOLIDAY', 'en-AU', 'ORIGINAL'),
+    ('Is this a casual or a part-time position?', '這是 casual 還是 part-time 的工作？', 'casual 時薪較高但沒有帶薪假；part-time 有固定時數和年假。', 'WORKING_HOLIDAY', 'en-AU', 'ORIGINAL'),
+    ('How many hours can I get this week?', '這週我可以排到幾個小時？', '想多排一點班時，可以直接這樣問主管。', 'WORKING_HOLIDAY', 'en-AU', 'ORIGINAL'),
+    ('Sorry, I can’t make it in today.', '抱歉，我今天沒辦法去上班。', 'can’t make it 是去不了；臨時請假要盡早通知主管。', 'WORKING_HOLIDAY', 'en-AU', 'ORIGINAL'),
+    ('I’m running about ten minutes late.', '我大概會晚十分鐘到。', '會遲到時先傳訊息告知，是基本的工作禮貌。', 'WORKING_HOLIDAY', 'en-AU', 'ORIGINAL'),
+    ('Where do I clock in?', '上班要在哪裡打卡？', 'clock in 是上班打卡，clock out 是下班打卡。', 'WORKING_HOLIDAY', 'en-AU', 'ORIGINAL'),
+    ('Could you double-check the hours on my payslip?', '可以幫我核對一下薪資單上的工時嗎？', '發現工時或時薪不對，越早反映越好處理。', 'WORKING_HOLIDAY', 'en-AU', 'ORIGINAL'),
+    ('Is there any overtime going this week?', '這週有加班的機會嗎？', 'overtime 是加班，費率通常比平常高；going 在這裡是「有、可以拿到」。', 'WORKING_HOLIDAY', 'en-AU', 'ORIGINAL'),
+    ('Who should I report this to?', '這件事要跟誰回報？', '工作中受傷或發生意外，要立刻回報主管並留下紀錄。', 'WORKING_HOLIDAY', 'en-AU', 'ORIGINAL'),
+    ('I’ve cut my hand, can someone grab the first aid kit?', '我的手割傷了，誰可以拿一下急救箱？', 'first aid kit 是急救箱；工作受傷要記錄下來，之後可能需要 workers comp（工傷保險）。', 'WORKING_HOLIDAY', 'en-AU', 'ORIGINAL'),
+    ('Keen for a feed after work?', '下班後要不要一起吃點東西？', 'feed 是一頓飯；Keen for…? 是「想不想一起…？」。', 'LIFE', 'en-AU', 'ORIGINAL'),
+    ('Do you want to go halves?', '要不要一人一半？', 'go halves 是平分費用。', 'LIFE', 'en-AU', 'ORIGINAL'),
+    ('The rent’s due on Friday.', '房租星期五要繳。', '澳洲租房常以「每週」計算房租（per week）。', 'LIFE', 'en-AU', 'ORIGINAL'),
+    ('Will I get my bond back when I move out?', '搬走的時候押金會退給我嗎？', 'bond 是租屋押金；在 NSW 應該存放在 NSW Fair Trading，退租時可以申請退還。', 'LIFE', 'en-AU', 'ORIGINAL'),
+    ('Are bills included in the rent?', '房租有包含水電網路嗎？', 'bills included 表示水、電、瓦斯、網路已包含在房租裡。', 'LIFE', 'en-AU', 'ORIGINAL'),
+    ('I’m after a room close to the station.', '我在找離車站近的房間。', 'be after something 是「在找、想要」，很澳洲的說法。', 'LIFE', 'en-AU', 'ORIGINAL'),
+    ('Is it okay if I leave this with you?', '這個可以交給你處理嗎？', '請別人幫忙處理事情時的禮貌說法。', 'WORKING_HOLIDAY', 'en-AU', 'ORIGINAL'),
+    ('No dramas, I’ll sort it out.', '沒問題，我來處理。', 'No dramas 和 No worries 意思一樣；sort it out 是處理好。', 'LIFE', 'en-AU', 'ORIGINAL'),
+    ('What’s the best way to get there?', '去那裡最好怎麼走？', '問路或問交通方式都可以用。', 'LIFE', 'en-AU', 'ORIGINAL')
 ON CONFLICT (content) DO NOTHING;

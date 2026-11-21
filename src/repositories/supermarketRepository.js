@@ -18,9 +18,13 @@ export const supermarketRepository = {
   /** @param {SpecialsQuery} query */
   specials: (query = {}) => apiRequest(`/supermarkets/specials${toQuery(query)}`),
   categories: () => apiRequest('/supermarkets/categories'),
-  /** 管理員：匯入 CSV（dryRun 預設 true，只預覽不寫入） */
+  /** 最後同步時間、目前特價有效日期、是否可能過期 */
+  status: () => apiRequest('/supermarkets/specials/status'),
+  /** 管理員：上傳 CSV 同步（dryRun 為 true 時只預覽不寫入） */
   importCsv: (
     /** @type {{ csv: string, regionCode?: string, dryRun: boolean, sourceReference?: string }} */ body,
-  ) => apiRequest('/admin/supermarkets/import', { method: 'POST', body }),
-  importRuns: () => apiRequest('/admin/supermarkets/import-runs'),
+  ) => apiRequest('/admin/supermarkets/sync', { method: 'POST', body }),
+  /** 管理員：立即從設定的資料源網址同步（SPECIALS_FEED_URL） */
+  syncFeed: () => apiRequest('/admin/supermarkets/sync', { method: 'POST', body: {} }),
+  importRuns: () => apiRequest('/admin/supermarkets/sync-logs'),
 }

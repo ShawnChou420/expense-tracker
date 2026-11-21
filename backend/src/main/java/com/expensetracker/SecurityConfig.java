@@ -67,6 +67,8 @@ public class SecurityConfig {
                 // 超市本週特價：公開共用資料（管理員匯入的 CSV），訪客也能查詢
                 .requestMatchers(HttpMethod.GET, "/api/supermarkets/specials", "/api/supermarkets/specials/*",
                     "/api/supermarkets/categories").permitAll()
+                // 外部排程觸發特價同步：不走會員登入，由 X-Sync-Token 與 SPECIALS_SYNC_TOKEN 比對（未設定時 404）
+                .requestMatchers(HttpMethod.POST, "/api/internal/supermarkets/sync").permitAll()
                 // 管理後台：每個請求都依登入 token 重新查角色（TokenFilter），不是 SUPER_ADMIN 一律 403
                 .requestMatchers("/api/admin/**").hasRole(AuthService.SUPER_ADMIN)
                 .anyRequest().authenticated())

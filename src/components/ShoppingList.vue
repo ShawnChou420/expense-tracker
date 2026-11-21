@@ -10,7 +10,11 @@ import {
   SHOPPING_PRIORITIES,
   SHOPPING_STORES,
 } from '../domain/shopping.js'
-import { estimateShoppingTotals } from '../domain/shoppingLists.js'
+import {
+  defaultPurchasedQuantities,
+  estimateShoppingTotals,
+  purchasedEstimate,
+} from '../domain/shoppingLists.js'
 import { dollarsToCents, formatAud, formatCentsInput } from '../domain/money.js'
 import { formatLocalDate, parseLocalDate } from '../domain/date.js'
 import {
@@ -28,6 +32,9 @@ const pageTab = ref('LIST')
 const showComplete = ref(false)
 const completing = ref(false)
 const completeForm = ref({ amount: '', date: '' })
+/** 完成採買時確認的實際購買數量：品項 ID → 數量 */
+const completeQuantities = ref({})
+const amountEdited = ref(false)
 const loading = ref(false)
 const saving = ref(false)
 const busyId = ref('')
@@ -58,12 +65,20 @@ const hasUnsavedChanges = computed(() => JSON.stringify(form.value) !== initialF
 const undoCandidate = ref(null)
 const sections = computed(() => getShoppingSections(items.value))
 const totals = computed(() => estimateShoppingTotals(items.value))
-const purchasedItems = computed(() =>
-  items.value.filter((item) => item.bucket === 'NOW' && item.purchasedQuantity > 0),
-)
+const nowItems = computed(() => items.value.filter((item) => item.bucket === 'NOW'))
+const confirmEstimate = computed(() => purchasedEstimate(nowItems.value, completeQuantities.value))
 const carryOverCount = computed(
-  () => items.value.filter((item) => item.purchasedQuantity < item.quantity).length,
+  () =>
+    items.value.filter((item) =>
+      item.bucket === 'NOW'
+        ? (completeQuantities.value[item.id] ?? 0) < item.quantity
+        : item.purchasedQuantity < item.quantity,
+    ).length,
 )
+watch(confirmEstimate, (estimate) => {
+  if (showComplete.value && !amountEdited.value)
+    completeForm.value.amount = estimate.cents ? formatCentsInput(estimate.cents) : ''
+})
 const pendingItems = computed(() =>
   selectedBucket.value === 'NOW' ? sections.value.now : sections.value.later,
 )
@@ -387,12 +402,15 @@ function onActionSelect(action) {
 }
 
 function openComplete() {
-  if (!purchasedItems.value.length) {
-    showToast('先勾選這次買到的商品')
+  if (!nowItems.value.length) {
+    showToast('這次買的清單是空的')
     return
   }
+  completeQuantities.value = defaultPurchasedQuantities(items.value)
+  amountEdited.value = false
+  const estimate = purchasedEstimate(nowItems.value, completeQuantities.value)
   completeForm.value = {
-    amount: totals.value.purchasedCents ? formatCentsInput(totals.value.purchasedCents) : '',
+    amount: estimate.cents ? formatCentsInput(estimate.cents) : '',
     date: formatLocalDate(new Date()),
   }
   showComplete.value = true
@@ -409,13 +427,24 @@ async function confirmComplete() {
     showToast('請選擇有效日期')
     return
   }
+  const itemCount = confirmEstimate.value.count
+  if (!itemCount) {
+    showToast('至少要有一項買到的商品')
+    return
+  }
   completing.value = true
   try {
+    // 先把確認後的實際購買數量存回清單，再完成（完成時以清單上的已買數量為準）
+    for (const item of nowItems.value) {
+      const quantity = completeQuantities.value[item.id] ?? 0
+      if (quantity !== item.purchasedQuantity)
+        await shoppingRepository.save({ ...item, purchasedQuantity: quantity })
+    }
     const result = await shoppingRepository.complete({
       listId: listId.value,
       date: completeForm.value.date,
       amountCents,
-      itemCount: purchasedItems.value.length,
+      itemCount,
     })
     showComplete.value = false
     clearUndo()
@@ -461,6 +490,7 @@ async function confirmComplete() {
     <SupermarketSpecials
       v-show="pageTab === 'SPECIALS'"
       :active="active && pageTab === 'SPECIALS'"
+      @open-list="pageTab = 'LIST'"
     />
 
     <div v-show="pageTab === 'LIST'">
@@ -647,7 +677,7 @@ async function confirmComplete() {
         <van-button
           type="primary"
           class="shopping-total__done"
-          :disabled="!purchasedItems.length || completing"
+          :disabled="!nowItems.length || completing"
           @click="openComplete"
           >完成採買</van-button
         >
@@ -823,25 +853,35 @@ async function confirmComplete() {
             <van-icon name="cross" />
           </button>
         </div>
+        <p class="shopping-sheet__hint">確認每樣實際買到的數量（沒買到就調成 0）：</p>
         <ul class="shopping-receipt">
-          <li v-for="item in purchasedItems" :key="item.id">
-            <span>{{ item.name }} × {{ item.purchasedQuantity }}</span>
-            <span>{{
-              item.estimatedUnitPriceCents === null
-                ? '未填價格'
-                : formatAud(item.estimatedUnitPriceCents * item.purchasedQuantity)
-            }}</span>
+          <li v-for="item in nowItems" :key="item.id">
+            <span
+              >{{ item.name }}
+              <small v-if="item.estimatedUnitPriceCents !== null">{{
+                formatAud(item.estimatedUnitPriceCents)
+              }}</small></span
+            >
+            <van-stepper
+              v-model="completeQuantities[item.id]"
+              :min="0"
+              :max="item.quantity"
+              integer
+              button-size="28"
+              :aria-label="`${item.name} 實際買到的數量`"
+            />
           </li>
         </ul>
         <p class="shopping-sheet__hint">
-          預估 {{ formatAud(totals.purchasedCents) }}
-          <template v-if="totals.purchasedUnpricedCount"
-            >（{{ totals.purchasedUnpricedCount }} 項未填價格）</template
+          預估 {{ formatAud(confirmEstimate.cents) }}
+          <template v-if="confirmEstimate.unpriced"
+            >（{{ confirmEstimate.unpriced }} 項未填價格）</template
           >。請依收據填寫實際金額。
         </p>
         <van-field
           v-model="completeForm.amount"
           label="實際花費"
+          @update:model-value="amountEdited = true"
           type="number"
           inputmode="decimal"
           placeholder="例如 23.50"
@@ -1153,8 +1193,13 @@ async function confirmComplete() {
 }
 .shopping-receipt li {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+.shopping-receipt small {
+  margin-left: 4px;
+  color: var(--color-muted);
 }
 .shopping-receipt li span:first-child {
   overflow-wrap: anywhere;

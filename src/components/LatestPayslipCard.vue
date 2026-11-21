@@ -4,6 +4,9 @@ import { computed, ref } from 'vue'
 import { formatAud } from '../domain/money.js'
 import { PAY_ITEM_LABELS } from '../domain/payslip/classify.js'
 import { getPayslipHighlights } from '../domain/payslip/summary.js'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   // 金額顯示方式（首頁可切換幣別）；預設 AUD
@@ -37,35 +40,35 @@ const items = computed(() =>
     <header class="latest-pay__head">
       <span class="latest-pay__icon" aria-hidden="true"><van-icon name="balance-list-o" /></span>
       <div>
-        <h2 id="latest-pay-title">最近一期薪資</h2>
-        <p>{{ payslip.employerName || '薪資單' }}</p>
+        <h2 id="latest-pay-title">{{ t('latestPay.title') }}</h2>
+        <p>{{ payslip.employerName || t('latestPay.payslip') }}</p>
       </div>
-      <span class="latest-pay__badge">{{ isMember ? '已保存' : '本次開啟' }}</span>
+      <span class="latest-pay__badge">{{ isMember ? t('latestPay.saved') : t('latestPay.thisSession') }}</span>
     </header>
 
     <div class="latest-pay__amount">
-      <small>實領 Net Pay</small>
+      <small>{{ t('latestPay.netPay') }}</small>
       <strong>{{ format(payslip.netCents) }}</strong>
       <span>
-        {{ periodLabel ? `工作期間 ${periodLabel} · ` : '' }}{{ shortDate(payslip.payDate) }} 入帳
+        {{ periodLabel ? t('latestPay.workPeriod', { period: periodLabel }) : '' }}{{ t('latestPay.paidOn', { date: shortDate(payslip.payDate) }) }}
       </span>
     </div>
 
     <dl class="latest-pay__grid">
       <div>
-        <dt>稅前 Gross</dt>
+        <dt>{{ t('latestPay.gross') }}</dt>
         <dd>{{ payslip.grossCents === null ? '—' : format(payslip.grossCents) }}</dd>
       </div>
       <div>
-        <dt>預扣 PAYG{{ withholdingPercent !== null ? ` · ${withholdingPercent}%` : '' }}</dt>
+        <dt>{{ t('latestPay.payg') }}{{ withholdingPercent !== null ? ` · ${withholdingPercent}%` : '' }}</dt>
         <dd>{{ payslip.taxCents === null ? '—' : format(payslip.taxCents) }}</dd>
       </div>
       <div>
-        <dt>工時</dt>
-        <dd>{{ highlights.hours === null ? '—' : `${highlights.hours} 小時` }}</dd>
+        <dt>{{ t('latestPay.hours') }}</dt>
+        <dd>{{ highlights.hours === null ? '—' : t('latestPay.hoursValue', { hours: highlights.hours }) }}</dd>
       </div>
       <div>
-        <dt>平均每小時稅前</dt>
+        <dt>{{ t('latestPay.avgHourly') }}</dt>
         <dd>{{ highlights.effectiveHourlyCents === null ? '—' : format(highlights.effectiveHourlyCents) }}</dd>
       </div>
     </dl>
@@ -77,14 +80,14 @@ const items = computed(() =>
       :aria-expanded="detailsOpen"
       @click="detailsOpen = !detailsOpen"
     >
-      {{ detailsOpen ? '收起明細' : `查看 ${items.length} 個薪資項目` }}
+      {{ detailsOpen ? t('latestPay.hideItems') : t('latestPay.showItems', { count: items.length }) }}
       <van-icon :name="detailsOpen ? 'arrow-up' : 'arrow-down'" aria-hidden="true" />
     </button>
     <ul v-if="detailsOpen" class="latest-pay__items">
       <li v-for="item in items" :key="item.rawName">
         <span>
           <strong>{{ PAY_ITEM_LABELS[item.type] || item.rawName }}</strong>
-          <small>{{ item.rawName }}{{ item.hours ? ` · ${item.hours} 小時 × $${item.rate}` : '' }}</small>
+          <small>{{ item.rawName }}{{ item.hours ? t('latestPay.itemHours', { hours: item.hours, rate: `$${item.rate}` }) : '' }}</small>
         </span>
         <b>{{ format(item.amountCents) }}</b>
       </li>
@@ -99,13 +102,13 @@ const items = computed(() =>
         class="latest-pay__cta"
         @click="emit('setup-schedule')"
       >
-        設定班別，預估下一期
+        {{ t('latestPay.setupSchedule') }}
       </van-button>
       <van-button v-else type="primary" plain block icon="calendar-o" class="latest-pay__cta" @click="emit('open-payroll')">
-        對照本週班表
+        {{ t('latestPay.compareWeek') }}
       </van-button>
       <button type="button" class="latest-pay__link" @click="emit('import-payslip')">
-        <van-icon name="add-o" />上傳新的薪資單
+        <van-icon name="add-o" />{{ t('latestPay.uploadNew') }}
       </button>
     </div>
   </section>

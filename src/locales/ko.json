@@ -475,7 +475,8 @@
     "markPayment": "지급 기록",
     "paymentHint": "만기일 {date}, 홈에서는 아래 지급일 기준으로 계산해요.",
     "confirmPaid": "지급 확인",
-    "quickCategoryAria": "분류"
+    "quickCategoryAria": "분류",
+    "scanReceipt": "영수증 스캔"
   },
   "trips": {
     "title": "카풀 요금 기록",
@@ -1600,5 +1601,42 @@
     "restoreDefault": "‘{name}’ 기본 시간 {start}–{end}(으)로 복원",
     "dayEditorNote": "여기서 바꾸는 건 매주 고정 근무표예요. 나중에 근무표에서 하루만 수정해도 여기는 바뀌지 않아요.",
     "applyCount": "{count}일에 적용"
+  },
+  "receipt": {
+    "scanTitle": "영수증 스캔",
+    "resultTitle": "인식 결과",
+    "lead": "마트 영수증을 촬영하면 이 기기에서 글자를 인식합니다.",
+    "tipFlat": "영수증을 평평하게 펴고 전체가 화면에 들어오게 하세요",
+    "tipLight": "밝은 곳에서 반사와 그림자를 피하세요",
+    "tipPrivacy": "사진은 업로드되거나 저장되지 않습니다",
+    "takePhoto": "촬영하기",
+    "chooseFromGallery": "사진에서 선택",
+    "cameraHint": "카메라가 열리지 않으면(권한이 없는 경우 등) 사진에서 선택하거나 직접 입력하세요.",
+    "manualEntry": "직접 입력하기",
+    "preparing": "사진을 처리하는 중…",
+    "previewAlt": "영수증 사진 미리보기",
+    "rotate": "회전",
+    "retake": "다시 찍기",
+    "startRecognition": "인식 시작",
+    "loadingModel": "인식 엔진을 준비하는 중…",
+    "recognizing": "글자를 인식하는 중…",
+    "firstTimeDownload": "처음 한 번 약 7 MB의 인식 데이터를 내려받아 이 기기에 저장합니다.",
+    "resultMeta": "{seconds}초 · 평균 신뢰도 {confidence}% · {lines}줄",
+    "noText": "글자를 찾지 못했습니다. 밝은 곳에서 다시 찍어 주세요.",
+    "lowConfidenceLines": "{count}줄의 신뢰도가 낮습니다(노란색). 확인할 때 주의하세요.",
+    "pocNote": "미리보기: 지금은 인식한 글자만 표시합니다. 품목 정리와 기록은 다음 버전에 추가됩니다.",
+    "scanAnother": "다른 영수증 스캔",
+    "retry": "다시 인식",
+    "tryAgain": "다른 사진 선택",
+    "errors": {
+      "NOT_IMAGE": "이미지 파일이 아닙니다. 영수증 사진을 선택하세요.",
+      "TOO_LARGE": "사진이 너무 큽니다(30 MB 초과). 다시 찍거나 더 작은 사진을 선택하세요.",
+      "UNSUPPORTED": "이 이미지 형식은 읽을 수 없습니다. 카메라로 찍거나 JPEG/PNG를 선택하세요.",
+      "MEMORY": "메모리가 부족합니다. 다른 앱을 닫고 다시 찍거나 영수증만 보이도록 가까이에서 찍으세요.",
+      "CANCELLED": "선택한 사진이 없습니다.",
+      "UNKNOWN": "사진을 처리하지 못했습니다. 다시 시도하세요.",
+      "OCR_FAILED": "인식에 실패했습니다. 다시 시도하거나 직접 입력하세요.",
+      "OFFLINE": "처음에는 인식 데이터를 내려받기 위해 인터넷이 필요합니다. 연결 후 다시 시도하세요."
+    }
   }
 }

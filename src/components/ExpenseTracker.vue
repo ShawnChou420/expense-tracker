@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { showConfirmDialog, showToast } from 'vant'
 import { useI18n } from 'vue-i18n'
 import { formatMonthDay } from '../i18n/format.js'
@@ -19,6 +19,7 @@ import {
 import { dollarsToCents, formatAud, formatCentsInput } from '../domain/money.js'
 import { expenseRepository, subscribeToLedgerChanges } from '../repositories/appRepositories.js'
 import { authToken } from '../services/authSession.js'
+import { isReceiptScanEnabled } from '../services/receipt/featureFlag.js'
 
 const { t, locale } = useI18n()
 const repository = expenseRepository
@@ -27,6 +28,11 @@ const selectedDate = ref(formatLocalDate(new Date()))
 const filter = ref('ALL')
 const showForm = ref(false)
 const showPaymentForm = ref(false)
+// 收據掃描（PoC 階段入口隱藏，見 featureFlag.js）
+const receiptScanEnabled = isReceiptScanEnabled()
+// 掃描流程第一次打開時才下載，不增加支出頁的載入量
+const ReceiptScanFlow = defineAsyncComponent(() => import('./receipt/ReceiptScanFlow.vue'))
+const showReceiptScan = ref(false)
 const payingOccurrence = ref(null)
 const paymentDate = ref(formatLocalDate(new Date()))
 const editingId = ref(null)
@@ -295,6 +301,16 @@ defineExpose({ openForm })
         >{{ t('expenses.add') }}</van-button
       >
     </header>
+    <van-button
+      v-if="receiptScanEnabled"
+      class="receipt-entry"
+      block
+      plain
+      type="primary"
+      icon="scan"
+      @click="showReceiptScan = true"
+      >{{ t('expenses.scanReceipt') }}</van-button
+    >
 
     <section class="overview app-page__card" aria-labelledby="expense-overview-title">
       <div class="overview-top">
@@ -628,6 +644,11 @@ defineExpose({ openForm })
         </div>
       </form>
     </van-popup>
+    <ReceiptScanFlow
+      v-if="receiptScanEnabled && showReceiptScan"
+      v-model:show="showReceiptScan"
+      @manual="openForm()"
+    />
     <van-popup v-model:show="showPaymentForm" position="bottom" round safe-area-inset-bottom>
       <form class="sheet-form" @submit.prevent="savePayment">
         <div class="sheet-header">
@@ -665,6 +686,10 @@ defineExpose({ openForm })
 }
 .page-header {
   gap: 10px;
+}
+.receipt-entry {
+  margin-bottom: var(--page-section-gap);
+  border-radius: var(--radius-button);
 }
 .header-action {
   flex: none;

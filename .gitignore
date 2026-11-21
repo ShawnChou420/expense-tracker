@@ -41,3 +41,6 @@ __screenshots__/
 
 # Local archives
 *.zip
+
+# 收據 OCR 自架檔案（npm run dev/build 時從 node_modules 複製）
+/public/ocr/

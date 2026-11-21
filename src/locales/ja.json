@@ -475,7 +475,8 @@
     "markPayment": "支払いを記録",
     "paymentHint": "期日 {date}。ホームでは下の支払日で計上します。",
     "confirmPaid": "支払いを確定",
-    "quickCategoryAria": "分類"
+    "quickCategoryAria": "分類",
+    "scanReceipt": "レシート読取"
   },
   "trips": {
     "title": "相乗り運賃の記録",
@@ -1600,5 +1601,42 @@
     "restoreDefault": "「{name}」の既定時間 {start}–{end} に戻す",
     "dayEditorNote": "ここで変えるのは毎週の固定シフトです。後でシフト表の特定の日を変えても、ここには反映されません。",
     "applyCount": "{count} 日に適用"
+  },
+  "receipt": {
+    "scanTitle": "レシートをスキャン",
+    "resultTitle": "読み取り結果",
+    "lead": "スーパーのレシートを撮影すると、この端末上で文字を読み取ります。",
+    "tipFlat": "レシートを平らにして、全体を画面に収めてください",
+    "tipLight": "明るい場所で、反射や影を避けてください",
+    "tipPrivacy": "写真はアップロードも保存もされません",
+    "takePhoto": "撮影する",
+    "chooseFromGallery": "写真から選ぶ",
+    "cameraHint": "カメラが開かない場合（権限がないなど）は、写真から選ぶか手入力してください。",
+    "manualEntry": "手入力で記録する",
+    "preparing": "写真を処理しています…",
+    "previewAlt": "レシート写真のプレビュー",
+    "rotate": "回転",
+    "retake": "撮り直す",
+    "startRecognition": "読み取りを開始",
+    "loadingModel": "読み取りエンジンを準備しています…",
+    "recognizing": "文字を読み取っています…",
+    "firstTimeDownload": "初回のみ約 7 MB の読み取りデータをダウンロードし、この端末に保存します。",
+    "resultMeta": "{seconds} 秒・平均信頼度 {confidence}%・{lines} 行",
+    "noText": "文字が見つかりませんでした。明るい場所で撮り直してください。",
+    "lowConfidenceLines": "{count} 行の信頼度が低くなっています（黄色）。確認時に注意してください。",
+    "pocNote": "プレビュー版：現在は読み取った文字のみ表示します。品目の整理と記録は次のバージョンで追加します。",
+    "scanAnother": "別のレシートを読み取る",
+    "retry": "もう一度読み取る",
+    "tryAgain": "別の写真を選ぶ",
+    "errors": {
+      "NOT_IMAGE": "画像ファイルではありません。レシートの写真を選んでください。",
+      "TOO_LARGE": "写真が大きすぎます（30 MB 超）。撮り直すか、小さい写真を選んでください。",
+      "UNSUPPORTED": "この画像形式は読み込めません。カメラで撮影するか、JPEG／PNG を選んでください。",
+      "MEMORY": "メモリが不足しています。他のアプリを閉じて撮り直すか、レシートだけが写るように近づいてください。",
+      "CANCELLED": "写真が選択されていません。",
+      "UNKNOWN": "写真を処理できませんでした。もう一度お試しください。",
+      "OCR_FAILED": "読み取りに失敗しました。再試行するか、手入力してください。",
+      "OFFLINE": "初回は読み取りデータのダウンロードにインターネット接続が必要です。接続してからお試しください。"
+    }
   }
 }

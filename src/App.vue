@@ -384,7 +384,7 @@ async function handleSignedIn() {
         if (memberShopping) {
           for (const item of guestShopping.filter((guest) =>
             !memberShopping.some((member) => member.id === guest.id))) {
-            await shoppingRepository.save(item)
+            await shoppingRepository.add(item)
           }
         }
         if (guestVisa && memberVisa === null) await visaJourneyRepository.save(guestVisa)

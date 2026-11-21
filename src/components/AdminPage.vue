@@ -5,6 +5,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { showToast } from 'vant'
 import { adminRepository } from '../repositories/adminRepository.js'
 import { authEmail } from '../services/authSession.js'
+import SupermarketImportPanel from './SupermarketImportPanel.vue'
 
 const emit = defineEmits(['back'])
 
@@ -13,6 +14,7 @@ const TABS = [
   { id: 'users', label: '會員' },
   { id: 'logs', label: '紀錄' },
   { id: 'audit', label: '稽核' },
+  { id: 'specials', label: '特價' },
 ]
 const tab = ref('overview')
 
@@ -338,6 +340,11 @@ onMounted(loadOverview)
         <span>{{ logs.page + 1 }} / {{ logPages }}</span>
         <van-button size="small" :disabled="logs.page + 1 >= logPages" @click="loadLogs(logs.page + 1)">下一頁</van-button>
       </div>
+    </section>
+
+    <!-- 超市特價 CSV 匯入 -->
+    <section v-else-if="tab === 'specials'" class="admin-section">
+      <SupermarketImportPanel />
     </section>
 
     <!-- 稽核紀錄 -->

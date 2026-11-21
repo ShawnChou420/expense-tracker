@@ -10,15 +10,24 @@ import {
   SHOPPING_PRIORITIES,
   SHOPPING_STORES,
 } from '../domain/shopping.js'
+import { estimateShoppingTotals } from '../domain/shoppingLists.js'
+import { dollarsToCents, formatAud, formatCentsInput } from '../domain/money.js'
+import { formatLocalDate, parseLocalDate } from '../domain/date.js'
 import {
   shoppingRepository,
   subscribeToShoppingChanges,
 } from '../repositories/shoppingRepository.js'
 import { authToken } from '../services/authSession.js'
+import SupermarketSpecials from './SupermarketSpecials.vue'
 
 const props = defineProps({ active: Boolean })
 const emit = defineEmits(['navigate'])
 const items = ref([])
+const listId = ref('')
+const pageTab = ref('LIST')
+const showComplete = ref(false)
+const completing = ref(false)
+const completeForm = ref({ amount: '', date: '' })
 const loading = ref(false)
 const saving = ref(false)
 const busyId = ref('')
@@ -48,6 +57,13 @@ const initialFormSnapshot = ref('')
 const hasUnsavedChanges = computed(() => JSON.stringify(form.value) !== initialFormSnapshot.value)
 const undoCandidate = ref(null)
 const sections = computed(() => getShoppingSections(items.value))
+const totals = computed(() => estimateShoppingTotals(items.value))
+const purchasedItems = computed(() =>
+  items.value.filter((item) => item.bucket === 'NOW' && item.purchasedQuantity > 0),
+)
+const carryOverCount = computed(
+  () => items.value.filter((item) => item.purchasedQuantity < item.quantity).length,
+)
 const pendingItems = computed(() =>
   selectedBucket.value === 'NOW' ? sections.value.now : sections.value.later,
 )
@@ -85,7 +101,36 @@ function emptyForm(bucket = 'NOW') {
     bucket,
     store: 'ANY',
     note: '',
+    promotionId: null,
+    packageSize: null,
+    estimatedUnitPriceCents: null,
+    actualUnitPriceCents: null,
+    priceInput: '',
   }
+}
+
+function toFormValue(item) {
+  return {
+    ...item,
+    priceInput:
+      item.estimatedUnitPriceCents === null ? '' : formatCentsInput(item.estimatedUnitPriceCents),
+  }
+}
+
+function fromFormValue(value) {
+  const { priceInput, ...item } = value
+  const text = String(priceInput ?? '').trim()
+  const cents = text === '' ? null : dollarsToCents(text)
+  if (text !== '' && cents === null) throw new Error('預估單價格式不正確')
+  return { ...item, estimatedUnitPriceCents: cents }
+}
+
+function priceLine(item) {
+  if (item.estimatedUnitPriceCents === null) return ''
+  const quantity = item.quantity - item.purchasedQuantity
+  return quantity > 1
+    ? `${formatAud(item.estimatedUnitPriceCents)} × ${quantity}`
+    : formatAud(item.estimatedUnitPriceCents)
 }
 
 function priorityLabel(priority) {
@@ -107,8 +152,11 @@ async function refresh() {
   const identity = authToken.value
   loading.value = true
   try {
-    const next = await shoppingRepository.list()
-    if (identity === authToken.value) items.value = next
+    const list = await shoppingRepository.active()
+    if (identity === authToken.value) {
+      items.value = list.items
+      listId.value = list.id
+    }
   } catch (error) {
     showToast(error.message || '無法讀取採買清單')
   } finally {
@@ -161,9 +209,9 @@ async function quickAdd() {
   if (suppressSubmit || isComposing.value || saving.value || !quickName.value.trim()) return
   saving.value = true
   try {
-    await shoppingRepository.save(
+    await shoppingRepository.add(
       createShoppingItem({
-        ...emptyForm(selectedBucket.value),
+        ...fromFormValue(emptyForm(selectedBucket.value)),
         id: crypto.randomUUID(),
         name: quickName.value,
       }),
@@ -179,7 +227,7 @@ async function quickAdd() {
 }
 
 function openEditor(item = null) {
-  form.value = item ? { ...item } : emptyForm(selectedBucket.value)
+  form.value = item ? toFormValue(item) : emptyForm(selectedBucket.value)
   initialFormSnapshot.value = JSON.stringify(form.value)
   advancedOpen.value = []
   showActions.value = false
@@ -215,8 +263,12 @@ async function saveItem() {
   if (saving.value) return
   saving.value = true
   try {
-    const record = createShoppingItem({ ...form.value, id: form.value.id || crypto.randomUUID() })
-    await shoppingRepository.save(record)
+    const record = createShoppingItem({
+      ...fromFormValue(form.value),
+      id: form.value.id || crypto.randomUUID(),
+    })
+    if (form.value.id) await shoppingRepository.save(record)
+    else await shoppingRepository.add(record)
     if (undoCandidate.value?.id === record.id) clearUndo()
     showForm.value = false
     showToast(form.value.id ? '已更新' : '已加入清單')
@@ -254,7 +306,12 @@ async function toggleComplete(item) {
   const next = completeShoppingItem(item)
   if (await updatePurchased(item, next)) {
     clearUndo()
-    undoCandidate.value = { id: item.id, name: item.name, previous: item, completed: next }
+    undoCandidate.value = {
+      id: item.id,
+      name: item.name,
+      previous: item,
+      completed: next,
+    }
     undoTimer = setTimeout(clearUndo, 6000)
   }
 }
@@ -328,168 +385,273 @@ function onActionSelect(action) {
   else if (action.id === 'edit') openEditor(item)
   else if (action.id === 'delete') removeItem(item)
 }
+
+function openComplete() {
+  if (!purchasedItems.value.length) {
+    showToast('先勾選這次買到的商品')
+    return
+  }
+  completeForm.value = {
+    amount: totals.value.purchasedCents ? formatCentsInput(totals.value.purchasedCents) : '',
+    date: formatLocalDate(new Date()),
+  }
+  showComplete.value = true
+}
+
+async function confirmComplete() {
+  if (completing.value) return
+  const amountCents = dollarsToCents(completeForm.value.amount)
+  if (!amountCents) {
+    showToast('請輸入實際花費金額')
+    return
+  }
+  if (!parseLocalDate(completeForm.value.date)) {
+    showToast('請選擇有效日期')
+    return
+  }
+  completing.value = true
+  try {
+    const result = await shoppingRepository.complete({
+      listId: listId.value,
+      date: completeForm.value.date,
+      amountCents,
+      itemCount: purchasedItems.value.length,
+    })
+    showComplete.value = false
+    clearUndo()
+    showToast(result.alreadyCompleted ? '這張清單已經完成過，沒有重複記帳' : '已記成一筆採買支出')
+  } catch (error) {
+    showToast(error.message || '完成採買失敗')
+  } finally {
+    completing.value = false
+  }
+}
 </script>
 
 <template>
   <main class="shopping-page app-page">
     <header class="app-page__header shopping-header">
-      <h1>採買清單</h1>
-      <span class="shopping-count">待買 {{ sections.remainingCount }} 項</span>
+      <h1>採買</h1>
+      <span v-if="pageTab === 'LIST'" class="shopping-count"
+        >待買 {{ sections.remainingCount }} 項</span
+      >
     </header>
 
-    <section class="shopping-add app-page__card" aria-label="快速新增採買項目">
-      <form
-        class="shopping-add__form"
-        @submit.prevent="quickAdd"
-        @compositionstart.capture="isComposing = true"
-        @compositionend.capture="isComposing = false"
-        @keydown.capture="onQuickKeydown"
+    <div class="shopping-page-tabs" role="tablist" aria-label="採買頁面">
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="pageTab === 'LIST'"
+        :class="{ 'is-selected': pageTab === 'LIST' }"
+        @click="pageTab = 'LIST'"
       >
-        <van-field
-          ref="quickField"
-          v-model="quickName"
-          class="shopping-add__input"
-          placeholder="要買什麼？"
-          maxlength="120"
-          clearable
-        />
-        <van-button
-          native-type="submit"
-          type="primary"
-          :loading="saving"
-          :disabled="saving || !quickName.trim()"
-          >加入</van-button
+        我的清單
+      </button>
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="pageTab === 'SPECIALS'"
+        :class="{ 'is-selected': pageTab === 'SPECIALS' }"
+        @click="pageTab = 'SPECIALS'"
+      >
+        本週特價
+      </button>
+    </div>
+
+    <SupermarketSpecials
+      v-show="pageTab === 'SPECIALS'"
+      :active="active && pageTab === 'SPECIALS'"
+    />
+
+    <div v-show="pageTab === 'LIST'">
+      <section class="shopping-add app-page__card" aria-label="快速新增採買項目">
+        <form
+          class="shopping-add__form"
+          @submit.prevent="quickAdd"
+          @compositionstart.capture="isComposing = true"
+          @compositionend.capture="isComposing = false"
+          @keydown.capture="onQuickKeydown"
         >
-      </form>
-      <button class="shopping-add__details" type="button" @click="openEditor()">
-        設定數量或店家 <van-icon name="arrow" />
-      </button>
-    </section>
+          <van-field
+            ref="quickField"
+            v-model="quickName"
+            class="shopping-add__input"
+            placeholder="要買什麼？"
+            maxlength="120"
+            clearable
+          />
+          <van-button
+            native-type="submit"
+            type="primary"
+            :loading="saving"
+            :disabled="saving || !quickName.trim()"
+            >加入</van-button
+          >
+        </form>
+        <button class="shopping-add__details" type="button" @click="openEditor()">
+          設定數量或店家 <van-icon name="arrow" />
+        </button>
+      </section>
 
-    <div class="shopping-tabs" role="tablist" aria-label="採買安排">
-      <button
-        type="button"
-        id="shopping-tab-now"
-        role="tab"
-        aria-controls="shopping-list-panel"
-        :aria-selected="selectedBucket === 'NOW'"
-        :class="{ 'is-selected': selectedBucket === 'NOW' }"
-        @click="selectedBucket = 'NOW'"
-      >
-        這次買 <span>{{ sections.now.length }}</span>
-      </button>
-      <button
-        type="button"
-        id="shopping-tab-later"
-        role="tab"
-        aria-controls="shopping-list-panel"
-        :aria-selected="selectedBucket === 'LATER'"
-        :class="{ 'is-selected': selectedBucket === 'LATER' }"
-        @click="selectedBucket = 'LATER'"
-      >
-        下次買 <span>{{ sections.later.length }}</span>
-      </button>
-    </div>
-
-    <section
-      id="shopping-list-panel"
-      class="shopping-list"
-      role="tabpanel"
-      :aria-labelledby="selectedBucket === 'NOW' ? 'shopping-tab-now' : 'shopping-tab-later'"
-      aria-live="polite"
-    >
-      <p v-if="loading" class="shopping-empty">正在讀取清單…</p>
-      <p v-else-if="!pendingItems.length" class="shopping-empty">
-        {{ selectedBucket === 'NOW' ? '這次沒有待買商品。' : '下次買清單還是空的。' }}
-      </p>
-      <div v-else class="shopping-list__rows app-page__card">
-        <article v-for="item in pendingItems" :key="item.id" class="shopping-row">
-          <button
-            type="button"
-            class="shopping-check"
-            role="checkbox"
-            aria-checked="false"
-            :aria-label="`完成${item.name}剩餘的${item.quantity - item.purchasedQuantity}${item.unit}`"
-            :disabled="Boolean(busyId)"
-            @click.stop="toggleComplete(item)"
-          >
-            <van-icon name="success" />
-          </button>
-          <button type="button" class="shopping-row__body" @click="openEditor(item)">
-            <strong>{{ item.name }}</strong>
-            <span
-              v-if="item.purchasedQuantity || item.priority === 'HIGH' || item.store !== 'ANY'"
-              class="shopping-row__meta"
-            >
-              <span v-if="item.priority === 'HIGH'" class="shopping-tag shopping-tag--urgent"
-                >急需</span
-              >
-              <span v-if="item.store !== 'ANY'" class="shopping-tag">{{
-                storeLabel(item.store)
-              }}</span>
-              <span v-if="item.purchasedQuantity"
-                >已買 {{ item.purchasedQuantity }}／共 {{ item.quantity }}，還差
-                {{ item.quantity - item.purchasedQuantity }}</span
-              >
-            </span>
-          </button>
-          <span class="shopping-row__remaining"
-            >{{ item.quantity - item.purchasedQuantity }} {{ item.unit }}</span
-          >
-          <button
-            type="button"
-            class="shopping-more"
-            :aria-label="`${item.name}更多操作`"
-            :disabled="Boolean(busyId)"
-            @click.stop="openActions(item)"
-          >
-            <van-icon name="ellipsis" />
-          </button>
-        </article>
+      <div class="shopping-tabs" role="tablist" aria-label="採買安排">
+        <button
+          type="button"
+          id="shopping-tab-now"
+          role="tab"
+          aria-controls="shopping-list-panel"
+          :aria-selected="selectedBucket === 'NOW'"
+          :class="{ 'is-selected': selectedBucket === 'NOW' }"
+          @click="selectedBucket = 'NOW'"
+        >
+          這次買 <span>{{ sections.now.length }}</span>
+        </button>
+        <button
+          type="button"
+          id="shopping-tab-later"
+          role="tab"
+          aria-controls="shopping-list-panel"
+          :aria-selected="selectedBucket === 'LATER'"
+          :class="{ 'is-selected': selectedBucket === 'LATER' }"
+          @click="selectedBucket = 'LATER'"
+        >
+          下次買 <span>{{ sections.later.length }}</span>
+        </button>
       </div>
-    </section>
 
-    <div v-if="undoCandidate" class="shopping-undo" role="status">
-      <span>「{{ undoCandidate.name }}」已完成</span>
-      <button type="button" :disabled="Boolean(busyId)" @click="undoComplete">復原</button>
-    </div>
-
-    <van-collapse v-if="completedItems.length" v-model="completedOpen" class="shopping-completed">
-      <van-collapse-item name="completed" :title="`已買完 · ${completedItems.length} 項`">
-        <div v-for="item in completedItems" :key="item.id" class="shopping-row shopping-row--done">
-          <button
-            type="button"
-            class="shopping-check is-checked"
-            role="checkbox"
-            aria-checked="true"
-            :aria-label="`取消完成${item.name}`"
-            :disabled="Boolean(busyId)"
-            @click.stop="toggleComplete(item)"
-          >
-            <van-icon name="success" />
-          </button>
-          <button type="button" class="shopping-row__body" @click="openEditor(item)">
-            <strong>{{ item.name }}</strong>
-          </button>
-          <span class="shopping-row__remaining">{{ item.quantity }} {{ item.unit }}</span>
-          <button
-            type="button"
-            class="shopping-more"
-            :aria-label="`${item.name}更多操作`"
-            :disabled="Boolean(busyId)"
-            @click.stop="openActions(item)"
-          >
-            <van-icon name="ellipsis" />
-          </button>
+      <section
+        id="shopping-list-panel"
+        class="shopping-list"
+        role="tabpanel"
+        :aria-labelledby="selectedBucket === 'NOW' ? 'shopping-tab-now' : 'shopping-tab-later'"
+        aria-live="polite"
+      >
+        <p v-if="loading" class="shopping-empty">正在讀取清單…</p>
+        <p v-else-if="!pendingItems.length" class="shopping-empty">
+          {{ selectedBucket === 'NOW' ? '這次沒有待買商品。' : '下次買清單還是空的。' }}
+        </p>
+        <div v-else class="shopping-list__rows app-page__card">
+          <article v-for="item in pendingItems" :key="item.id" class="shopping-row">
+            <button
+              type="button"
+              class="shopping-check"
+              role="checkbox"
+              aria-checked="false"
+              :aria-label="`完成${item.name}剩餘的${item.quantity - item.purchasedQuantity}${item.unit}`"
+              :disabled="Boolean(busyId)"
+              @click.stop="toggleComplete(item)"
+            >
+              <van-icon name="success" />
+            </button>
+            <button type="button" class="shopping-row__body" @click="openEditor(item)">
+              <strong>{{ item.name }}</strong>
+              <span
+                v-if="
+                  item.purchasedQuantity ||
+                  item.priority === 'HIGH' ||
+                  item.store !== 'ANY' ||
+                  item.promotionId ||
+                  item.packageSize ||
+                  item.estimatedUnitPriceCents !== null
+                "
+                class="shopping-row__meta"
+              >
+                <span v-if="item.promotionId" class="shopping-tag shopping-tag--special">特價</span>
+                <span v-if="item.priority === 'HIGH'" class="shopping-tag shopping-tag--urgent"
+                  >急需</span
+                >
+                <span v-if="item.packageSize">{{ item.packageSize }}</span>
+                <span v-if="priceLine(item)" class="shopping-row__price">{{
+                  priceLine(item)
+                }}</span>
+                <span v-if="item.store !== 'ANY'" class="shopping-tag">{{
+                  storeLabel(item.store)
+                }}</span>
+                <span v-if="item.purchasedQuantity"
+                  >已買 {{ item.purchasedQuantity }}／共 {{ item.quantity }}，還差
+                  {{ item.quantity - item.purchasedQuantity }}</span
+                >
+              </span>
+            </button>
+            <span class="shopping-row__remaining"
+              >{{ item.quantity - item.purchasedQuantity }} {{ item.unit }}</span
+            >
+            <button
+              type="button"
+              class="shopping-more"
+              :aria-label="`${item.name}更多操作`"
+              :disabled="Boolean(busyId)"
+              @click.stop="openActions(item)"
+            >
+              <van-icon name="ellipsis" />
+            </button>
+          </article>
         </div>
-      </van-collapse-item>
-    </van-collapse>
+      </section>
 
-    <div class="shopping-expense">
-      <span>勾選商品不會自動記成支出。</span>
-      <button type="button" @click="emit('navigate', 'expenses')">
-        去記支出 <van-icon name="arrow" />
-      </button>
+      <div v-if="undoCandidate" class="shopping-undo" role="status">
+        <span>「{{ undoCandidate.name }}」已完成</span>
+        <button type="button" :disabled="Boolean(busyId)" @click="undoComplete">復原</button>
+      </div>
+
+      <van-collapse v-if="completedItems.length" v-model="completedOpen" class="shopping-completed">
+        <van-collapse-item name="completed" :title="`已買完 · ${completedItems.length} 項`">
+          <div
+            v-for="item in completedItems"
+            :key="item.id"
+            class="shopping-row shopping-row--done"
+          >
+            <button
+              type="button"
+              class="shopping-check is-checked"
+              role="checkbox"
+              aria-checked="true"
+              :aria-label="`取消完成${item.name}`"
+              :disabled="Boolean(busyId)"
+              @click.stop="toggleComplete(item)"
+            >
+              <van-icon name="success" />
+            </button>
+            <button type="button" class="shopping-row__body" @click="openEditor(item)">
+              <strong>{{ item.name }}</strong>
+            </button>
+            <span class="shopping-row__remaining">{{ item.quantity }} {{ item.unit }}</span>
+            <button
+              type="button"
+              class="shopping-more"
+              :aria-label="`${item.name}更多操作`"
+              :disabled="Boolean(busyId)"
+              @click.stop="openActions(item)"
+            >
+              <van-icon name="ellipsis" />
+            </button>
+          </div>
+        </van-collapse-item>
+      </van-collapse>
+
+      <div class="shopping-expense">
+        <span>按「完成採買」會記成一筆「飲食／採買」支出，沒買到的會留到下一張清單。</span>
+        <button type="button" @click="emit('navigate', 'expenses')">
+          看支出 <van-icon name="arrow" />
+        </button>
+      </div>
+
+      <div class="shopping-total" role="region" aria-label="預估金額">
+        <div class="shopping-total__numbers">
+          <span>這次預估</span>
+          <strong>{{ formatAud(totals.estimatedCents) }}</strong>
+          <small v-if="totals.unpricedCount">另有 {{ totals.unpricedCount }} 項未填價格</small>
+          <small v-else-if="totals.purchasedCount"
+            >已買 {{ totals.purchasedCount }} 項 · {{ formatAud(totals.purchasedCents) }}</small
+          >
+        </div>
+        <van-button
+          type="primary"
+          class="shopping-total__done"
+          :disabled="!purchasedItems.length || completing"
+          @click="openComplete"
+          >完成採買</van-button
+        >
+      </div>
     </div>
 
     <van-action-sheet
@@ -512,7 +674,8 @@ function onActionSelect(action) {
         <h2>買一部分</h2>
         <p>
           {{ selectedItem.name }} · 還差
-          {{ selectedItem.quantity - selectedItem.purchasedQuantity }} {{ selectedItem.unit }}
+          {{ selectedItem.quantity - selectedItem.purchasedQuantity }}
+          {{ selectedItem.unit }}
         </p>
         <van-stepper
           v-model="partialQuantity"
@@ -549,7 +712,7 @@ function onActionSelect(action) {
           v-model="form.name"
           label="品名"
           placeholder="例如：牛奶"
-          maxlength="120"
+          :maxlength="form.promotionId ? 200 : 120"
           required
         />
         <div class="shopping-sheet__quantity">
@@ -563,6 +726,19 @@ function onActionSelect(action) {
             placeholder="單位"
           />
         </div>
+        <van-field
+          v-model="form.priceInput"
+          label="預估單價"
+          type="number"
+          inputmode="decimal"
+          placeholder="選填，例如 4.50"
+          :disabled="Boolean(form.promotionId)"
+        >
+          <template #left-icon>$</template>
+        </van-field>
+        <p v-if="form.promotionId" class="shopping-sheet__hint">
+          特價商品的價格以加入時的特價為準{{ form.packageSize ? `（${form.packageSize}）` : '' }}。
+        </p>
         <p v-if="form.purchasedQuantity" class="shopping-sheet__hint">
           已買 {{ form.purchasedQuantity }} {{ form.unit }}；目標數量不可少於已買數量。
         </p>
@@ -624,6 +800,63 @@ function onActionSelect(action) {
           >
             刪除這項
           </button>
+        </div>
+      </form>
+    </van-popup>
+    <van-popup
+      v-model:show="showComplete"
+      class="shopping-popup"
+      position="bottom"
+      round
+      :close-on-click-overlay="!completing"
+      :style="{ bottom: `${keyboardInset}px` }"
+    >
+      <form class="shopping-sheet" @submit.prevent="confirmComplete">
+        <div class="shopping-sheet__header">
+          <h2>完成採買</h2>
+          <button
+            type="button"
+            aria-label="關閉完成採買"
+            :disabled="completing"
+            @click="showComplete = false"
+          >
+            <van-icon name="cross" />
+          </button>
+        </div>
+        <ul class="shopping-receipt">
+          <li v-for="item in purchasedItems" :key="item.id">
+            <span>{{ item.name }} × {{ item.purchasedQuantity }}</span>
+            <span>{{
+              item.estimatedUnitPriceCents === null
+                ? '未填價格'
+                : formatAud(item.estimatedUnitPriceCents * item.purchasedQuantity)
+            }}</span>
+          </li>
+        </ul>
+        <p class="shopping-sheet__hint">
+          預估 {{ formatAud(totals.purchasedCents) }}
+          <template v-if="totals.purchasedUnpricedCount"
+            >（{{ totals.purchasedUnpricedCount }} 項未填價格）</template
+          >。請依收據填寫實際金額。
+        </p>
+        <van-field
+          v-model="completeForm.amount"
+          label="實際花費"
+          type="number"
+          inputmode="decimal"
+          placeholder="例如 23.50"
+          required
+        >
+          <template #left-icon>$</template>
+        </van-field>
+        <van-field v-model="completeForm.date" label="日期" type="date" required />
+        <p v-if="carryOverCount" class="shopping-sheet__hint">
+          還沒買齊的 {{ carryOverCount }} 項會自動移到下一張清單。
+        </p>
+        <div class="shopping-sheet__actions">
+          <van-button block type="primary" native-type="submit" :loading="completing"
+            >記成一筆支出</van-button
+          >
         </div>
       </form>
     </van-popup>
@@ -845,6 +1078,90 @@ function onActionSelect(action) {
 .shopping-row--done .shopping-row__body strong {
   color: var(--color-muted);
   text-decoration: line-through;
+}
+.shopping-page-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  margin: 0 0 14px;
+  padding: 4px;
+  border-radius: 13px;
+  background: #eaf1fa;
+}
+.shopping-page-tabs button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #52667e;
+  font-size: 14px;
+  font-weight: 700;
+}
+.shopping-page-tabs button.is-selected {
+  background: #fff;
+  color: var(--color-primary);
+  box-shadow: 0 1px 3px rgb(15 40 80 / 12%);
+}
+.shopping-tag--special {
+  background: #fdecec;
+  color: #c43a3a;
+}
+.shopping-row__price {
+  color: #3c4f66;
+  font-weight: 700;
+}
+.shopping-total {
+  position: sticky;
+  bottom: calc(var(--van-tabbar-height, 50px) + env(safe-area-inset-bottom, 0px) + 8px);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 4px 14px rgb(15 40 80 / 10%);
+}
+.shopping-total__numbers {
+  display: grid;
+  min-width: 0;
+}
+.shopping-total__numbers span,
+.shopping-total__numbers small {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+.shopping-total__numbers strong {
+  color: var(--color-text);
+  font-size: 20px;
+}
+.shopping-total__done {
+  flex: none;
+  min-height: 44px;
+  border-radius: 12px;
+}
+.shopping-receipt {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 8px;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+.shopping-receipt li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.shopping-receipt li span:first-child {
+  overflow-wrap: anywhere;
+}
+.shopping-receipt li span:last-child {
+  flex: none;
+  color: var(--color-muted);
 }
 .shopping-expense {
   display: flex;

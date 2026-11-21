@@ -64,6 +64,9 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/daily-quotes/sample").permitAll()
                 // 首頁油價卡：NSW 公開油價（伺服器端快取，外部呼叫次數與使用人數無關）
                 .requestMatchers(HttpMethod.GET, "/api/fuel-prices/nearby").permitAll()
+                // 超市本週特價：公開共用資料（管理員匯入的 CSV），訪客也能查詢
+                .requestMatchers(HttpMethod.GET, "/api/supermarkets/specials", "/api/supermarkets/specials/*",
+                    "/api/supermarkets/categories").permitAll()
                 // 管理後台：每個請求都依登入 token 重新查角色（TokenFilter），不是 SUPER_ADMIN 一律 403
                 .requestMatchers("/api/admin/**").hasRole(AuthService.SUPER_ADMIN)
                 .anyRequest().authenticated())

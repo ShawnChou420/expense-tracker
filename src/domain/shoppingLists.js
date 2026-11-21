@@ -125,3 +125,43 @@ export function buildShoppingExpense({ listId, title, date, amountCents, itemCou
     frequency: 'NONE',
   })
 }
+
+/** 「這次買」還沒買完的品項數與預估總額（特價頁底部的已選摘要） */
+export function selectionSummary(items) {
+  const pending = items.filter(
+    (item) => item.bucket === 'NOW' && item.purchasedQuantity < item.quantity,
+  )
+  return { count: pending.length, estimatedCents: estimateShoppingTotals(items).estimatedCents }
+}
+
+/**
+ * 完成採買時預設的實際購買數量：已經勾選過任何品項時沿用已買數量；
+ * 一項都還沒勾時，預設「這次買」全部買齊，讓使用者只需要修改沒買到的。
+ * @returns {Record<string, number>} 品項 ID → 數量
+ */
+export function defaultPurchasedQuantities(items) {
+  const now = items.filter((item) => item.bucket === 'NOW')
+  const anyMarked = now.some((item) => item.purchasedQuantity > 0)
+  return Object.fromEntries(
+    now.map((item) => [item.id, anyMarked ? item.purchasedQuantity : item.quantity]),
+  )
+}
+
+/**
+ * 依確認後的實際購買數量計算預估金額（有實際單價用實際單價，否則用預估單價）。
+ * @param {Record<string, number>} quantities
+ */
+export function purchasedEstimate(items, quantities) {
+  let cents = 0
+  let unpriced = 0
+  let count = 0
+  for (const item of items) {
+    const quantity = quantities[item.id] || 0
+    if (quantity <= 0) continue
+    count += 1
+    const price = purchasedUnitPrice(item)
+    if (typeof price === 'number') cents += quantity * price
+    else unpriced += 1
+  }
+  return { cents, unpriced, count }
+}

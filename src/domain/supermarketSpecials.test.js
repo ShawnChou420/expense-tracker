@@ -89,3 +89,24 @@ describe('supermarket specials', () => {
     ).toBe(false)
   })
 })
+
+describe('sync status', () => {
+  it('formats the promotion period and warns when data may be stale', async () => {
+    const { describeSyncStatus, formatPromotionPeriod } = await import('./supermarketSpecials.js')
+    expect(formatPromotionPeriod('2026-11-26', '2026-12-02')).toBe('11/26–12/2')
+    expect(formatPromotionPeriod(null, '2026-12-02')).toBe('')
+    const base = {
+      regionCode: 'NSW',
+      lastSuccessAt: '2026-11-25T20:00:00Z',
+      validFrom: '2026-11-26',
+      validTo: '2026-12-02',
+      stale: false,
+      lastRun: { status: 'SUCCESS' },
+    }
+    expect(describeSyncStatus(base).warning).toBe('')
+    expect(describeSyncStatus(base).period).toBe('11/26–12/2')
+    expect(describeSyncStatus({ ...base, stale: true }).warning).toContain('過期')
+    expect(describeSyncStatus({ ...base, lastRun: { status: 'FAILED' } }).warning).toContain('失敗')
+    expect(describeSyncStatus({ ...base, lastSuccessAt: null }).warning).toBe('還沒有本週特價資料')
+  })
+})

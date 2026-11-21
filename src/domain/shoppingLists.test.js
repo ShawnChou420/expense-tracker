@@ -151,3 +151,38 @@ describe('completing a shopping trip', () => {
     ).toThrow()
   })
 })
+
+describe('selection and completion quantities', () => {
+  it('summarises pending items in this trip', async () => {
+    const { selectionSummary } = await import('./shoppingLists.js')
+    const summary = selectionSummary([
+      item('a', { quantity: 2, estimatedUnitPriceCents: 250 }),
+      item('b', { purchasedQuantity: 1, estimatedUnitPriceCents: 100 }),
+      item('c', { bucket: 'LATER', estimatedUnitPriceCents: 999 }),
+    ])
+    expect(summary).toEqual({ count: 1, estimatedCents: 600 })
+  })
+
+  it('defaults to everything bought when nothing is ticked, otherwise keeps ticks', async () => {
+    const { defaultPurchasedQuantities } = await import('./shoppingLists.js')
+    const untouched = [item('a', { quantity: 2 }), item('b'), item('c', { bucket: 'LATER' })]
+    expect(defaultPurchasedQuantities(untouched)).toEqual({ a: 2, b: 1 })
+    const ticked = [item('a', { quantity: 2, purchasedQuantity: 1 }), item('b')]
+    expect(defaultPurchasedQuantities(ticked)).toEqual({ a: 1, b: 0 })
+  })
+
+  it('estimates the spend from confirmed quantities', async () => {
+    const { purchasedEstimate } = await import('./shoppingLists.js')
+    const items = [
+      item('a', { quantity: 3, estimatedUnitPriceCents: 250 }),
+      item('b', { quantity: 2, estimatedUnitPriceCents: 350, actualUnitPriceCents: 300 }),
+      item('c'),
+    ]
+    expect(purchasedEstimate(items, { a: 2, b: 1, c: 1 })).toEqual({
+      cents: 800,
+      unpriced: 1,
+      count: 3,
+    })
+    expect(purchasedEstimate(items, { a: 0 })).toEqual({ cents: 0, unpriced: 0, count: 0 })
+  })
+})

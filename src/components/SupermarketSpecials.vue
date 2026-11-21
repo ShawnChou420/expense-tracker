@@ -2,8 +2,9 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { showToast } from 'vant'
 import { formatAud } from '../domain/money.js'
+import { selectionSummary } from '../domain/shoppingLists.js'
 import {
-  describeLastImport,
+  describeSyncStatus,
   discountPercent,
   isHalfPrice,
   PROMOTION_TYPE_LABELS,
@@ -13,11 +14,14 @@ import {
   specialSubtitle,
   specialToShoppingItem,
 } from '../domain/supermarketSpecials.js'
-import { shoppingRepository } from '../repositories/shoppingRepository.js'
+import {
+  shoppingRepository,
+  subscribeToShoppingChanges,
+} from '../repositories/shoppingRepository.js'
 import { supermarketRepository } from '../repositories/supermarketRepository.js'
 
 const props = defineProps({ active: Boolean })
-const emit = defineEmits(['added'])
+const emit = defineEmits(['open-list'])
 
 const PAGE_SIZE = 20
 const keyword = ref('')
@@ -29,16 +33,23 @@ const items = ref([])
 const total = ref(0)
 const page = ref(0)
 const today = ref('')
-const lastImport = ref(undefined)
+const syncStatus = ref(null)
+const listItems = ref([])
 const loading = ref(false)
 const loadingMore = ref(false)
 const error = ref('')
 const addingIds = ref(new Set())
 const loaded = ref(false)
 
-const importNotice = computed(() =>
-  lastImport.value === undefined ? null : describeLastImport(lastImport.value),
+const syncInfo = computed(() => describeSyncStatus(syncStatus.value))
+/** 已在清單裡的特價：promotionId → 清單品項，用來把「加入」換成數量控制 */
+const inList = computed(
+  () =>
+    new Map(
+      listItems.value.filter((item) => item.promotionId).map((item) => [item.promotionId, item]),
+    ),
 )
+const summary = computed(() => selectionSummary(listItems.value))
 const hasMore = computed(() => items.value.length < total.value)
 const filtered = computed(() =>
   Boolean(keyword.value.trim() || category.value || halfPriceOnly.value),
@@ -67,7 +78,6 @@ async function load({ append = false } = {}) {
     total.value = result.total
     page.value = nextPage
     today.value = result.today
-    lastImport.value = result.lastImport
     loaded.value = true
   } catch (failure) {
     if (seq === requestSeq) error.value = failure.message || '無法讀取本週特價'
@@ -87,19 +97,46 @@ async function loadCategories() {
   }
 }
 
+async function loadStatus() {
+  try {
+    syncStatus.value = await supermarketRepository.status()
+  } catch {
+    syncStatus.value = null
+  }
+}
+
+async function loadList() {
+  try {
+    listItems.value = (await shoppingRepository.active()).items
+  } catch {
+    // 清單讀不到時仍可瀏覽特價，只是不會顯示已加入的數量
+  }
+}
+
 function refresh() {
   load()
   loadCategories()
+  loadStatus()
+  loadList()
 }
 
+let unsubscribe
 onMounted(() => {
+  unsubscribe = subscribeToShoppingChanges(() => {
+    if (props.active) loadList()
+  })
   if (props.active) refresh()
 })
-onUnmounted(() => clearTimeout(searchTimer))
+onUnmounted(() => {
+  clearTimeout(searchTimer)
+  unsubscribe?.()
+})
 watch(
   () => props.active,
   (active) => {
-    if (active && !loaded.value) refresh()
+    if (!active) return
+    if (!loaded.value) refresh()
+    else loadList()
   },
 )
 watch(keyword, () => {
@@ -114,27 +151,69 @@ function clearFilters() {
   halfPriceOnly.value = false
 }
 
+function markBusy(id, busy) {
+  const next = new Set(addingIds.value)
+  if (busy) next.add(id)
+  else next.delete(id)
+  addingIds.value = next
+}
+
 async function addToList(special) {
   if (addingIds.value.has(special.id)) return
-  addingIds.value = new Set([...addingIds.value, special.id])
+  markBusy(special.id, true)
   try {
-    const { item, merged } = await shoppingRepository.add(
-      specialToShoppingItem(special, crypto.randomUUID()),
-    )
-    showToast(merged ? `已在清單中，數量改為 ${item.quantity}` : '已加入我的清單')
-    emit('added')
+    await shoppingRepository.add(specialToShoppingItem(special, crypto.randomUUID()))
   } catch (failure) {
     showToast(failure.message || '加入失敗')
   } finally {
-    const next = new Set(addingIds.value)
-    next.delete(special.id)
-    addingIds.value = next
+    markBusy(special.id, false)
+  }
+}
+
+/** 數量 −／＋；減到 0 時從清單移除（已買過部分的不能減到已買數量以下） */
+async function changeQuantity(special, delta) {
+  const item = inList.value.get(special.id)
+  if (!item || addingIds.value.has(special.id)) return
+  const next = item.quantity + delta
+  if (next > 999) return
+  if (next < Math.max(1, item.purchasedQuantity)) {
+    if (item.purchasedQuantity > 0) {
+      showToast('已買過的數量不能再減少')
+      return
+    }
+  }
+  markBusy(special.id, true)
+  try {
+    if (next < 1) await shoppingRepository.remove(item.id)
+    else await shoppingRepository.save({ ...item, quantity: next })
+  } catch (failure) {
+    showToast(failure.message || '更新失敗')
+  } finally {
+    markBusy(special.id, false)
   }
 }
 </script>
 
 <template>
   <section class="specials" aria-label="Woolworths 本週特價">
+    <header class="specials-head">
+      <span class="specials-brand">Woolworths</span>
+      <div class="specials-head__text">
+        <strong
+          >本週特價<template v-if="syncInfo.period"> · {{ syncInfo.period }}</template></strong
+        >
+        <small
+          >{{ syncInfo.region || 'NSW' }} 地區價格<template v-if="syncInfo.updated">
+            · {{ syncInfo.updated }}</template
+          ></small
+        >
+      </div>
+    </header>
+    <p v-if="syncInfo.warning" class="specials-notice is-warning" role="status">
+      <van-icon name="warning-o" />
+      {{ syncInfo.warning }}
+    </p>
+
     <div class="specials-filters app-page__card">
       <van-search
         v-model="keyword"
@@ -174,16 +253,6 @@ async function addToList(special) {
       </div>
     </div>
 
-    <p
-      v-if="importNotice"
-      class="specials-notice"
-      :class="{ 'is-warning': importNotice.warning }"
-      role="status"
-    >
-      <van-icon :name="importNotice.warning ? 'warning-o' : 'clock-o'" />
-      {{ importNotice.text }}
-    </p>
-
     <div v-if="loading && !items.length" class="specials-state" aria-live="polite">
       <van-loading size="20" /> 正在讀取本週特價…
     </div>
@@ -200,7 +269,7 @@ async function addToList(special) {
     </div>
 
     <template v-else>
-      <p class="specials-count">共 {{ total }} 項特價 · Woolworths（NSW）</p>
+      <p class="specials-count">共 {{ total }} 項特價 · 價格為預估，以門市結帳為準</p>
       <ul class="specials-list" :aria-busy="loading">
         <li v-for="special in items" :key="special.id" class="special-card app-page__card">
           <div class="special-card__body">
@@ -232,7 +301,32 @@ async function addToList(special) {
             }}</span>
             <span class="special-card__end">{{ promotionEndLabel(special, today) }}</span>
           </div>
+          <div
+            v-if="inList.has(special.id)"
+            class="special-qty"
+            role="group"
+            :aria-label="`${special.name} 數量`"
+          >
+            <button
+              type="button"
+              :disabled="addingIds.has(special.id)"
+              :aria-label="inList.get(special.id).quantity > 1 ? '減少一個' : '從清單移除'"
+              @click="changeQuantity(special, -1)"
+            >
+              <van-icon :name="inList.get(special.id).quantity > 1 ? 'minus' : 'delete-o'" />
+            </button>
+            <span aria-live="polite">{{ inList.get(special.id).quantity }}</span>
+            <button
+              type="button"
+              :disabled="addingIds.has(special.id)"
+              aria-label="增加一個"
+              @click="changeQuantity(special, 1)"
+            >
+              <van-icon name="plus" />
+            </button>
+          </div>
           <van-button
+            v-else
             class="special-card__add"
             type="primary"
             size="small"
@@ -256,9 +350,18 @@ async function addToList(special) {
         >載入更多</van-button
       >
       <p class="specials-disclaimer">
-        價格以門市與 Woolworths 官網為準，可能依地區不同。資料為手動整理匯入，非即時價格。
+        價格以門市與 Woolworths 官網為準，會依地區不同，這裡顯示的是 {{ syncInfo.region || 'NSW' }}
+        地區的預估價格，不是全澳統一價。資料由管理員整理同步，不是即時價格。
       </p>
     </template>
+
+    <div v-if="summary.count" class="specials-cart" role="region" aria-label="已選商品">
+      <div>
+        <span>已選 {{ summary.count }} 項</span>
+        <strong>預估 {{ formatAud(summary.estimatedCents) }}</strong>
+      </div>
+      <van-button type="primary" size="small" @click="emit('open-list')">看清單</van-button>
+    </div>
   </section>
 </template>
 
@@ -266,6 +369,86 @@ async function addToList(special) {
 .specials {
   display: grid;
   gap: 10px;
+}
+.specials-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.specials-brand {
+  flex: none;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: #1a7f37;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+.specials-head__text {
+  display: grid;
+  min-width: 0;
+}
+.specials-head__text strong {
+  color: var(--color-text);
+  font-size: 15px;
+}
+.specials-head__text small {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+.special-qty {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 10px;
+  background: #eaf2fd;
+}
+.special-qty button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--color-primary);
+}
+.special-qty span {
+  min-width: 22px;
+  color: var(--color-primary);
+  font-weight: 800;
+  text-align: center;
+}
+.specials-cart {
+  position: sticky;
+  bottom: calc(var(--van-tabbar-height, 50px) + env(safe-area-inset-bottom, 0px) + 8px);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 4px 14px rgb(15 40 80 / 10%);
+}
+.specials-cart div {
+  display: grid;
+}
+.specials-cart span {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+.specials-cart strong {
+  color: var(--color-text);
+  font-size: 17px;
+}
+.specials-cart :deep(.van-button) {
+  min-height: 40px;
+  border-radius: 10px;
 }
 .specials-filters {
   display: grid;

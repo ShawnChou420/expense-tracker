@@ -19,8 +19,11 @@ import {
   setWeekdayShifts,
 } from '../domain/workProfile.js'
 import { showToast } from 'vant'
-import { formatHours } from '../domain/home.js'
+import { useI18n } from 'vue-i18n'
+import { formatHoursLabel as formatHours, joinList } from '../i18n/format.js'
+import { rateLabel } from '../i18n/labels.js'
 
+const { t } = useI18n()
 const props = defineProps({
   show: Boolean,
   step: { type: Number, default: 1 },
@@ -50,11 +53,7 @@ const draft = ref({ shiftTemplates: [], weekPlan: {}, cleaningDays: {}, offDayRu
 const smokoChoice = ref('AUTO') // AUTO | 0 | 1 | 2 | CUSTOM
 
 const payConfigured = computed(() => props.profile.payStatus !== PAY_STATUS.NOT_CONFIGURED && props.pay.baseRate > 0)
-const steps = [
-  { id: 1, label: '薪資' },
-  { id: 2, label: '班別' },
-  { id: 3, label: 'Smoko' },
-]
+const steps = [{ id: 1 }, { id: 2 }, { id: 3 }]
 
 function initialise() {
   current.value = props.step
@@ -107,16 +106,16 @@ const loadingFields = RATE_FIELDS.filter((field) => LOADING_KEYS.includes(field.
 const manualBase = computed(() => Number(manual.value.baseRate))
 const manualErrors = computed(() => {
   const errors = {}
-  if (!(manualBase.value > 0) || manualBase.value > 1000) errors.baseRate = '請輸入正確的基本時薪'
+  if (!(manualBase.value > 0) || manualBase.value > 1000) errors.baseRate = t('wizard.errorBaseRate')
   const ppe = manual.value.ppeAllowance === '' ? 0 : Number(manual.value.ppeAllowance)
-  if (!Number.isFinite(ppe) || ppe < 0) errors.ppeAllowance = '金額不正確'
+  if (!Number.isFinite(ppe) || ppe < 0) errors.ppeAllowance = t('wizard.errorAmount')
   const tax = manual.value.withholdingPercent === '' ? 0 : Number(manual.value.withholdingPercent)
-  if (!Number.isFinite(tax) || tax < 0 || tax > 60) errors.withholdingPercent = '請輸入 0–60 之間的百分比'
+  if (!Number.isFinite(tax) || tax < 0 || tax > 60) errors.withholdingPercent = t('wizard.errorPercent')
   for (const key of LOADING_KEYS) {
     const raw = manual.value.loadings[key]
     if (raw === undefined || raw === '') continue
     const value = Number(raw)
-    if (!Number.isFinite(value) || value < 0 || value > 1000) errors[key] = '費率不正確'
+    if (!Number.isFinite(value) || value < 0 || value > 1000) errors[key] = t('wizard.errorRate')
   }
   return errors
 })
@@ -125,7 +124,7 @@ const unfilledLoadings = computed(() =>
 )
 const suggestion = (key) => {
   const value = manualBase.value > 0 ? getDefaultDerivedRate(key, manualBase.value) : null
-  return value === null ? '' : `預設倍率約 $${value.toFixed(2)}`
+  return value === null ? '' : t('wizard.defaultSuggestion', { amount: `$${value.toFixed(2)}` })
 }
 const round = (value, digits) => Math.round(value * 10 ** digits) / 10 ** digits
 
@@ -155,15 +154,15 @@ async function saveManualPay() {
 
 const paySourceLabel = computed(() => {
   if (props.profile.payStatus === PAY_STATUS.PAYSLIP_CONFIRMED) {
-    return props.latestPayslip ? `來自 ${props.latestPayslip.payDate} 的薪資單` : '來自薪資單'
+    return props.latestPayslip ? t('wizard.fromPayslipOn', { date: props.latestPayslip.payDate }) : t('wizard.fromPayslip')
   }
-  return '手動設定'
+  return t('work.manualRates')
 })
 const confirmedLoadingLabels = computed(() =>
-  loadingFields.filter((field) => props.profile.confirmedRateKeys.includes(field.key)).map((field) => field.label),
+  loadingFields.filter((field) => props.profile.confirmedRateKeys.includes(field.key)).map((field) => rateLabel(field.key, field.label)),
 )
 const unconfirmedLoadingLabels = computed(() =>
-  loadingFields.filter((field) => !props.profile.confirmedRateKeys.includes(field.key)).map((field) => field.label),
+  loadingFields.filter((field) => !props.profile.confirmedRateKeys.includes(field.key)).map((field) => rateLabel(field.key, field.label)),
 )
 
 /** 舊設定的固定清潔日 → 那天自己的上下班時間 */
@@ -177,7 +176,7 @@ function legacyDayTimes(profile) {
 }
 
 // ---------- Step 2：班別 ----------
-const presetChoices = [...SHIFT_PRESETS.map((preset) => ({ ...preset })), { preset: 'CUSTOM', name: '自訂班別', startTime: '', endTime: '', cleaningStartTime: null, cleaningEndTime: null }]
+const presetChoices = [...SHIFT_PRESETS.map((preset) => ({ ...preset })), { preset: 'CUSTOM', name: t('wizard.customShift'), startTime: '', endTime: '', cleaningStartTime: null, cleaningEndTime: null }]
 const hasPreset = (preset) => draft.value.shiftTemplates.some((item) => item.preset === preset)
 function togglePreset(choice) {
   if (choice.preset !== 'CUSTOM' && hasPreset(choice.preset)) {
@@ -241,13 +240,15 @@ const editorAttribution = computed(() => {
 })
 const editorTitle = computed(() => {
   const days = WEEKDAYS.filter((item) => dayEditor.value.days.includes(item.day))
-  return days.length === 1 ? `週${days[0].label}的班` : `一次設定 ${days.length} 天`
+  return days.length === 1
+    ? t('wizard.editorOneDay', { day: t(`weekdays.${days[0].day}`) })
+    : t('wizard.editorManyDays', { count: days.length })
 })
 function applyDayEditor() {
   const { days, templateId, startTime, endTime } = dayEditor.value
-  if (!days.length) return showToast('請至少選一天')
-  if (templateId && (!TIME.test(startTime) || !TIME.test(endTime))) return showToast('請選擇上下班時間')
-  if (templateId && startTime === endTime) return showToast('上下班時間不能相同')
+  if (!days.length) return showToast(t('wizard.pickADay'))
+  if (templateId && (!TIME.test(startTime) || !TIME.test(endTime))) return showToast(t('payrollPage.chooseTimes'))
+  if (templateId && startTime === endTime) return showToast(t('wizard.sameTimes'))
   Object.assign(draft.value, setWeekdayShifts(draft.value, days, { templateId, startTime, endTime }))
   dayEditor.value.show = false
 }
@@ -258,20 +259,20 @@ const templateErrors = computed(() =>
     draft.value.shiftTemplates.map((item) => [
       item.id,
       !item.name.trim()
-        ? '請輸入班別名稱'
+        ? t('wizard.nameRequired')
         : !TIME.test(item.startTime) || !TIME.test(item.endTime)
-          ? '請選擇上下班時間'
+          ? t('payrollPage.chooseTimes')
           : item.startTime === item.endTime
-            ? '上下班時間不能相同'
+            ? t('wizard.sameTimes')
             : '',
     ]),
   ),
 )
 const workdayCount = computed(() => WEEKDAYS.filter(({ day }) => draft.value.weekPlan[day]).length)
 const step2Problem = computed(() => {
-  if (!draft.value.shiftTemplates.length) return '先選一個班別，或新增自訂班別'
-  if (Object.values(templateErrors.value).some(Boolean)) return '請完成班別的名稱與時間'
-  if (!workdayCount.value) return '選擇每週哪幾天上班'
+  if (!draft.value.shiftTemplates.length) return t('wizard.needTemplate')
+  if (Object.values(templateErrors.value).some(Boolean)) return t('wizard.completeTemplates')
+  if (!workdayCount.value) return t('wizard.chooseWorkdays')
   return ''
 })
 function shiftHours(template) {
@@ -280,17 +281,15 @@ function shiftHours(template) {
   const [eh, em] = template.endTime.split(':').map(Number)
   let minutes = eh * 60 + em - (sh * 60 + sm)
   if (minutes <= 0) minutes += 24 * 60
-  return `共 ${formatHours(minutes)}`
+  return t('wizard.totalHours', { hours: formatHours(minutes) })
 }
 
 // ---------- Step 3：Smoko 與預覽 ----------
-const smokoOptions = [
-  { value: 'AUTO', label: '自動' },
-  { value: '0', label: '0 次' },
-  { value: '1', label: '1 次' },
-  { value: '2', label: '2 次' },
-  { value: 'CUSTOM', label: '自訂' },
-]
+const smokoOptions = computed(() => [
+  { value: 'AUTO', label: t('wizard.smokoAuto') },
+  ...['0', '1', '2'].map((value) => ({ value, label: t('wizard.smokoTimes', { count: value }) })),
+  { value: 'CUSTOM', label: t('wizard.smokoCustom') },
+])
 function chooseSmoko(value) {
   smokoChoice.value = value
   if (value === 'AUTO') draft.value.smoko.mode = 'AUTO'
@@ -340,25 +339,25 @@ function goTo(step) {
     <div class="setup">
       <header class="setup__header full-page__header">
         <div>
-          <span class="setup__eyebrow">工作設定</span>
+          <span class="setup__eyebrow">{{ t('wizard.eyebrow') }}</span>
           <h2>
             {{
               current === 1
-                ? '設定薪資費率'
+                ? t('wizard.titlePay')
                 : current === 2
-                  ? '選擇你的班別'
+                  ? t('wizard.titleShifts')
                   : current === 3
-                    ? 'Smoko 與預覽'
-                    : '設定完成'
+                    ? t('wizard.titleSmoko')
+                    : t('wizard.titleDone')
             }}
           </h2>
         </div>
-        <button type="button" class="setup__close full-page__back" aria-label="返回" @click="close">
+        <button type="button" class="setup__close full-page__back" :aria-label="t('wizard.back')" @click="close">
           <van-icon name="arrow-left" />
         </button>
       </header>
 
-      <ol v-if="current < 4" class="setup__steps" aria-label="設定進度">
+      <ol v-if="current < 4" class="setup__steps" :aria-label="t('wizard.progressAria')">
         <li
           v-for="item in steps"
           :key="item.id"
@@ -369,7 +368,7 @@ function goTo(step) {
               <van-icon v-if="current > item.id" name="success" />
               <template v-else>{{ item.id }}</template>
             </span>
-            {{ item.label }}
+            {{ t(`wizard.steps.${item.id}`) }}
           </button>
         </li>
       </ol>
@@ -377,73 +376,73 @@ function goTo(step) {
       <!-- Step 1 -->
       <section v-if="current === 1" class="setup__body">
         <template v-if="manualMode">
-          <p class="setup__lead">輸入合約或薪資單上的費率</p>
-          <p class="setup__sub">不確定的加給可以留白。</p>
+          <p class="setup__lead">{{ t('wizard.manualLead') }}</p>
+          <p class="setup__sub">{{ t('wizard.manualSub') }}</p>
           <van-cell-group inset class="setup__group">
             <van-field
               v-model="manual.baseRate"
-              label="基本時薪"
+              :label="t('payrollPage.rates.baseRate')"
               type="number"
               inputmode="decimal"
-              placeholder="例如 30.00"
+              :placeholder="t('wizard.baseRatePlaceholder')"
               input-align="right"
               required
               :error-message="manual.baseRate !== '' ? manualErrors.baseRate : ''"
             >
-              <template #extra><span class="setup__unit">AUD／時</span></template>
+              <template #extra><span class="setup__unit">{{ t('wizard.audPerHour') }}</span></template>
             </van-field>
             <van-field
               v-model="manual.ppeAllowance"
-              label="PPE 每週津貼"
+              :label="t('payrollPage.rates.ppeAllowance')"
               type="number"
               inputmode="decimal"
-              placeholder="沒有就留白"
+              :placeholder="t('wizard.ppePlaceholder')"
               input-align="right"
               :error-message="manualErrors.ppeAllowance"
             >
-              <template #extra><span class="setup__unit">AUD／週</span></template>
+              <template #extra><span class="setup__unit">{{ t('wizard.audPerWeek') }}</span></template>
             </van-field>
             <van-field
               v-model="manual.withholdingPercent"
-              label="每期預扣比例"
+              :label="t('wizard.withholding')"
               type="number"
               inputmode="decimal"
-              placeholder="例如 15"
+              :placeholder="t('wizard.withholdingPlaceholder')"
               input-align="right"
               :error-message="manualErrors.withholdingPercent"
             >
               <template #extra><span class="setup__unit">%</span></template>
             </van-field>
           </van-cell-group>
-          <p class="setup__note">薪資單上 Tax ÷ Gross，用來估算每期實領。</p>
+          <p class="setup__note">{{ t('wizard.withholdingNote') }}</p>
 
-          <h3 class="setup__title">加給費率（選填）</h3>
+          <h3 class="setup__title">{{ t('wizard.loadingsTitle') }}</h3>
           <van-cell-group inset class="setup__group">
             <van-field
               v-for="field in loadingFields"
               :key="field.key"
               v-model="manual.loadings[field.key]"
-              :label="field.label"
+              :label="rateLabel(field.key, field.label)"
               type="number"
               inputmode="decimal"
-              :placeholder="suggestion(field.key) || '留白＝未確認'"
+              :placeholder="suggestion(field.key) || t('wizard.blankUnconfirmed')"
               input-align="right"
               :error-message="manualErrors[field.key]"
             >
-              <template #extra><span class="setup__unit">{{ field.mode === 'FULL' ? '時薪' : '每小時加' }}</span></template>
+              <template #extra><span class="setup__unit">{{ field.mode === 'FULL' ? t('wizard.fullRate') : t('wizard.perHourExtra') }}</span></template>
             </van-field>
           </van-cell-group>
           <div v-if="unfilledLoadings.length" class="setup__provisional">
             <van-checkbox v-model="manual.allowProvisional" shape="square" icon-size="18px">
-              未填寫的加給先用預設倍率暫估
+              {{ t('wizard.allowProvisional') }}
             </van-checkbox>
             <p>
-              {{ manual.allowProvisional ? '會標示「含未確認費率，僅供參考」。' : '不暫估就不計入。' }}
-              未填：{{ unfilledLoadings.map((field) => field.label).join('、') }}
+              {{ manual.allowProvisional ? t('wizard.provisionalOn') : t('wizard.provisionalOff') }}
+              {{ t('wizard.unfilled', { items: joinList(unfilledLoadings.map((field) => rateLabel(field.key, field.label))) }) }}
             </p>
           </div>
           <div class="setup__actions">
-            <van-button plain block @click="manualMode = false">返回</van-button>
+            <van-button plain block @click="manualMode = false">{{ t('wizard.back') }}</van-button>
             <van-button
               type="primary"
               block
@@ -451,7 +450,7 @@ function goTo(step) {
               :disabled="Object.keys(manualErrors).length > 0"
               @click="saveManualPay"
             >
-              儲存，下一步
+              {{ t('wizard.saveNext') }}
             </van-button>
           </div>
         </template>
@@ -461,46 +460,46 @@ function goTo(step) {
             <div class="pay-summary__head">
               <van-icon name="passed" aria-hidden="true" />
               <span>
-                <strong>費率已確認</strong>
+                <strong>{{ t('wizard.ratesConfirmed') }}</strong>
                 <small>{{ paySourceLabel }}</small>
               </span>
             </div>
             <dl class="pay-summary__grid">
-              <div><dt>基本時薪</dt><dd>${{ pay.baseRate.toFixed(2) }}</dd></div>
-              <div><dt>PPE／週</dt><dd>${{ (pay.ppeAllowance || 0).toFixed(2) }}</dd></div>
-              <div><dt>本期預扣比例</dt><dd>{{ Math.round((pay.withholdingTaxRate || 0) * 10000) / 100 }}%</dd></div>
+              <div><dt>{{ t('payrollPage.rates.baseRate') }}</dt><dd>${{ pay.baseRate.toFixed(2) }}</dd></div>
+              <div><dt>{{ t('wizard.ppePerWeek') }}</dt><dd>${{ (pay.ppeAllowance || 0).toFixed(2) }}</dd></div>
+              <div><dt>{{ t('wizard.withholdingThisPeriod') }}</dt><dd>{{ Math.round((pay.withholdingTaxRate || 0) * 10000) / 100 }}%</dd></div>
             </dl>
             <p v-if="confirmedLoadingLabels.length" class="pay-summary__line">
-              <van-icon name="success" aria-hidden="true" />已確認：{{ confirmedLoadingLabels.join('、') }}
+              <van-icon name="success" aria-hidden="true" />{{ t('wizard.confirmedList', { items: joinList(confirmedLoadingLabels) }) }}
             </p>
             <p v-if="unconfirmedLoadingLabels.length" class="pay-summary__line pay-summary__line--muted">
               <van-icon name="info-o" aria-hidden="true" />
-              {{ profile.allowProvisionalRates ? '暫估' : '未計入' }}：{{ unconfirmedLoadingLabels.join('、') }}
+              {{ t(profile.allowProvisionalRates ? 'wizard.provisionalList' : 'wizard.excludedList', { items: joinList(unconfirmedLoadingLabels) }) }}
             </p>
           </div>
           <div class="setup__secondary">
-            <button type="button" @click="emit('upload-payslip')"><van-icon name="description-o" />上傳新的 Payslip</button>
-            <button type="button" @click="manualMode = true"><van-icon name="edit" />手動修改</button>
+            <button type="button" @click="emit('upload-payslip')"><van-icon name="description-o" />{{ t('wizard.uploadNewPayslip') }}</button>
+            <button type="button" @click="manualMode = true"><van-icon name="edit" />{{ t('wizard.editManually') }}</button>
           </div>
-          <van-button type="primary" block class="setup__primary" @click="current = 2">下一步：選擇班別</van-button>
+          <van-button type="primary" block class="setup__primary" @click="current = 2">{{ t('wizard.nextChooseShifts') }}</van-button>
         </template>
 
         <template v-else>
-          <p class="setup__lead">先告訴我你的時薪</p>
-          <p class="setup__sub">設定後薪資預估才會準。</p>
+          <p class="setup__lead">{{ t('wizard.payLead') }}</p>
+          <p class="setup__sub">{{ t('wizard.paySub') }}</p>
           <button type="button" class="choice choice--primary" @click="emit('upload-payslip')">
             <span class="choice__icon"><van-icon name="description-o" /></span>
             <span class="choice__text">
-              <strong>上傳 Payslip 自動設定費率</strong>
-              <small>自動讀出時薪、加給和扣稅</small>
+              <strong>{{ t('gate.uploadPayslip') }}</strong>
+              <small>{{ t('wizard.uploadSub') }}</small>
             </span>
             <van-icon name="arrow" />
           </button>
           <button type="button" class="choice" @click="manualMode = true">
             <span class="choice__icon"><van-icon name="edit" /></span>
             <span class="choice__text">
-              <strong>手動設定費率</strong>
-              <small>輸入時薪，加給之後再補</small>
+              <strong>{{ t('gate.manualRates') }}</strong>
+              <small>{{ t('wizard.manualSubShort') }}</small>
             </span>
             <van-icon name="arrow" />
           </button>
@@ -510,9 +509,9 @@ function goTo(step) {
       <!-- Step 2 -->
       <section v-else-if="current === 2" class="setup__body">
         <p class="setup__sub">
-          點選常見班別加入，時間都可以改。
+          {{ t('wizard.presetHint') }}
         </p>
-        <div class="presets" role="group" aria-label="班別範本">
+        <div class="presets" role="group" :aria-label="t('wizard.presetsAria')">
           <button
             v-for="choice in presetChoices"
             :key="choice.preset"
@@ -529,46 +528,46 @@ function goTo(step) {
             />
             <strong>{{ choice.name }}</strong>
             <small v-if="choice.preset !== 'CUSTOM'">
-              {{ choice.startTime }}–{{ choice.endTime }}{{ crossesMidnight(choice) ? ' 隔天' : '' }}
+              {{ choice.startTime }}–{{ choice.endTime }}{{ crossesMidnight(choice) ? t('payrollPage.nextDayShort') : '' }}
             </small>
-            <small v-else>自己設定時間</small>
+            <small v-else>{{ t('wizard.ownTimes') }}</small>
           </button>
         </div>
 
         <template v-if="draft.shiftTemplates.length">
-          <h3 class="setup__title">我的班別</h3>
-          <p class="setup__note">這裡是班別的預設時間。時間特別的日子（例如清潔日）可以新增「自訂班別」，名稱取「清潔日」。</p>
+          <h3 class="setup__title">{{ t('wizard.myShifts') }}</h3>
+          <p class="setup__note">{{ t('wizard.myShiftsNote') }}</p>
           <article v-for="template in draft.shiftTemplates" :key="template.id" class="template">
             <div class="template__row">
-              <input v-model="template.name" class="template__name" maxlength="20" aria-label="班別名稱" placeholder="班別名稱，例如：清潔日" />
-              <button type="button" class="template__remove" :aria-label="`移除${template.name}`" @click="removeTemplate(template.id)">
+              <input v-model="template.name" class="template__name" maxlength="20" :aria-label="t('wizard.shiftName')" :placeholder="t('wizard.shiftNamePlaceholder')" />
+              <button type="button" class="template__remove" :aria-label="t('wizard.removeShift', { name: template.name })" @click="removeTemplate(template.id)">
                 <van-icon name="delete-o" />
               </button>
             </div>
             <div class="template__times">
               <label>
-                <small>上班</small>
+                <small>{{ t('wizard.start') }}</small>
                 <input v-model="template.startTime" type="time" step="300" />
               </label>
               <van-icon name="arrow" aria-hidden="true" />
               <label>
-                <small>下班{{ crossesMidnight(template) && template.endTime ? '（隔天）' : '' }}</small>
+                <small>{{ t('wizard.finish') }}{{ crossesMidnight(template) && template.endTime ? t('wizard.nextDayParen') : '' }}</small>
                 <input v-model="template.endTime" type="time" step="300" />
               </label>
             </div>
             <div class="template__meta">
               <span v-if="crossesMidnight(template) && template.startTime && template.endTime" class="tag tag--night">
-                <van-icon name="moon-o" />跨午夜
+                <van-icon name="moon-o" />{{ t('wizard.overnight') }}
               </span>
               <span v-if="shiftHours(template)" class="template__hours">{{ shiftHours(template) }}</span>
             </div>
             <p v-if="templateErrors[template.id]" class="template__error">{{ templateErrors[template.id] }}</p>
           </article>
 
-          <h3 class="setup__title">每週班表</h3>
-          <p class="setup__note">每天可以選不同班別、設定不同時間；同樣是晚班，週二和週五也可以不一樣。沒排班的日子當休息。</p>
+          <h3 class="setup__title">{{ t('wizard.weeklyRoster') }}</h3>
+          <p class="setup__note">{{ t('wizard.weeklyNote') }}</p>
           <button type="button" class="week__quick" @click="openDayEditor([1, 2, 3, 4, 5])">
-            <van-icon name="setting-o" />整週快速設定（例如週一到週五同一個班）
+            <van-icon name="setting-o" />{{ t('wizard.quickWeek') }}
           </button>
           <div class="week">
             <button
@@ -576,40 +575,40 @@ function goTo(step) {
               :key="weekday.day"
               type="button"
               class="week__row"
-              :aria-label="`編輯週${weekday.label}的班`"
+              :aria-label="t('wizard.editDay', { day: t(`weekdays.${weekday.day}`) })"
               @click="openDayEditor([weekday.day])"
             >
-              <span class="week__day" :class="{ 'is-on': rowShift(weekday.day) }">{{ weekday.label }}</span>
-              <span class="week__shift" :class="{ 'is-rest': !rowShift(weekday.day) }">{{ rowShift(weekday.day)?.name || '休息' }}</span>
+              <span class="week__day" :class="{ 'is-on': rowShift(weekday.day) }">{{ t(`weekdaysShort.${weekday.day}`) }}</span>
+              <span class="week__shift" :class="{ 'is-rest': !rowShift(weekday.day) }">{{ rowShift(weekday.day)?.name || t('wizard.rest') }}</span>
               <span class="week__times">
                 <template v-if="rowShift(weekday.day)">
                   {{ rowShift(weekday.day).startTime }}–{{ rowShift(weekday.day).endTime }}
-                  <small v-if="rowShift(weekday.day).endTime <= rowShift(weekday.day).startTime">隔天</small>
+                  <small v-if="rowShift(weekday.day).endTime <= rowShift(weekday.day).startTime">{{ t('wizard.nextDay') }}</small>
                 </template>
               </span>
-              <span class="week__edit"><van-icon name="edit" />編輯</span>
+              <span class="week__edit"><van-icon name="edit" />{{ t('wizard.edit') }}</span>
             </button>
           </div>
           <div class="setup__offday">
-            <span>休息日</span>
+            <span>{{ t('wizard.offDays') }}</span>
             <van-radio-group v-model="draft.offDayRule" direction="horizontal">
-              <van-radio name="SKIP" icon-size="18px">不建立紀錄</van-radio>
-              <van-radio name="LEAVE" icon-size="18px">標記為休假</van-radio>
+              <van-radio name="SKIP" icon-size="18px">{{ t('wizard.offSkip') }}</van-radio>
+              <van-radio name="LEAVE" icon-size="18px">{{ t('wizard.offLeave') }}</van-radio>
             </van-radio-group>
           </div>
         </template>
 
         <p v-if="step2Problem" class="setup__problem">{{ step2Problem }}</p>
         <div class="setup__actions">
-          <van-button plain block @click="current = 1">上一步</van-button>
-          <van-button type="primary" block :disabled="Boolean(step2Problem)" @click="current = 3">下一步</van-button>
+          <van-button plain block @click="current = 1">{{ t('wizard.previous') }}</van-button>
+          <van-button type="primary" block :disabled="Boolean(step2Problem)" @click="current = 3">{{ t('wizard.next') }}</van-button>
         </div>
       </section>
 
       <!-- Step 3 -->
       <section v-else-if="current === 3" class="setup__body">
-        <h3 class="setup__title setup__title--first">每班 Smoko 次數</h3>
-        <div class="segmented" role="radiogroup" aria-label="Smoko 次數">
+        <h3 class="setup__title setup__title--first">{{ t('wizard.smokoPerShift') }}</h3>
+        <div class="segmented" role="radiogroup" :aria-label="t('wizard.smokoCountAria')">
           <button
             v-for="option in smokoOptions"
             :key="option.value"
@@ -625,22 +624,22 @@ function goTo(step) {
         <p class="setup__note">
           {{
             smokoChoice === 'AUTO'
-              ? '滿 4 小時 1 次、滿 8 小時 2 次。'
-              : '個別日子可以在當天另外調整。'
+              ? t('wizard.smokoAutoNote')
+              : t('wizard.smokoDayNote')
           }}
         </p>
         <van-cell-group inset class="setup__group">
-          <van-cell v-if="smokoChoice === 'CUSTOM'" title="每班次數" center>
+          <van-cell v-if="smokoChoice === 'CUSTOM'" :title="t('wizard.perShiftCount')" center>
             <template #right-icon>
               <van-stepper v-model="draft.smoko.count" :min="0" :max="3" integer button-size="30px" />
             </template>
           </van-cell>
-          <van-cell title="每次幾分鐘" center>
+          <van-cell :title="t('wizard.minutesEach')" center>
             <template #right-icon>
               <van-stepper v-model="draft.smoko.minutes" :min="5" :max="60" :step="5" integer button-size="30px" />
             </template>
           </van-cell>
-          <van-cell center title="Smoko 照常計薪" label="關閉＝從工時扣除">
+          <van-cell center :title="t('wizard.smokoPaid')" :label="t('wizard.smokoPaidHint')">
             <template #right-icon>
               <van-switch v-model="draft.smoko.paid" size="22px" />
             </template>
@@ -649,9 +648,9 @@ function goTo(step) {
 
         <div v-if="preview" class="preview">
           <div class="preview__head">
-            <span>以本週為例</span>
+            <span>{{ t('wizard.exampleWeek') }}</span>
             <strong>{{ formatAud(preview.summary.grossCents) }}</strong>
-            <small>{{ preview.summary.shiftCount }} 個班 · {{ formatHours(preview.summary.paidMinutes) }} · 預估稅前</small>
+            <small>{{ t('wizard.previewSummary', { shifts: preview.summary.shiftCount, hours: formatHours(preview.summary.paidMinutes) }) }}</small>
           </div>
           <ul class="preview__days">
             <li v-for="day in preview.days" :key="day.date" :class="{ 'is-off': !day.name }">
@@ -661,40 +660,40 @@ function goTo(step) {
                   <strong>{{ day.name }}</strong>
                   <small><span class="nowrap">{{ day.time }}</span> · <span class="nowrap">{{ formatHours(day.paidMinutes) }}</span></small>
                 </template>
-                <template v-else>{{ day.leave ? '休假' : '休息' }}</template>
+                <template v-else>{{ day.leave ? t('wizard.dayOff') : t('wizard.rest') }}</template>
               </span>
               <span class="preview__pay">{{ day.name ? formatAud(day.grossCents) : '' }}</span>
             </li>
           </ul>
           <p v-if="preview.summary.rateFlags.provisional.length" class="preview__flag">
-            <van-icon name="info-o" />含未確認費率，僅供參考（{{ preview.summary.rateFlags.provisional.join('、') }}）
+            <van-icon name="info-o" />{{ t('payrollPage.provisionalNote', { items: joinList(preview.summary.rateFlags.provisional) }) }}
           </p>
           <p v-if="preview.summary.rateFlags.excluded.length" class="preview__flag preview__flag--warn">
-            <van-icon name="warning-o" />未含 {{ preview.summary.rateFlags.excluded.join('、') }}（費率未確認）
+            <van-icon name="warning-o" />{{ t('payrollPage.excludedNote', { items: joinList(preview.summary.rateFlags.excluded) }) }}
           </p>
         </div>
 
         <div class="setup__actions">
-          <van-button plain block @click="current = 2">上一步</van-button>
-          <van-button type="primary" block :loading="saving" @click="submitSchedule">完成設定</van-button>
+          <van-button plain block @click="current = 2">{{ t('wizard.previous') }}</van-button>
+          <van-button type="primary" block :loading="saving" @click="submitSchedule">{{ t('wizard.finishSetup') }}</van-button>
         </div>
       </section>
 
       <!-- 完成 -->
       <section v-else class="setup__body setup__done">
         <span class="setup__done-icon" aria-hidden="true"><van-icon name="success" /></span>
-        <p class="setup__done-title">工作設定完成，現在可以開始預估薪資。</p>
+        <p class="setup__done-title">{{ t('wizard.doneTitle') }}</p>
         <ul class="setup__done-list">
           <li v-for="line in doneSummary" :key="line">{{ line }}</li>
         </ul>
-        <p class="setup__note">之後可以在「薪資」頁修改。</p>
+        <p class="setup__note">{{ t('wizard.doneNote') }}</p>
         <van-button v-if="pendingAction" type="primary" block class="setup__primary" @click="emit('continue', pendingAction)">
-          繼續{{ pendingAction.label }}
+          {{ t('wizard.continueAction', { action: pendingAction.label }) }}
         </van-button>
         <van-button v-else type="primary" block class="setup__primary" @click="emit('continue', null)">
-          開始排班
+          {{ t('wizard.startScheduling') }}
         </van-button>
-        <van-button plain block class="setup__later" @click="close">{{ pendingAction ? '稍後再說' : '完成' }}</van-button>
+        <van-button plain block class="setup__later" @click="close">{{ pendingAction ? t('wizard.later') : t('wizard.done') }}</van-button>
       </section>
     </div>
   </van-popup>
@@ -709,8 +708,8 @@ function goTo(step) {
   >
     <div class="day-sheet__body">
       <h3>{{ editorTitle }}</h3>
-      <p class="day-sheet__label">套用到</p>
-      <div class="day-sheet__days" role="group" aria-label="套用到哪幾天">
+      <p class="day-sheet__label">{{ t('wizard.applyTo') }}</p>
+      <div class="day-sheet__days" role="group" :aria-label="t('wizard.applyToAria')">
         <button
           v-for="weekday in WEEKDAYS"
           :key="weekday.day"
@@ -718,15 +717,15 @@ function goTo(step) {
           class="day-sheet__day"
           :class="{ 'is-selected': dayEditor.days.includes(weekday.day) }"
           :aria-pressed="dayEditor.days.includes(weekday.day)"
-          :aria-label="`週${weekday.label}`"
+          :aria-label="t(`weekdays.${weekday.day}`)"
           @click="toggleEditorDay(weekday.day)"
         >
-          {{ weekday.label }}
+          {{ t(`weekdaysShort.${weekday.day}`) }}
         </button>
       </div>
-      <p class="day-sheet__label">班別</p>
+      <p class="day-sheet__label">{{ t('wizard.shift') }}</p>
       <div class="day-sheet__shifts">
-        <button type="button" class="chip" :class="{ 'is-selected': !dayEditor.templateId }" @click="dayEditor.templateId = null">休息</button>
+        <button type="button" class="chip" :class="{ 'is-selected': !dayEditor.templateId }" @click="dayEditor.templateId = null">{{ t('wizard.rest') }}</button>
         <button
           v-for="template in draft.shiftTemplates"
           :key="template.id"
@@ -735,29 +734,29 @@ function goTo(step) {
           :class="{ 'is-selected': dayEditor.templateId === template.id }"
           @click="chooseEditorTemplate(template.id)"
         >
-          {{ template.name || '未命名' }}
+          {{ template.name || t('wizard.unnamed') }}
         </button>
       </div>
       <template v-if="dayEditor.templateId">
         <div class="template__times day-sheet__times">
           <label>
-            <small>上班</small>
-            <input v-model="dayEditor.startTime" type="time" step="300" aria-label="上班時間" />
+            <small>{{ t('wizard.start') }}</small>
+            <input v-model="dayEditor.startTime" type="time" step="300" :aria-label="t('wizard.startTimeAria')" />
           </label>
           <van-icon name="arrow" aria-hidden="true" />
           <label>
-            <small>下班{{ dayEditor.endTime && dayEditor.endTime <= dayEditor.startTime ? '（隔天）' : '' }}</small>
-            <input v-model="dayEditor.endTime" type="time" step="300" aria-label="下班時間" />
+            <small>{{ t('wizard.finish') }}{{ dayEditor.endTime && dayEditor.endTime <= dayEditor.startTime ? t('wizard.nextDayParen') : '' }}</small>
+            <input v-model="dayEditor.endTime" type="time" step="300" :aria-label="t('wizard.finishTimeAria')" />
           </label>
         </div>
         <p v-if="editorAttribution" class="day-sheet__attribution"><van-icon name="info-o" /> {{ editorAttribution }}</p>
         <button v-if="editorTimesCustom" type="button" class="day-sheet__reset" @click="chooseEditorTemplate(dayEditor.templateId)">
-          恢復「{{ editorTemplate?.name }}」預設時間 {{ editorTemplate?.startTime }}–{{ editorTemplate?.endTime }}
+          {{ t('wizard.restoreDefault', { name: editorTemplate?.name, start: editorTemplate?.startTime, end: editorTemplate?.endTime }) }}
         </button>
       </template>
-      <p class="day-sheet__note">這裡改的是每週固定班表；之後在班表上單獨修改某一天，不會改到這裡。</p>
+      <p class="day-sheet__note">{{ t('wizard.dayEditorNote') }}</p>
       <van-button block type="primary" class="day-sheet__apply" @click="applyDayEditor">
-        套用到 {{ dayEditor.days.length }} 天
+        {{ t('wizard.applyCount', { count: dayEditor.days.length }) }}
       </van-button>
     </div>
   </van-popup>

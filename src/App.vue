@@ -1835,7 +1835,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       <div class="calendar-intro">
         <p class="calendar-help">點日期看當日收支、心情與班表</p>
         <p class="calendar-net-legend">
-          <span>每日預估淨額＝工作收入（稅前）＋車資應收－支出</span>
+          <span>每日預估淨額＝工作收入（稅前）＋車資應收－支出－投資虧損</span>
           <strong>單位：{{ dashboardCurrency.code }}</strong>
         </p>
       </div>
@@ -1927,12 +1927,13 @@ const markDesignatedWorkDate = ({ date, marked }) => {
           </div>
         <section class="day-money" aria-labelledby="day-money-title">
           <h2 id="day-money-title">當日收支 <small>預估 · {{ dashboardCurrency.code }}</small></h2>
-          <p v-if="!hasDailyNetActivity(selectedDailyNet)" class="day-money__empty">這天沒有工作收入、車資或支出紀錄。</p>
+          <p v-if="!hasDailyNetActivity(selectedDailyNet)" class="day-money__empty">這天沒有工作收入、車資、支出或投資虧損紀錄。</p>
           <template v-else>
             <dl class="day-money__summary">
               <div><dt>工作收入（稅前）</dt><dd>{{ calendarMoney(selectedDailyNet.workCents) }}</dd></div>
               <div><dt>車資應收</dt><dd>{{ calendarMoney(selectedDailyNet.fareCents) }}</dd></div>
               <div><dt>支出</dt><dd>{{ signedCalendarMoney(-selectedDailyNet.expenseCents) }}</dd></div>
+              <div v-if="selectedDailyNet.investmentLossCents > 0"><dt>投資虧損</dt><dd>{{ signedCalendarMoney(-selectedDailyNet.investmentLossCents) }}</dd></div>
               <div class="day-money__net" :class="`day-net--${selectedDailyNet.netCents > 0 ? 'positive' : selectedDailyNet.netCents < 0 ? 'negative' : 'zero'}`"><dt>預估淨額</dt><dd>{{ signedCalendarMoney(selectedDailyNet.netCents) }}</dd></div>
             </dl>
             <ul class="day-money__items">
@@ -1963,8 +1964,15 @@ const markDesignatedWorkDate = ({ date, marked }) => {
                   <strong class="is-expense">−{{ calendarMoney(item.amountCents) }}</strong>
                 </button>
               </li>
+              <li v-for="item in selectedDailyNet.investmentLossItems" :key="`loss-${item.occurrenceId}`">
+                <button type="button" @click="openDayExpense(item.sourceId)">
+                  <span class="day-money__kind day-money__kind--loss">投資虧損</span>
+                  <span class="day-money__label">{{ item.title }}</span>
+                  <strong class="is-expense">−{{ calendarMoney(item.amountCents) }}</strong>
+                </button>
+              </li>
             </ul>
-            <p class="day-money__note">車資依搭車日計應收，收款不重複加；支出依日期計一次（已付＋待付）。</p>
+            <p class="day-money__note">車資依搭車日計應收，收款不重複加；支出依日期計一次（已付＋待付）；已實現投資虧損也會扣除。</p>
           </template>
           <p v-if="selectedDailyNet?.salaryDeposits.length" class="day-money__deposit">
             這天有發薪入帳 {{ calendarMoney(selectedDailyNet.salaryDeposits.reduce((sum, deposit) => sum + deposit.amountCents, 0)) }}，屬實際入帳，不計入預估淨額（避免和班表預估重複）。
@@ -2391,6 +2399,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 .day-money__kind--work { background: var(--color-primary-soft); color: var(--color-primary); }
 .day-money__kind--fare { background: var(--color-income-soft); color: var(--color-income); }
 .day-money__kind--expense { background: var(--color-blackout-bg); color: var(--color-blackout-text); }
+.day-money__kind--loss { background: var(--color-pending-soft); color: var(--color-pending); }
 .day-money__label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .day-money__label small { margin-left: 4px; color: var(--color-muted); font-size: 12px; }
 .day-money__items strong { flex: none; font-variant-numeric: tabular-nums; }

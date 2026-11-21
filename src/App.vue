@@ -23,13 +23,15 @@ import { getNoticesForDate, legacyBlackoutToNotice, removeLeaveBlackout, upsertB
 import { blackoutNoticeRepository, getGuestBlackoutNotices } from './repositories/blackoutNoticeRepository.js'
 import { visaJourneyRepository, getGuestVisaJourney } from './repositories/visaJourneyRepository.js'
 import { getVisaJourneyProgress } from './domain/visaJourney.js'
-import { resolveDisplayCurrency } from './domain/displayCurrency.js'
+import { formatCentsIn, resolveDisplayCurrency } from './domain/displayCurrency.js'
 import { applyBatchLeave, getLeaveLabel } from './domain/leaveTypes.js'
 import VisaJourneySetup from './components/VisaJourneySetup.vue'
 import HistoryImportWizard from './components/HistoryImportWizard.vue'
 import BatchLeaveSheet from './components/BatchLeaveSheet.vue'
 import BlackoutNoticeSheet from './components/BlackoutNoticeSheet.vue'
-import { formatCalendarAmount } from './utils/calendarMoney.js'
+import { formatDailyNet, getEstimatedDailyNet, hasDailyNetActivity } from './domain/dailyNet.js'
+import { useLedgerSnapshot } from './composables/useLedgerSnapshot.js'
+import DayLifeCard from './components/DayLifeCard.vue'
 import { formatLocalDate, getCalendarDateRange, getMonthRange, getWeekRange } from './domain/date.js'
 import { centsToDollars } from './domain/money.js'
 import { getWeeklyPaySummary } from './domain/weeklyPay.js'
@@ -673,8 +675,11 @@ const unsavedActions = [
   { name: '儲存', value: 'save', color: '#1989fa' },
   { name: '不儲存', value: 'discard', color: '#ee0a24' },
 ]
+// 當天面板的生活紀錄（日記）也算在同一個未儲存提醒裡
+const dayLifeCard = ref(null)
+const daySheetDirty = computed(() => dayEditorDirty.value || Boolean(dayLifeCard.value?.dirty))
 function confirmLeaveDayEditor() {
-  if (!dayEditorDirty.value) return Promise.resolve(true)
+  if (!daySheetDirty.value) return Promise.resolve(true)
   resolveUnsavedPrompt?.(false)
   unsavedPrompt.value = { show: true, date: workDate.value }
   return new Promise((resolve) => {
@@ -687,12 +692,15 @@ function finishUnsavedPrompt(proceed) {
   unsavedPrompt.value = { ...unsavedPrompt.value, show: false }
   resolve?.(proceed)
 }
-function onUnsavedAction(action) {
+async function onUnsavedAction(action) {
   if (action.value === 'save') {
-    finishUnsavedPrompt(addTodayRecordToList())
+    const shiftSaved = dayEditorDirty.value ? addTodayRecordToList() : true
+    const lifeSaved = shiftSaved && dayLifeCard.value ? await dayLifeCard.value.save() : shiftSaved
+    finishUnsavedPrompt(Boolean(lifeSaved))
     return
   }
   loadSelectedDate()
+  dayLifeCard.value?.reset()
   finishUnsavedPrompt(true)
 }
 // 點遮罩、取消、手機返回都當作「取消」（選項不自動關閉，由 onUnsavedAction 關，避免先被當成取消）
@@ -739,6 +747,27 @@ async function openFromDaySheet(open) {
   if (!(await confirmLeaveDayEditor())) return
   daySheetOpen.value = false
   open()
+}
+
+// 日期明細的財務項目：連到原本的支出／車資編輯流程；工作項目捲到下方的班表編輯
+async function openDayExpense(sourceId) {
+  await openFromDaySheet(async () => {
+    activeTab.value = 'expenses'
+    await nextTick()
+    expenseTrackerRef.value?.openForm({ sourceId })
+  })
+}
+async function openDayTrip(tripId) {
+  const trip = ledger.trips.value.find((item) => item.id === tripId)
+  if (!trip) return
+  await openFromDaySheet(async () => {
+    activeTab.value = 'trips'
+    await nextTick()
+    tripTrackerRef.value?.openTripForm(trip)
+  })
+}
+function scrollToWorkInput() {
+  workInputSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 // 切換班表／本週／設定前也檢查
@@ -916,7 +945,34 @@ const selectedHolidayLabel = computed(() => {
   return getNswPublicHolidayLabel(parseWorkDate(workDate.value))
 })
 
-// ✨ 日曆格式化：上方放假日/清潔日，下方放金額
+// --- 生活日曆：每日預估淨收支（計算在 domain/dailyNet.js） ---
+const ledger = useLedgerSnapshot((error) => showToast(error.message))
+watch(
+  activeTab,
+  (tab) => {
+    if (tab === 'payroll') ledger.ensureLoaded()
+  },
+  { immediate: true },
+)
+const passengerNames = computed(() =>
+  Object.fromEntries(ledger.passengers.value.map((passenger) => [passenger.id, passenger.name])),
+)
+const dailyNetByDate = computed(() =>
+  getEstimatedDailyNet({
+    range: { start: formatLocalDate(calendarMinDate.value), end: formatLocalDate(calendarMaxDate.value) },
+    workRecords: records.value,
+    trips: ledger.trips.value,
+    expenses: ledger.expenses.value,
+    salaryDeposits: ledger.salaryDeposits.value,
+    passengerNames: passengerNames.value,
+  }),
+)
+const selectedDailyNet = computed(() => dailyNetByDate.value.get(workDate.value) ?? null)
+const calendarMoney = (/** @type {number} */ cents) => formatCentsIn(cents, dashboardCurrency.value)
+const signedCalendarMoney = (/** @type {number} */ cents) =>
+  `${cents > 0 ? '+' : cents < 0 ? '−' : ''}${calendarMoney(Math.abs(cents))}`
+
+// ✨ 日曆格式化：上方放假日/清潔日/假別，下方放每日預估淨額
 const holidayCalendarFormatter = (day) => {
   if (!day.date) return day
 
@@ -943,17 +999,21 @@ const holidayCalendarFormatter = (day) => {
   }
   if (isBlackout) day.className = `${day.className || ''} leave-blackout-day`.trim()
 
-  // 2. 處理下方標籤 (金額 / 請假狀態)
+  // 請假：沒有假日／禁休／清潔班標籤時，把假別放上方（下方留給淨額）
+  if (record?.shiftType === 'leave' && !holidayLabel && !isBlackout) {
+    day.topInfo = record.leaveType ? getLeaveLabel(record).slice(0, 2) : '休假'
+  }
+
+  // 2. 下方：每日預估淨額（工作收入＋車資應收－生活支出）；沒有任何紀錄就留白
   let classNames = []
-  
+  const net = dailyNetByDate.value.get(dateStr)
+  if (hasDailyNetActivity(net)) {
+    const formatted = formatDailyNet(net.netCents, dashboardCurrency.value.rate)
+    day.bottomInfo = formatted.text
+    classNames.push(`net-${formatted.sign}`)
+  }
+
   if (record) {
-    if (record.shiftType === 'leave') {
-      day.bottomInfo = record.leaveType ? getLeaveLabel(record).slice(0, 2) : '休假'
-    } else {
-      const convertedPay = record.grossPay * currentExchangeRate.value
-      day.bottomInfo = `+${formatCalendarAmount(convertedPay)}`
-    }
-    
     classNames.push(record.shiftType === 'leave' ? 'record-leave-day' : 'record-work-day')
     
     if (record.remark && record.remark.trim() !== '') {
@@ -1752,7 +1812,11 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 
     <div v-show="payrollView === 'schedule'" class="section calendar-section">
       <div class="calendar-intro">
-        <p class="calendar-help">點日期可設休假、記禁休或編輯工時</p>
+        <p class="calendar-help">點日期看當日收支、心情與班表</p>
+        <p class="calendar-net-legend">
+          <span>每日預估淨額＝工作收入（稅前）＋車資應收－支出</span>
+          <strong>單位：{{ dashboardCurrency.code }}</strong>
+        </p>
       </div>
       <div class="calendar-month-actions">
         <span>目前顯示 {{ visibleMonth }}</span>
@@ -1816,8 +1880,13 @@ const markDesignatedWorkDate = ({ date, marked }) => {
                 </button>
                 <p v-if="selectedRecord?.source === 'HISTORICAL_USER_CONFIRMED'" class="calendar-day-actions__source">使用者補登</p>
               </div>
-              <strong v-if="selectedRecord && selectedRecord.shiftType !== 'leave'" class="calendar-day-actions__pay">
-                {{ currencySymbol }}{{ formatDisplayMoney(selectedRecord.grossPay * currentExchangeRate) }}
+              <strong
+                v-if="hasDailyNetActivity(selectedDailyNet)"
+                class="calendar-day-actions__pay"
+                :class="`day-net--${selectedDailyNet.netCents > 0 ? 'positive' : selectedDailyNet.netCents < 0 ? 'negative' : 'zero'}`"
+              >
+                <small>預估淨額</small>
+                {{ signedCalendarMoney(selectedDailyNet.netCents) }}
               </strong>
               <button type="button" class="pday__close" aria-label="關閉" @click="closeDaySheet">
                 <van-icon name="cross" />
@@ -1835,6 +1904,51 @@ const markDesignatedWorkDate = ({ date, marked }) => {
             <p v-if="selectedRecord?.shiftType === 'leave'" class="calendar-day-actions__hint">{{ selectedDateHasDefaultShift ? `恢復為 ${selectedPlannedShift.startTime}–${selectedPlannedShift.endTime}` : '請設定上下班時間' }}</p>
             <p class="calendar-day-actions__hint">僅供提醒，不影響班表與薪資。</p>
           </div>
+        <section class="day-money" aria-labelledby="day-money-title">
+          <h2 id="day-money-title">當日收支 <small>預估 · {{ dashboardCurrency.code }}</small></h2>
+          <p v-if="!hasDailyNetActivity(selectedDailyNet)" class="day-money__empty">這天沒有工作收入、車資或支出紀錄。</p>
+          <template v-else>
+            <dl class="day-money__summary">
+              <div><dt>工作收入（稅前）</dt><dd>{{ calendarMoney(selectedDailyNet.workCents) }}</dd></div>
+              <div><dt>車資應收</dt><dd>{{ calendarMoney(selectedDailyNet.fareCents) }}</dd></div>
+              <div><dt>支出</dt><dd>{{ signedCalendarMoney(-selectedDailyNet.expenseCents) }}</dd></div>
+              <div class="day-money__net" :class="`day-net--${selectedDailyNet.netCents > 0 ? 'positive' : selectedDailyNet.netCents < 0 ? 'negative' : 'zero'}`"><dt>預估淨額</dt><dd>{{ signedCalendarMoney(selectedDailyNet.netCents) }}</dd></div>
+            </dl>
+            <ul class="day-money__items">
+              <li v-for="item in selectedDailyNet.workItems" :key="`work-${item.id}`">
+                <button type="button" @click="scrollToWorkInput">
+                  <span class="day-money__kind day-money__kind--work">工作</span>
+                  <span class="day-money__label">{{ item.startTime }}–{{ item.endTime }} 班表預估</span>
+                  <strong class="is-income">+{{ calendarMoney(item.grossCents) }}</strong>
+                </button>
+              </li>
+              <li v-for="(item, index) in selectedDailyNet.fareItems" :key="`fare-${item.tripId}-${item.passengerId}-${index}`">
+                <button type="button" @click="openDayTrip(item.tripId)">
+                  <span class="day-money__kind day-money__kind--fare">車資</span>
+                  <span class="day-money__label">
+                    {{ item.passengerName || '乘客' }}
+                    <small>{{ item.receivedCents >= item.amountCents ? '已收齊' : item.receivedCents > 0 ? `已收 ${calendarMoney(item.receivedCents)}` : '待收' }}</small>
+                  </span>
+                  <strong class="is-income">+{{ calendarMoney(item.amountCents) }}</strong>
+                </button>
+              </li>
+              <li v-for="item in selectedDailyNet.expenseItems" :key="`expense-${item.occurrenceId}`">
+                <button type="button" @click="openDayExpense(item.sourceId)">
+                  <span class="day-money__kind day-money__kind--expense">支出</span>
+                  <span class="day-money__label">
+                    {{ item.title }}
+                    <small>{{ item.status === 'PAID' ? '已付' : '待付' }}</small>
+                  </span>
+                  <strong class="is-expense">−{{ calendarMoney(item.amountCents) }}</strong>
+                </button>
+              </li>
+            </ul>
+            <p class="day-money__note">車資依搭車日計應收，收款不重複加；支出依日期計一次（已付＋待付）。</p>
+          </template>
+          <p v-if="selectedDailyNet?.salaryDeposits.length" class="day-money__deposit">
+            這天有發薪入帳 {{ calendarMoney(selectedDailyNet.salaryDeposits.reduce((sum, deposit) => sum + deposit.amountCents, 0)) }}，屬實際入帳，不計入預估淨額（避免和班表預估重複）。
+          </p>
+        </section>
         <div ref="workInputSection" class="section">
           <h2>出勤與時間</h2>
       
@@ -1981,6 +2095,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
             </van-collapse-item>
           </van-collapse>
         </div>
+        <DayLifeCard v-if="daySheetOpen" ref="dayLifeCard" :key="workDate" :date="workDate" />
       </div>
       <div class="pday__footer">
         <van-button v-if="isEditingRecord" plain type="default" @click="cancelEditingRecord">還原</van-button>
@@ -2205,6 +2320,9 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 .calendar-intro { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
 .calendar-intro :deep(.van-button) { flex: none; min-height: 40px; border-radius: 11px; }
 .calendar-help { margin: 0; color: var(--color-muted); font-size: 13px; line-height: 1.4; }
+.calendar-intro:has(.calendar-net-legend) { flex-wrap: wrap; }
+.calendar-net-legend { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 10px; margin: 0; color: var(--color-muted); font-size: 12px; line-height: 1.4; }
+.calendar-net-legend strong { color: var(--color-heading); font-size: 13px; font-variant-numeric: tabular-nums; }
 .calendar-month-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
 .calendar-month-actions span { flex: 1 1 100%; color: var(--color-muted); font-size: 13px; font-weight: 700; }
 .calendar-month-actions :deep(.van-button) { min-height: 40px; border-radius: 11px; }
@@ -2227,6 +2345,36 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 .calendar-day-actions__blackout span { margin-left: 4px; color: var(--color-primary); font-weight: 600; text-decoration: underline; }
 .calendar-day-actions__heading .calendar-day-actions__source { display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 999px; background: var(--color-primary-soft); color: var(--color-primary); font-size: 12px; }
 .calendar-day-actions__pay { margin-left: auto; color: var(--color-primary) !important; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.calendar-day-actions__pay small { display: block; color: var(--color-muted); font-size: 11px; font-weight: 600; text-align: right; }
+.calendar-day-actions__pay.day-net--positive { color: var(--color-income) !important; }
+.calendar-day-actions__pay.day-net--negative { color: var(--color-blackout-text) !important; }
+.calendar-day-actions__pay.day-net--zero { color: var(--color-muted) !important; }
+.day-money { display: grid; gap: 10px; margin: 0 16px 16px; padding: 16px; border: 1px solid var(--color-border); border-radius: var(--radius-medium); background: var(--color-surface); }
+.day-money h2 { display: flex; align-items: baseline; gap: 8px; margin: 0; color: var(--color-heading); font-size: var(--font-section); }
+.day-money h2 small { color: var(--color-muted); font-size: 12px; font-weight: 600; }
+.day-money__empty, .day-money__note, .day-money__deposit { margin: 0; color: var(--color-muted); font-size: 13px; line-height: 1.5; }
+.day-money__deposit { padding: 8px 10px; border-radius: 10px; background: var(--color-pending-soft); color: var(--color-pending); }
+.day-money__summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.day-money__summary div { display: grid; gap: 2px; padding: 8px 10px; border-radius: 10px; background: var(--color-background); }
+.day-money__summary dt { color: var(--color-muted); font-size: 12px; }
+.day-money__summary dd { margin: 0; color: var(--color-heading); font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.day-money__summary .day-money__net { grid-column: 1 / -1; background: var(--color-primary-soft); }
+.day-money__summary .day-money__net dd { font-size: 18px; }
+.day-money__summary .day-net--positive dd { color: var(--color-income); }
+.day-money__summary .day-net--negative dd { color: var(--color-blackout-text); }
+.day-money__summary .day-net--zero dd { color: var(--color-muted); }
+.day-money__items { display: grid; margin: 0; padding: 0; list-style: none; }
+.day-money__items button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: var(--touch-target); padding: 6px 0; border: 0; border-bottom: 1px solid var(--color-border); background: none; color: var(--color-heading); font: inherit; font-size: 14px; text-align: left; }
+.day-money__items li:last-child button { border-bottom: 0; }
+.day-money__kind { flex: none; padding: 2px 6px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+.day-money__kind--work { background: var(--color-primary-soft); color: var(--color-primary); }
+.day-money__kind--fare { background: var(--color-income-soft); color: var(--color-income); }
+.day-money__kind--expense { background: var(--color-blackout-bg); color: var(--color-blackout-text); }
+.day-money__label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.day-money__label small { margin-left: 4px; color: var(--color-muted); font-size: 12px; }
+.day-money__items strong { flex: none; font-variant-numeric: tabular-nums; }
+.day-money__items .is-income { color: var(--color-income); }
+.day-money__items .is-expense { color: var(--color-blackout-text); }
 .calendar-day-actions__buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 13px; }
 .calendar-day-actions__buttons :deep(.van-button) { min-height: 42px; padding: 0 8px; border-radius: 11px; font-size: 13px; }
 .calendar-day-actions__blackout-button { grid-column: 1 / -1; }
@@ -2290,8 +2438,12 @@ const markDesignatedWorkDate = ({ date, marked }) => {
   line-height: 1.2;
   text-align: center;
 }
-:deep(.record-work-day .van-calendar__bottom-info) { color: #167c58 !important; background: #eaf7f0; }
-:deep(.record-leave-day .van-calendar__bottom-info) { color: var(--color-muted) !important; background: var(--color-border); }
+/* 每日預估淨額：正綠、負柔和紅、零中性；文字一定帶 +／− 號，不只靠顏色 */
+:deep(.net-positive .van-calendar__bottom-info) { color: var(--color-income) !important; background: var(--color-income-soft); }
+:deep(.net-negative .van-calendar__bottom-info) { color: var(--color-blackout-text) !important; background: var(--color-blackout-bg); }
+:deep(.net-zero .van-calendar__bottom-info) { color: var(--color-muted) !important; background: var(--color-border); }
+:deep(.net-positive .van-calendar__bottom-info), :deep(.net-negative .van-calendar__bottom-info), :deep(.net-zero .van-calendar__bottom-info) { left: 1px; right: 1px; font-size: clamp(9.5px, 2.9vw, 11px) !important; letter-spacing: -0.02em; text-overflow: clip; }
+:deep(.record-leave-day:not(.holiday-day):not(.leave-blackout-day) .van-calendar__top-info) { color: var(--color-muted) !important; font-weight: 700; }
 :deep(.has-remark-day) {
   background-color: #fffbeb !important;
   border: 1px dashed #fef3c7 !important;
@@ -2312,6 +2464,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 :deep(.van-calendar__selected-day .van-calendar__top-info) { color: #fff !important; }
 :deep(.leave-blackout-day .van-calendar__selected-day .van-calendar__top-info) { color: #fff !important; }
 :deep(.van-calendar__selected-day .van-calendar__bottom-info) { color: #fff !important; background: rgba(255, 255, 255, .2) !important; }
+:deep(.van-calendar__selected-day .van-calendar__bottom-info) { left: 0 !important; right: 0 !important; }
 
 .workflow { margin-top: 4px; }
 .section-card { padding: 18px; border-radius: var(--page-card-radius); background: #fff; box-shadow: 0 12px 28px rgba(29, 66, 106, .07); }

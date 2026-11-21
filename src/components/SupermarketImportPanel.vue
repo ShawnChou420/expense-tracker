@@ -10,7 +10,15 @@ import { supermarketRepository } from '../repositories/supermarketRepository.js'
  */
 const TEMPLATE =
   'external_product_id,name,brand,package_size,category,regular_price,sale_price,unit_price,promotion_type,promotion_start,promotion_end,product_url'
-const STATUS_LABELS = { SUCCESS: '成功', PARTIAL: '部分成功', FAILED: '失敗' }
+const STATUS_LABELS = {
+  SUCCESS: '成功',
+  PARTIAL: '部分成功',
+  FAILED: '失敗',
+  RUNNING: '進行中',
+  SKIPPED: '未設定資料源',
+}
+const TRIGGER_LABELS = { MANUAL: '手動', SCHEDULED: '排程', EXTERNAL: '外部排程' }
+const SOURCE_LABELS = { CSV: 'CSV 上傳', FEED: '資料源' }
 const MAX_BYTES = 200 * 1024
 
 const csv = ref('')
@@ -92,6 +100,24 @@ async function runImport() {
   }
 }
 
+async function syncFeed() {
+  if (busy.value) return
+  busy.value = true
+  try {
+    const result = await supermarketRepository.syncFeed()
+    if (result.status === 'SKIPPED') showToast(result.message)
+    else
+      showToast(
+        `同步${STATUS_LABELS[result.status] || result.status}：新增 ${result.insertedCount ?? 0}、更新 ${result.updatedCount ?? 0}`,
+      )
+    await loadRuns()
+  } catch (error) {
+    showToast(error.message || '同步失敗')
+  } finally {
+    busy.value = false
+  }
+}
+
 function formatTime(iso) {
   return iso ? new Date(iso).toLocaleString('zh-TW', { hour12: false }) : '—'
 }
@@ -100,7 +126,9 @@ function formatTime(iso) {
 <template>
   <div class="specials-import">
     <p class="specials-import__intro">
-      Woolworths 網站條款禁止自動擷取，請手動整理成 CSV 後匯入。價格用「元」填（例如 4.50）， 日期用
+      每週三 07:00（雪梨時間）會自動從環境變數 SPECIALS_FEED_URL 設定的 CSV
+      資料源同步；沒設定時請在這裡上傳 CSV。 不直接擷取 Woolworths
+      網站（網站條款禁止）。價格用「元」填（例如 4.50）， 日期用
       YYYY-MM-DD；沒有的欄位留空。第一列必須是欄位名稱：
     </p>
     <code class="specials-import__template">{{ TEMPLATE }}</code>
@@ -150,12 +178,20 @@ function formatTime(iso) {
       >
     </div>
 
-    <h3>最近匯入</h3>
+    <van-button block plain type="primary" :disabled="busy" @click="syncFeed"
+      >立即從資料源同步</van-button
+    >
+
+    <h3>最近同步</h3>
     <p v-if="!runs.length" class="specials-import__empty">還沒有匯入紀錄。</p>
     <article v-for="run in runs" :key="run.id" class="specials-import__run">
       <div>
         <strong>{{ STATUS_LABELS[run.status] || run.status }}</strong>
-        <span>{{ run.regionCode }} · {{ run.importedCount }}/{{ run.rowCount }} 筆</span>
+        <span
+          >{{ TRIGGER_LABELS[run.trigger] || run.trigger }} ·
+          {{ SOURCE_LABELS[run.sourceType] || run.sourceType }} · {{ run.regionCode }} · 新增
+          {{ run.insertedCount }}／更新 {{ run.updatedCount }}／共 {{ run.rowCount }} 列</span
+        >
       </div>
       <small
         >{{ formatTime(run.finishedAt || run.startedAt)

@@ -25,3 +25,12 @@ app:
   server-timing:
     enabled: ${SERVER_TIMING_ENABLED:false}
   cors-origins: ${CORS_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost,https://localhost,capacitor://localhost}
+  # 超市本週特價同步（都是選填；沒設定 SPECIALS_FEED_URL 時排程自動跳過，只能用管理後台上傳 CSV）
+  specials:
+    feed-url: ${SPECIALS_FEED_URL:}
+    feed-token: ${SPECIALS_FEED_TOKEN:}
+    sync-token: ${SPECIALS_SYNC_TOKEN:}
+    region: ${SPECIALS_REGION:NSW}
+    cron: ${SPECIALS_SYNC_CRON:0 0 7 * * WED}
+    max-attempts: ${SPECIALS_SYNC_MAX_ATTEMPTS:3}
+    retry-minutes: ${SPECIALS_SYNC_RETRY_MINUTES:30}

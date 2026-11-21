@@ -116,3 +116,30 @@ function formatImportTime(iso) {
   const pad = (/** @type {number} */ value) => String(value).padStart(2, '0')
   return `${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
+
+/** 「11/26–12/2」這種活動期間文字；沒有資料時為空字串 */
+export function formatPromotionPeriod(validFrom, validTo) {
+  if (!validFrom || !validTo) return ''
+  const short = (/** @type {string} */ text) => {
+    const [, month, day] = text.split('-')
+    return `${Number(month)}/${Number(day)}`
+  }
+  return validFrom === validTo ? short(validFrom) : `${short(validFrom)}–${short(validTo)}`
+}
+
+/**
+ * 同步狀態（GET /api/supermarkets/specials/status）的顯示文字。
+ * stale：沒有成功同步過、超過 8 天沒更新、最近一次失敗，或目前沒有有效特價 → 提醒資料可能過期。
+ * @param {{ regionCode: string, lastSuccessAt: string | null, validFrom: string | null, validTo: string | null,
+ *   stale: boolean, lastRun: { status: string } | null } | null | undefined} status
+ */
+export function describeSyncStatus(status) {
+  if (!status) return { period: '', updated: '', warning: '', region: '' }
+  const period = formatPromotionPeriod(status.validFrom, status.validTo)
+  const updated = status.lastSuccessAt ? `更新於 ${formatImportTime(status.lastSuccessAt)}` : ''
+  let warning = ''
+  if (!status.lastSuccessAt) warning = '還沒有本週特價資料'
+  else if (status.lastRun?.status === 'FAILED') warning = '最近一次更新失敗，價格可能已過期'
+  else if (status.stale) warning = '資料超過一週沒更新，價格可能已過期'
+  return { period, updated, warning, region: status.regionCode }
+}

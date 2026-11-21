@@ -168,7 +168,7 @@ class TodayFeaturesTest {
     @Test
     void picksAvoidRecentQuotesThenRelax() {
         var service = new DailyQuoteService(db, RandomGenerator.of("L64X128MixRandom"));
-        when(db.queryForList(startsWith("SELECT id FROM daily_quote"), eq(Long.class), eq("zh-TW")))
+        when(db.queryForList(startsWith("SELECT id FROM daily_quote"), eq(Long.class), eq("en-AU")))
             .thenReturn(List.of(1L, 2L, 3L));
         // 最近 30 天看過 1、2 → 只剩 3
         when(db.queryForList(startsWith("SELECT DISTINCT quote_id"), eq(Long.class), eq(7L), eq(DAY.minusDays(30))))
@@ -215,7 +215,7 @@ class TodayFeaturesTest {
         var service = new DailyQuoteService(db);
         Map<String, Object> stored = new HashMap<>(Map.of("quoteId", 1L, "content", "休息一下"));
         when(db.query(startsWith("SELECT q.id"), any(RowMapper.class), eq(7L), eq(DAY))).thenReturn(List.of(stored));
-        when(db.queryForList(startsWith("SELECT id FROM daily_quote"), eq(Long.class), eq("zh-TW")))
+        when(db.queryForList(startsWith("SELECT id FROM daily_quote"), eq(Long.class), eq("en-AU")))
             .thenReturn(List.of(1L, 2L));
         when(db.queryForList(startsWith("SELECT DISTINCT quote_id"), eq(Long.class), eq(7L), any(LocalDate.class)))
             .thenReturn(List.of());
@@ -268,5 +268,32 @@ class TodayFeaturesTest {
         assertEquals(java.util.Set.of("HEALTH", "MOTIVATION", "SAVING", "LIFE", "PHILOSOPHY", "WORKING_HOLIDAY"),
             categories);
         assertTrue(seed.contains("ON CONFLICT (content) DO NOTHING"));
+    }
+
+    @Test
+    void aussiePhrasesSeedHasTranslationAndNoteForEveryRow() throws Exception {
+        assertEquals("en-AU", DailyQuoteService.LANGUAGE);
+        String seed = Files.readString(Path.of("src/main/resources/db/migration/V17__aussie_daily_phrases.sql"));
+        assertTrue(seed.contains("ADD COLUMN translation VARCHAR(200)"));
+        assertTrue(seed.contains("ADD COLUMN note VARCHAR(300)"));
+        assertTrue(seed.contains("ON CONFLICT (content) DO NOTHING"));
+        // 每一列：英文句子、中文翻譯、用法說明都不可空白；句子不用半形單引號（避免 SQL 跳脫出錯）
+        var rows = Pattern.compile(
+            "\\('([^']+)', '([^']+)', '([^']+)', '(LIFE|WORKING_HOLIDAY)', 'en-AU', 'ORIGINAL'\\)").matcher(seed);
+        var contents = new java.util.HashSet<String>();
+        int count = 0;
+        while (rows.find()) {
+            count++;
+            String content = rows.group(1);
+            assertTrue(content.length() <= 200, "句子太長：" + content);
+            assertTrue(rows.group(2).length() <= 200, "翻譯太長：" + content);
+            assertTrue(rows.group(3).length() <= 300, "說明太長：" + content);
+            assertTrue(content.matches("[\\x20-\\x7E’]+"), "句子應為英文：" + content);
+            contents.add(content);
+        }
+        assertEquals(90, count, "每一列都要符合格式");
+        assertEquals(90, contents.size(), "句子不可重複");
+        // 至少要多於「避開最近 30 天」的天數，否則去重很快失效
+        assertTrue(contents.size() > DailyQuoteService.AVOID_DAYS);
     }
 }

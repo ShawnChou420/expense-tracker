@@ -15,6 +15,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 /**
  * 每日小語：每位會員每天一句，同一天重新整理不變，隔天換新；盡量避開最近 30 天看過的。
+ * 目前只抽澳洲英文小句子（en-AU，V17），附中文翻譯與用法說明；V12 的中文小語保留在資料庫但不再抽。
  * <ul>
  *   <li>候選只取 id（約 100 筆），在程式裡隨機挑，不對整張表 ORDER BY random()。</li>
  *   <li>同時開兩個分頁：user_daily_quote 的 UNIQUE(user_seq, quote_date)＋ON CONFLICT 保證只有一筆。</li>
@@ -23,7 +24,7 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @Service
 public class DailyQuoteService {
-    static final String LANGUAGE = "zh-TW";
+    static final String LANGUAGE = "en-AU";
     static final int MAX_REFRESH = 10;
     static final int AVOID_DAYS = 30;
     static final int HISTORY_DAYS = 60;
@@ -112,7 +113,8 @@ public class DailyQuoteService {
 
     private Map<String, Object> current(long owner, LocalDate date) {
         var rows = db.query("""
-            SELECT q.id, q.content, q.category, q.language, q.author, q.source, q.source_type, u.refresh_count
+            SELECT q.id, q.content, q.translation, q.note, q.category, q.language, q.author, q.source, q.source_type,
+                u.refresh_count
             FROM user_daily_quote u JOIN daily_quote q ON q.id = u.quote_id
             WHERE u.user_seq = ? AND u.quote_date = ?
             """, (rs, row) -> {
@@ -127,7 +129,8 @@ public class DailyQuoteService {
 
     private Map<String, Object> quote(long id) {
         return db.query("""
-            SELECT id, content, category, language, author, source, source_type FROM daily_quote WHERE id = ?
+            SELECT id, content, translation, note, category, language, author, source, source_type
+            FROM daily_quote WHERE id = ?
             """, (rs, row) -> toQuote(rs), id).get(0);
     }
 
@@ -135,6 +138,8 @@ public class DailyQuoteService {
         Map<String, Object> quote = new HashMap<>();
         quote.put("quoteId", rs.getLong("id"));
         quote.put("content", rs.getString("content"));
+        quote.put("translation", rs.getString("translation"));
+        quote.put("note", rs.getString("note"));
         quote.put("category", rs.getString("category"));
         quote.put("language", rs.getString("language"));
         quote.put("author", rs.getString("author"));

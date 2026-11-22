@@ -46,7 +46,8 @@ public class DailyQuoteService {
     @Transactional
     public Map<String, Object> today(long owner, LocalDate date) {
         var current = current(owner, date);
-        if (current != null) return current;
+        if (current != null && !isStaleLanguage(current)) return current;
+        if (current != null) return replaceStaleLanguage(owner, date, current);
         long quoteId = pick(owner, date, null);
         int inserted = db.update("""
             INSERT INTO user_daily_quote(user_seq, quote_id, quote_date) VALUES (?, ?, ?)
@@ -54,6 +55,26 @@ public class DailyQuoteService {
             """, owner, quoteId, date);
         if (inserted > 0) remember(owner, quoteId, date);
         return current(owner, date); // 另一個分頁先寫入時，回傳那一句
+    }
+
+    /** 今天這句是切換語言前抽的（例如 V17 上線前抽到的中文小語）。 */
+    private boolean isStaleLanguage(Map<String, Object> quote) {
+        return !LANGUAGE.equals(quote.get("language")) && !activeIds().isEmpty();
+    }
+
+    /**
+     * 把舊語言的今日小語換成目前語言的一句：不扣「換一句」次數。
+     * 條件含原本的 quote_id，同時開兩個分頁時只有一邊會換成功，另一邊回傳換好的那句。
+     */
+    private Map<String, Object> replaceStaleLanguage(long owner, LocalDate date, Map<String, Object> current) {
+        long previous = ((Number) current.get("quoteId")).longValue();
+        long next = pick(owner, date, previous);
+        int updated = db.update("""
+            UPDATE user_daily_quote SET quote_id = ?, updated_at = now()
+            WHERE user_seq = ? AND quote_date = ? AND quote_id = ?
+            """, next, owner, date, previous);
+        if (updated > 0) remember(owner, next, date);
+        return current(owner, date);
     }
 
     @Transactional

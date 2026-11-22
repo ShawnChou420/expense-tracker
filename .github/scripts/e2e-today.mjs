@@ -167,7 +167,7 @@ async function openApp(session, viewport) {
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto(appUrl)
   await page.locator('.home-header').waitFor({ timeout: 20000 })
-  await page.locator('.today-quote__text').waitFor({ timeout: 20000 })
+  await page.locator('.home-modules').waitFor({ timeout: 20000 })
   await page.waitForTimeout(600)
   return { context, page }
 }
@@ -187,6 +187,28 @@ const noHorizontalScroll = (page) => page.evaluate(() => document.documentElemen
   check('shiftCardHidesFakePay', (await shiftCard.innerText()).includes('尚未設定薪資費率'))
   await shot(page, 'home-first-screen')
 
+  // 首頁自訂：薪資優先預設只放班與班之間要看的模組，待辦、每日小語、心情與備註都隱藏 → 在「自訂首頁」打開，設定存到後端
+  check('tasksHiddenByDefault', (await page.locator('#today-tasks-title').count()) === 0)
+  check('quoteHiddenByDefault', (await page.locator('.today-quote').count()) === 0)
+  check('moodHiddenByDefault', (await page.locator('.today-journal').count()) === 0)
+  await page.getByRole('button', { name: '自訂首頁' }).click()
+  const customize = page.locator('.customize-sheet')
+  await customize.waitFor()
+  await shot(page, 'customize-sheet')
+  for (const label of ['今日待辦', '每日小語', '心情與備註'])
+    await customize.locator('.customize__row', { hasText: label }).locator('.van-switch').click()
+  await customize.getByRole('button', { name: '關閉' }).click()
+  await customize.waitFor({ state: 'hidden' })
+  await page.locator('.today-journal').waitFor()
+  await page.locator('.today-quote__text').waitFor({ timeout: 20000 })
+  await page.waitForTimeout(800) // 等首頁設定寫入後端
+  const savedLayout = (await call('/dashboard-settings', { token: bob.token })).dashboardLayout
+  const visibleIds = new Set((savedLayout?.modules ?? []).filter((m) => m.visible).map((m) => m.id))
+  check(
+    'layoutSavedToBackend',
+    savedLayout?.mode === 'PAY' && ['today-tasks', 'daily-quote', 'mood-journal'].every((id) => visibleIds.has(id)),
+  )
+
   // 待辦：快速新增 → 勾選
   await page.getByLabel('快速新增今日待辦').fill('上班前磨刀')
   await page.getByRole('button', { name: '新增', exact: true }).click()
@@ -202,23 +224,6 @@ const noHorizontalScroll = (page) => page.evaluate(() => document.documentElemen
   await shot(page, 'task-editor')
   await editor.getByRole('button', { name: '儲存' }).click()
   await page.locator('.today-task', { hasText: '洗衣服' }).waitFor()
-
-  // 首頁自訂（UI 2.0 Sprint 2）：薪資優先預設不顯示心情與備註 → 在「自訂首頁」打開，設定存到後端
-  check('moodHiddenByDefault', (await page.locator('.today-journal').count()) === 0)
-  await page.getByRole('button', { name: '自訂首頁' }).click()
-  const customize = page.locator('.customize-sheet')
-  await customize.waitFor()
-  await shot(page, 'customize-sheet')
-  await customize.locator('.customize__row', { hasText: '心情與備註' }).locator('.van-switch').click()
-  await customize.getByRole('button', { name: '關閉' }).click()
-  await customize.waitFor({ state: 'hidden' })
-  await page.locator('.today-journal').waitFor()
-  await page.waitForTimeout(800) // 等首頁設定寫入後端
-  const savedLayout = (await call('/dashboard-settings', { token: bob.token })).dashboardLayout
-  check(
-    'layoutSavedToBackend',
-    savedLayout?.mode === 'PAY' && savedLayout.modules.some((m) => m.id === 'mood-journal' && m.visible === true),
-  )
 
   // 心情＋備註
   await page.getByRole('button', { name: /很好/ }).click()
@@ -246,9 +251,15 @@ const noHorizontalScroll = (page) => page.evaluate(() => document.documentElemen
 
 // Alice：之前未完成的事項（不會自動消失）＋換一句
 {
+  // Alice 只打開待辦與小語（其餘沿用薪資優先預設），用來確認不同帳號的首頁設定互不影響
+  await call('/dashboard-settings/layout', {
+    method: 'PUT',
+    token: alice.token,
+    body: { mode: 'PAY', modules: [{ id: 'today-tasks', visible: true }, { id: 'daily-quote', visible: true }] },
+  })
   const { context, page } = await openApp(alice, { width: 390, height: 844 })
-  // 不同帳號的首頁設定互不影響：Alice 仍是預設（沒有心情與備註）
-  check('otherAccountKeepsDefaultLayout', (await page.locator('.today-journal').count()) === 0)
+  // 不同帳號的首頁設定互不影響：Bob 打開了心情與備註，Alice 沒有
+  check('otherAccountKeepsOwnLayout', (await page.locator('.today-journal').count()) === 0)
   await page.getByText('還有 1 件之前未完成的事項').click()
   await page.locator('.today-overdue-list').getByText('繳房租').waitFor()
   await shot(page, 'overdue-popup')

@@ -3,7 +3,7 @@ import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { applyAccountLocale } from './services/localePreference.js'
 import { joinList, weekdayShort } from './i18n/format.js'
-import { leaveTypeLabel, leaveTypeShortLabel } from './i18n/labels.js'
+import { incomeCategoryLabel, leaveTypeLabel, leaveTypeShortLabel } from './i18n/labels.js'
 import * as XLSX from 'xlsx'
 import TripTracker from './components/TripTracker.vue'
 import ExpenseTracker from './components/ExpenseTracker.vue'
@@ -268,9 +268,9 @@ function handlePageNavigate(target) {
 const expenseTrackerRef = ref(null)
 const tripTrackerRef = ref(null)
 // 通用手動交易（一般收入、外幣支出、資金移轉）表單
-const entrySheet = ref({ show: false, entry: null, type: 'INCOME' })
-function openEntrySheet(type = 'INCOME', entry = null) {
-  entrySheet.value = { show: true, entry, type }
+const entrySheet = ref({ show: false, entry: null, type: 'INCOME', date: '' })
+function openEntrySheet(type = 'INCOME', entry = null, date = '') {
+  entrySheet.value = { show: true, entry, type, date }
 }
 
 // 首頁快捷操作：切到對應頁面，支出與車資直接打開新增表單
@@ -522,6 +522,8 @@ const PAYROLL_VIEWS = [{ id: 'schedule' }, { id: 'week' }, { id: 'settings' }]
 const payrollView = ref('schedule')
 // 點日曆日期時打開的當天面板
 const daySheetOpen = ref(false)
+// 3.0：點日期先看當日摘要（工作、收支、生活、操作）；按「編輯班表」才進入時間編輯
+const daySheetMode = ref('summary')
 const monthMenuOpen = ref(false)
 // 底部導航：首頁｜日曆｜收支｜更多（3.0）。內部 id 不變：payroll＝日曆、finances＝收支。
 // 支出、車資是收支的子頁；採買清單、管理後台從「更多」進入。底部分頁亮在所屬的上層。
@@ -735,6 +737,8 @@ const onDateSelect = async (date) => {
   if (nextDate === workDate.value) {
     // 同一天：有未儲存修改就保留，直接打開面板繼續編輯
     if (!dayEditorDirty.value) loadSelectedDate()
+    // 有未儲存修改就直接回到編輯，否則先看摘要
+    daySheetMode.value = dayEditorDirty.value ? 'edit' : 'summary'
     daySheetOpen.value = true
     return
   }
@@ -747,6 +751,7 @@ const onDateSelect = async (date) => {
   workDate.value = nextDate
   visibleMonth.value = `${year}-${month}`
   loadSelectedDate()
+  daySheetMode.value = 'summary'
   daySheetOpen.value = true
 }
 
@@ -771,6 +776,7 @@ async function openDayEditorFromHome(date) {
     loadSelectedDate()
   }
   ledger.ensureLoaded()
+  daySheetMode.value = 'edit'
   daySheetOpen.value = true
   // 等面板滑出後再捲動，避免動畫中捲動位置被重設
   setTimeout(() => workInputSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 320)
@@ -797,6 +803,11 @@ async function openDayExpense(sourceId) {
     expenseTrackerRef.value?.openForm({ sourceId })
   })
 }
+async function openDayEntry(entryId) {
+  const entry = ledger.entries.value.find((item) => item.id === entryId)
+  if (!entry) return
+  await openFromDaySheet(() => openEntrySheet(entry.type, entry))
+}
 async function openDayTrip(tripId) {
   const trip = ledger.trips.value.find((item) => item.id === tripId)
   if (!trip) return
@@ -806,8 +817,27 @@ async function openDayTrip(tripId) {
     tripTrackerRef.value?.openTripForm(trip)
   })
 }
-function scrollToWorkInput() {
+async function scrollToWorkInput() {
+  daySheetMode.value = 'edit'
+  await nextTick()
   workInputSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+// 當日摘要的操作：班表編輯獨立；新增支出／收入／車資預設這一天
+function startDayEdit() {
+  daySheetMode.value = 'edit'
+}
+async function addOnDay(kind) {
+  const date = workDate.value
+  await openFromDaySheet(async () => {
+    if (kind === 'income') {
+      openEntrySheet('INCOME', null, date)
+      return
+    }
+    activeTab.value = kind === 'expense' ? 'expenses' : 'trips'
+    await nextTick()
+    if (kind === 'expense') expenseTrackerRef.value?.openForm(undefined, { date })
+    else tripTrackerRef.value?.openTripForm(null, null, { date })
+  })
 }
 
 // 切換班表／本週／設定前也檢查
@@ -1506,6 +1536,7 @@ const restoreSelectedDateShift = () => {
 }
 
 const openSelectedDateEditor = () => {
+  daySheetMode.value = 'edit'
   daySheetOpen.value = true
 }
 
@@ -1639,6 +1670,7 @@ const editRecord = async (record) => {
   loadSelectedDate()
   scheduleSections.value = []
   expandedRecordId.value = ''
+  daySheetMode.value = 'edit'
   daySheetOpen.value = true
 }
 
@@ -1955,7 +1987,9 @@ const markDesignatedWorkDate = ({ date, marked }) => {
               <div><dt>{{ t('payrollPage.workIncomeGross') }}</dt><dd>{{ calendarMoney(selectedDailyNet.workCents) }}</dd></div>
               <div><dt>{{ t('calendar.tripReceivable') }}</dt><dd>{{ calendarMoney(selectedDailyNet.fareCents) }}</dd></div>
               <div><dt>{{ t('calendar.expenses') }}</dt><dd>{{ signedCalendarMoney(-selectedDailyNet.expenseCents) }}</dd></div>
+              <div v-if="selectedDailyNet.incomeCents > 0"><dt>{{ t('calendar.otherIncome') }}</dt><dd>{{ signedCalendarMoney(selectedDailyNet.incomeCents) }}</dd></div>
               <div v-if="selectedDailyNet.investmentLossCents > 0"><dt>{{ t('payrollPage.investmentLoss') }}</dt><dd>{{ signedCalendarMoney(-selectedDailyNet.investmentLossCents) }}</dd></div>
+              <div v-if="selectedDailyNet.investmentGainCents > 0"><dt>{{ t('calendar.investmentGain') }}</dt><dd>{{ signedCalendarMoney(selectedDailyNet.investmentGainCents) }}</dd></div>
               <div class="day-money__net" :class="`day-net--${selectedDailyNet.netCents > 0 ? 'positive' : selectedDailyNet.netCents < 0 ? 'negative' : 'zero'}`"><dt>{{ t('payrollPage.estimatedNet') }}</dt><dd>{{ signedCalendarMoney(selectedDailyNet.netCents) }}</dd></div>
             </dl>
             <ul class="day-money__items">
@@ -1993,14 +2027,42 @@ const markDesignatedWorkDate = ({ date, marked }) => {
                   <strong class="is-expense">−{{ calendarMoney(item.amountCents) }}</strong>
                 </button>
               </li>
+              <li v-for="item in selectedDailyNet.incomeItems" :key="`income-${item.entryId}`">
+                <button type="button" @click="openDayEntry(item.entryId)">
+                  <span class="day-money__kind day-money__kind--fare">{{ t('calendar.kindIncome') }}</span>
+                  <span class="day-money__label">
+                    {{ item.title || incomeCategoryLabel(item.category) }}
+                    <small>{{ item.status === 'PAID' ? t('finances.statusSettled') : t('finances.statusPlanned') }}</small>
+                  </span>
+                  <strong class="is-income">+{{ calendarMoney(item.amountCents) }}</strong>
+                </button>
+              </li>
+              <li v-for="item in selectedDailyNet.investmentGainItems" :key="`gain-${item.entryId}`">
+                <button type="button" @click="openDayEntry(item.entryId)">
+                  <span class="day-money__kind day-money__kind--fare">{{ t('calendar.investmentGain') }}</span>
+                  <span class="day-money__label">{{ item.title }}</span>
+                  <strong class="is-income">+{{ calendarMoney(item.amountCents) }}</strong>
+                </button>
+              </li>
             </ul>
+            <p v-if="selectedDailyNet.unconvertedItems.length" class="day-money__note">
+              {{ t('calendar.unconverted', { count: selectedDailyNet.unconvertedItems.length }) }}
+            </p>
             <p class="day-money__note">{{ t('payrollPage.dayMoneyNote') }}</p>
           </template>
           <p v-if="selectedDailyNet?.salaryDeposits.length" class="day-money__deposit">
             {{ t('payrollPage.salaryDepositNote', { amount: calendarMoney(selectedDailyNet.salaryDeposits.reduce((sum, deposit) => sum + deposit.amountCents, 0)) }) }}
           </p>
         </section>
-        <div ref="workInputSection" class="section">
+        <div class="day-summary-actions" v-show="daySheetMode === 'summary'">
+          <h2>{{ t('calendar.dayActions') }}</h2>
+          <div class="day-summary-actions__grid">
+            <button type="button" @click="addOnDay('expense')"><van-icon name="records" />{{ t('dashboard.addExpense') }}</button>
+            <button type="button" @click="addOnDay('income')"><van-icon name="gold-coin-o" />{{ t('dashboard.addIncome') }}</button>
+            <button type="button" @click="addOnDay('trip')"><van-icon name="logistics" />{{ t('dashboard.addTrip') }}</button>
+          </div>
+        </div>
+        <div v-show="daySheetMode === 'edit'" ref="workInputSection" class="section">
           <h2>{{ t('payroll.editHours') }}</h2>
       
           <van-cell-group inset style="margin-bottom: 12px;">
@@ -2094,7 +2156,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
             />
           </van-cell-group>
         </div>
-        <div v-if="shiftType !== 'leave' && !setupState.payReady" class="section">
+        <div v-if="daySheetMode === 'edit' && shiftType !== 'leave' && !setupState.payReady" class="section">
           <h2>{{ t('payrollPage.dayPayEstimate') }}</h2>
           <div class="section-card setup-needed">
             <van-icon name="balance-o" aria-hidden="true" />
@@ -2105,7 +2167,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
             <van-button size="small" type="primary" @click="openWorkSetup(1)">{{ t('payrollPage.setUp') }}</van-button>
           </div>
         </div>
-        <div class="section" v-else-if="workSummary && shiftType !== 'leave'">
+        <div class="section" v-else-if="daySheetMode === 'edit' && workSummary && shiftType !== 'leave'">
           <h2>{{ t('payrollPage.dayPayEstimate') }} ({{ currentCurrency }})</h2>
           <p v-if="todayRateFlags.provisional.length" class="rate-flag">
             <van-icon name="info-o" aria-hidden="true" />{{ t('payrollPage.provisionalNote', { items: joinList(todayRateFlags.provisional) }) }}
@@ -2146,9 +2208,14 @@ const markDesignatedWorkDate = ({ date, marked }) => {
             </van-collapse-item>
           </van-collapse>
         </div>
-        <DayLifeCard v-if="daySheetOpen" ref="dayLifeCard" :key="workDate" :date="workDate" />
+        <DayLifeCard v-if="daySheetOpen" v-show="daySheetMode === 'summary'" ref="dayLifeCard" :key="workDate" :date="workDate" />
       </div>
-      <div class="pday__footer">
+      <div v-if="daySheetMode === 'summary'" class="pday__footer">
+        <van-button type="primary" block data-testid="day-edit-shift" @click="startDayEdit">
+          {{ selectedRecord ? t('calendar.editShift') : t('calendar.addShift') }}
+        </van-button>
+      </div>
+      <div v-else class="pday__footer">
         <van-button v-if="isEditingRecord" plain type="default" @click="cancelEditingRecord">{{ t('payrollPage.revert') }}</van-button>
         <van-button type="primary" block @click="saveDayFromSheet">
           {{ shiftType === 'leave' ? t('payrollPage.saveLeave') : isEditingRecord ? t('payrollPage.saveChanges') : t('payrollPage.saveDay') }}
@@ -2348,6 +2415,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       v-model:show="entrySheet.show"
       :entry="entrySheet.entry"
       :default-type="entrySheet.type"
+      :default-date="entrySheet.date"
       :exchange-rates="exchangeRates"
     />
     <van-tabbar :model-value="tabbarActive" fixed safe-area-inset-bottom :before-change="beforeTabChange" @update:model-value="activeTab = $event">
@@ -2571,6 +2639,11 @@ const markDesignatedWorkDate = ({ date, marked }) => {
 .term-glossary div { display: grid; grid-template-columns: 96px 1fr; gap: 8px; }
 .term-glossary dt { color: var(--color-primary); font-size: 12px; font-weight: 800; }
 .term-glossary dd { margin: 0; color: #4b5b6b; font-size: 12px; line-height: 1.45; }
+.day-summary-actions { margin: 0 16px 16px; }
+.day-summary-actions h2 { margin: 0 4px 8px; font-size: 15px; }
+.day-summary-actions__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.day-summary-actions__grid button { display: grid; justify-items: center; gap: 4px; min-width: 0; min-height: 64px; padding: 10px 4px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-surface); color: var(--color-heading); font: inherit; font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
+.day-summary-actions__grid .van-icon { color: var(--color-primary); font-size: 20px; }
 .sub-page-back { max-width: 820px; margin: 8px auto -4px; padding: 0 max(var(--page-inset), env(safe-area-inset-left, 0px)); }
 .sub-page-back button { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 6px 10px; border: 1px solid var(--color-border); border-radius: 11px; background: #fff; color: var(--color-primary); font: inherit; font-size: 13px; font-weight: 700; }
 /* 薪資頁分段 */

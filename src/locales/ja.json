@@ -321,7 +321,14 @@
     "dailyLife": "生活記録",
     "dailyQuote": "今日のひと言",
     "total": "合計",
-    "estimateNotCash": "勤務収入の見込みを含み、実際の入金額ではありません。"
+    "estimateNotCash": "勤務収入の見込みを含み、実際の入金額ではありません。",
+    "otherIncome": "一般の収入",
+    "investmentGain": "確定した投資利益",
+    "kindIncome": "収入",
+    "unconverted": "ほかに外貨 {count} 件はレートがなく、当日の純額に含めていません。",
+    "dayActions": "この日の操作",
+    "editShift": "シフトを編集",
+    "addShift": "シフトを追加"
   },
   "today": {
     "tasks": "今日のタスク",
@@ -1018,7 +1025,7 @@
     "configured": "設定済み",
     "moreShifts": "{names} ほか全 {count} 種",
     "calendarHelp": "日付をタップすると当日の収支・気分・シフトを表示します",
-    "dailyNetFormula": "1日の予測純額＝勤務収入（税引前）＋未収運賃－支出－投資損失",
+    "dailyNetFormula": "1日の予測純額＝勤務収入（税引前）＋未収運賃＋一般の収入－支出－投資損失＋投資利益",
     "showingMonth": "{month} を表示中",
     "moreActions": "その他のシフト操作",
     "fillMonthLabel": "{month}月を埋める",
@@ -1111,7 +1118,7 @@
     "kindExpense": "支出",
     "paid": "支払済み",
     "toPay": "未払い",
-    "dayMoneyNote": "運賃は乗車日に計上し、受取時に重複加算しません。支出は日付ごとに1回計上（支払済み＋未払い）。実現した投資損失も差し引きます。",
+    "dayMoneyNote": "運賃は乗車日に計上し、受取時に重複加算しません。支出は日付ごとに1回計上（支払済み＋未払い）。実現した投資損失は差し引き、利益は加えます。返金・資金移動・レートのない外貨は含めません。",
     "salaryDepositNote": "この日に給与 {amount} が入金されました。実際の入金のため、予測純額には含めません（シフト予測との重複を避けるため）。",
     "attendanceStatus": "当日の出勤状況：",
     "holidayCell": "🔥 オーストラリアの祝日",

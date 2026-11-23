@@ -267,6 +267,11 @@ async function dayEditorFlow(page) {
     await day(15).click()
     await sheet.waitFor()
     await page.waitForTimeout(400)
+    // 3.0：點日期先看當日摘要，按「新增班表」才進入時間編輯
+    result.summaryFirst = await sheet.locator('[data-testid="day-edit-shift"]').isVisible()
+    await shot('0-day-summary')
+    await sheet.locator('[data-testid="day-edit-shift"]').click()
+    await page.waitForTimeout(200)
     await times.nth(0).fill('900')
     await times.nth(0).press('Enter')
     await times.nth(1).fill('1730')
@@ -299,6 +304,8 @@ async function dayEditorFlow(page) {
     await day(15).click()
     await sheet.waitFor()
     await page.waitForTimeout(300)
+    await sheet.locator('[data-testid="day-edit-shift"]').click()
+    await page.waitForTimeout(200)
     result.discardNotSaved = (await sheet.getByText('尚未加入班表').isVisible()) && (await times.nth(1).inputValue()) === ''
     // 沒修改：關閉不提醒
     await sheet.locator('.pday__close').click()

@@ -321,7 +321,14 @@
     "dailyLife": "생활 기록",
     "dailyQuote": "오늘의 한마디",
     "total": "합계",
-    "estimateNotCash": "예상 근로 수입이 포함되어 있으며 실제 입금액은 아닙니다."
+    "estimateNotCash": "예상 근로 수입이 포함되어 있으며 실제 입금액은 아닙니다.",
+    "otherIncome": "일반 수입",
+    "investmentGain": "실현 투자 수익",
+    "kindIncome": "수입",
+    "unconverted": "외화 {count}건은 환율이 없어 당일 순액에 포함하지 않았습니다.",
+    "dayActions": "이날 할 일",
+    "editShift": "근무 수정",
+    "addShift": "근무 추가"
   },
   "today": {
     "tasks": "오늘 할 일",
@@ -1018,7 +1025,7 @@
     "configured": "설정됨",
     "moreShifts": "{names} 외 총 {count}종",
     "calendarHelp": "날짜를 누르면 그날의 수지, 기분, 근무를 볼 수 있어요",
-    "dailyNetFormula": "일일 예상 순액 = 근무 수입(세전) + 받을 차비 − 지출 − 투자 손실",
+    "dailyNetFormula": "일일 예상 순액 = 근무 수입(세전) + 받을 차비 + 일반 수입 − 지출 − 투자 손실 + 투자 수익",
     "showingMonth": "{month} 표시 중",
     "moreActions": "근무표 작업 더보기",
     "fillMonthLabel": "{month}월 채우기",
@@ -1111,7 +1118,7 @@
     "kindExpense": "지출",
     "paid": "지급함",
     "toPay": "지급 예정",
-    "dayMoneyNote": "차비는 탑승일 기준으로 계산하며 받을 때 중복으로 더하지 않습니다. 지출은 날짜별로 한 번(지급함+지급 예정) 계산하고, 실현된 투자 손실도 차감합니다.",
+    "dayMoneyNote": "차비는 탑승일 기준으로 계산하며 받을 때 중복으로 더하지 않습니다. 지출은 날짜별로 한 번(지급함+지급 예정) 계산하고, 실현된 투자 손실은 차감하고 수익은 더합니다. 환불, 자금 이체, 환율이 없는 외화는 제외합니다.",
     "salaryDepositNote": "이날 급여 {amount}이(가) 입금되었습니다. 실제 입금이므로 예상 순액에는 포함하지 않습니다 (근무 예상과 중복 방지).",
     "attendanceStatus": "이날 출근 상태:",
     "holidayCell": "🔥 호주 공휴일",

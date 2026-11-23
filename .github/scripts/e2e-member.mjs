@@ -204,6 +204,9 @@ try {
   await day(15).click() // 11/15 週日，沒有班表
   await sheet.waitFor()
   await page.waitForTimeout(300)
+  // 3.0：點日期先看當日摘要，按「新增班表／編輯班表」才進入時間編輯
+  await sheet.locator('[data-testid="day-edit-shift"]').click()
+  await page.waitForTimeout(200)
   await times.nth(0).fill('0900')
   await times.nth(0).press('Enter')
   await times.nth(1).fill('17:00')

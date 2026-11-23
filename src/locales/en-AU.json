@@ -321,7 +321,14 @@
     "dailyLife": "Life journal",
     "dailyQuote": "Quote of the day",
     "total": "Total",
-    "estimateNotCash": "Includes estimated work earnings, not actual cash received."
+    "estimateNotCash": "Includes estimated work earnings, not actual cash received.",
+    "otherIncome": "Other income",
+    "investmentGain": "Realised investment gain",
+    "kindIncome": "Income",
+    "unconverted": "{count} foreign-currency entries have no rate and are not in the daily net.",
+    "dayActions": "For this day",
+    "editShift": "Edit shift",
+    "addShift": "Add shift"
   },
   "today": {
     "tasks": "Today’s to-dos",
@@ -1018,7 +1025,7 @@
     "configured": "Set",
     "moreShifts": "{names} and {count} total",
     "calendarHelp": "Tap a date to see that day's money, mood and shifts",
-    "dailyNetFormula": "Daily estimated net = work income (gross) + fares owed − expenses − investment losses",
+    "dailyNetFormula": "Daily estimated net = work income (gross) + fares owed + other income − expenses − investment losses + investment gains",
     "showingMonth": "Showing {month}",
     "moreActions": "More roster actions",
     "fillMonthLabel": "Fill month {month}",
@@ -1111,7 +1118,7 @@
     "kindExpense": "Expense",
     "paid": "Paid",
     "toPay": "To pay",
-    "dayMoneyNote": "Fares count on the ride date (payments aren't added again); expenses count once on their date (paid + to pay); realised investment losses are also deducted.",
+    "dayMoneyNote": "Fares count on the ride date (payments aren't added again); expenses count once on their date (paid + to pay); realised investment losses are deducted and gains added; refunds, transfers and foreign amounts without a rate are excluded.",
     "salaryDepositNote": "A pay deposit of {amount} landed on this day. It's actual income, so it isn't added to the estimated net (to avoid double-counting the roster estimate).",
     "attendanceStatus": "Attendance:",
     "holidayCell": "🔥 Australian public holiday",

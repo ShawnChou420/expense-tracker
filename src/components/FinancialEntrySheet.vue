@@ -30,6 +30,8 @@ const props = defineProps({
   entry: { type: Object, default: null },
   /** 新增時的預設類型 */
   defaultType: { type: String, default: 'INCOME' },
+  /** 新增時的預設日期（例如從日曆某一天新增）；空白為今天 */
+  defaultDate: { type: String, default: '' },
   /** 顯示幣別匯率表：1 AUD = rates[code] */
   exchangeRates: { type: Object, default: () => ({}) },
 })
@@ -73,7 +75,7 @@ watch(
           fxRateDate: entry.fxRateDate || '',
           fxSource: entry.fxSource || '',
         }
-      : emptyForm(props.defaultType)
+      : { ...emptyForm(props.defaultType), date: props.defaultDate || today() }
     if (!entry && form.value.currency !== 'AUD') useTodayRate(true)
   },
   { immediate: true },

@@ -59,7 +59,9 @@
     "more": "More",
     "shopping": "Shopping list",
     "calendar": "Life calendar",
-    "account": "Account"
+    "account": "Account",
+    "calendarTab": "Calendar",
+    "finances": "Money"
   },
   "guest": {
     "title": "Working in Australia? See what you could earn this week 💰",
@@ -998,7 +1000,7 @@
     "guestSaveNote": "Log in to keep your private records",
     "loginOrSignUp": "Log in / Sign up",
     "backToMore": "More",
-    "tabPay": "Pay"
+    "backToFinances": "Back to Money"
   },
   "payrollPage": {
     "title": "Pay estimate",

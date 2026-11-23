@@ -59,7 +59,9 @@
     "more": "その他",
     "shopping": "買い物リスト",
     "calendar": "生活カレンダー",
-    "account": "アカウント"
+    "account": "アカウント",
+    "calendarTab": "カレンダー",
+    "finances": "収支"
   },
   "guest": {
     "title": "オーストラリアで働くと、今週はいくら稼げる？💰",
@@ -998,7 +1000,7 @@
     "guestSaveNote": "ログインすると個人の記録を保存できます",
     "loginOrSignUp": "ログイン／登録",
     "backToMore": "その他",
-    "tabPay": "給与"
+    "backToFinances": "収支に戻る"
   },
   "payrollPage": {
     "title": "給与の予測",

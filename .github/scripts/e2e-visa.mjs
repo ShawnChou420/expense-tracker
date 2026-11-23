@@ -212,7 +212,7 @@ const member = await createMember('a')
   result.savedRecords = saved.length
 
   // 批次請假：包含既有工作日 → 衝突提示，預設保留
-  await page.locator('.van-tabbar-item', { hasText: '薪資' }).click()
+  await page.locator('.van-tabbar-item', { hasText: '日曆' }).click()
   await page.getByRole('button', { name: '請假區間' }).click()
   const leave = page.locator('.leave-sheet')
   // 在日曆上點起訖日：10/13 → 10/16
@@ -278,7 +278,7 @@ for (const viewport of [{ width: 360, height: 780 }, { width: 430, height: 932 }
   await page.locator('.visa-card').scrollIntoViewIfNeeded()
   await shot(page, 'card-progress')
   check(`noHorizontalScroll${viewport.width}`, await noHorizontalScroll(page))
-  await page.locator('.van-tabbar-item', { hasText: '薪資' }).click()
+  await page.locator('.van-tabbar-item', { hasText: '日曆' }).click()
   // 新版：補登歷史收在月份操作的「⋯」選單
   const historyButton = page.getByRole('button', { name: '補登歷史', exact: true })
   if (await historyButton.count()) await historyButton.click()

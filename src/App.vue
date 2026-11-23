@@ -523,8 +523,10 @@ const payrollView = ref('schedule')
 // 點日曆日期時打開的當天面板
 const daySheetOpen = ref(false)
 const monthMenuOpen = ref(false)
-// 採買清單從「更多」進入，底部分頁仍亮在「更多」
-const tabbarActive = computed(() => (['shopping', 'admin'].includes(activeTab.value) ? 'more' : activeTab.value))
+// 底部導航：首頁｜日曆｜收支｜更多（3.0）。內部 id 不變：payroll＝日曆、finances＝收支。
+// 支出、車資是收支的子頁；採買清單、管理後台從「更多」進入。底部分頁亮在所屬的上層。
+const SUB_PAGE_PARENT = Object.freeze({ shopping: 'more', admin: 'more', expenses: 'finances', trips: 'finances' })
+const tabbarActive = computed(() => SUB_PAGE_PARENT[activeTab.value] ?? activeTab.value)
 
 // --- 管理後台：網址 #/admin（靜態網站沒有伺服器轉址，所以用 hash）；權限由後端驗證 ---
 const ADMIN_HASH = '#/admin'
@@ -548,7 +550,7 @@ watch(isSuperAdmin, (admin) => {
 registerPageBack({
   canGoBack: () => activeTab.value !== 'dashboard',
   back: () => {
-    const target = ['shopping', 'admin'].includes(activeTab.value) ? 'more' : 'dashboard'
+    const target = SUB_PAGE_PARENT[activeTab.value] ?? 'dashboard'
     if (activeTab.value === 'dashboard') return false
     if (activeTab.value === 'payroll') {
       confirmLeaveDayEditor().then((proceed) => {
@@ -2330,6 +2332,9 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       :exchange-rates="exchangeRates"
       @navigate="activeTab = $event"
     />
+    <div v-if="activeTab === 'trips' || activeTab === 'expenses'" class="sub-page-back">
+      <button type="button" @click="activeTab = 'finances'"><van-icon name="arrow-left" /> {{ t('app.backToFinances') }}</button>
+    </div>
     <TripTracker v-show="activeTab === 'trips'" ref="tripTrackerRef" />
     <ExpenseTracker v-show="activeTab === 'expenses'" ref="expenseTrackerRef" />
     <MorePage v-show="activeTab === 'more'" @navigate="handlePageNavigate" />
@@ -2347,9 +2352,8 @@ const markDesignatedWorkDate = ({ date, marked }) => {
     />
     <van-tabbar :model-value="tabbarActive" fixed safe-area-inset-bottom :before-change="beforeTabChange" @update:model-value="activeTab = $event">
       <van-tabbar-item name="dashboard" icon="home-o">{{ t('nav.home') }}</van-tabbar-item>
-      <van-tabbar-item name="payroll" icon="balance-o">{{ t('app.tabPay') }}</van-tabbar-item>
-      <van-tabbar-item name="expenses" icon="records">{{ t('nav.expenses') }}</van-tabbar-item>
-      <van-tabbar-item name="trips" icon="friends-o">{{ t('nav.trips') }}</van-tabbar-item>
+      <van-tabbar-item name="payroll" icon="calendar-o">{{ t('nav.calendarTab') }}</van-tabbar-item>
+      <van-tabbar-item name="finances" icon="balance-list-o">{{ t('nav.finances') }}</van-tabbar-item>
       <van-tabbar-item name="more" icon="apps-o">{{ t('nav.more') }}</van-tabbar-item>
     </van-tabbar>
   </div>

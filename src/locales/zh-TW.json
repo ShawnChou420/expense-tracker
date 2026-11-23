@@ -59,7 +59,9 @@
     "more": "更多",
     "shopping": "採買清單",
     "calendar": "生活日曆",
-    "account": "帳號"
+    "account": "帳號",
+    "calendarTab": "日曆",
+    "finances": "收支"
   },
   "guest": {
     "title": "來澳洲打工，這週能賺多少？💰",
@@ -998,7 +1000,7 @@
     "guestSaveNote": "登入後可保存私人紀錄",
     "loginOrSignUp": "登入／註冊",
     "backToMore": "更多",
-    "tabPay": "薪資"
+    "backToFinances": "返回收支"
   },
   "payrollPage": {
     "title": "薪資預估",

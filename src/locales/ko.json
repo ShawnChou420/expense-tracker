@@ -59,7 +59,9 @@
     "more": "더 보기",
     "shopping": "장보기 목록",
     "calendar": "생활 달력",
-    "account": "계정"
+    "account": "계정",
+    "calendarTab": "달력",
+    "finances": "수입·지출"
   },
   "guest": {
     "title": "호주에서 일하면 이번 주에 얼마나 벌 수 있을까요? 💰",
@@ -998,7 +1000,7 @@
     "guestSaveNote": "로그인하면 개인 기록을 저장할 수 있어요",
     "loginOrSignUp": "로그인 / 가입",
     "backToMore": "더보기",
-    "tabPay": "급여"
+    "backToFinances": "수입·지출로 돌아가기"
   },
   "payrollPage": {
     "title": "급여 예상",

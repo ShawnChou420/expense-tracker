@@ -73,7 +73,7 @@ for (const target of targets) {
     if (is390 || size.name === '320') await shot('empty')
 
     if (target.name === 'before') {
-      await tab(page, '薪資')
+      await tab(page, '日曆')
       await payrollView(page, '本週')
       await page.getByRole('button', { name: '填滿本週' }).click()
       await page.waitForTimeout(500)
@@ -118,6 +118,10 @@ for (const target of targets) {
           (await page.locator('.van-popup--bottom:visible').count()) === 0 &&
           page.url().startsWith('http://127.0.0.1')
         checks.backStaysOnTab = await page.locator('.expense-page').isVisible()
+        // 3.0：支出是「收支」的子頁，返回先回收支，再按一次才回首頁
+        await page.goBack()
+        await page.waitForTimeout(700)
+        checks.backReturnsFinances = await page.locator('[data-testid="finances-page"]').isVisible()
         await page.goBack()
         await page.waitForTimeout(700)
         checks.backReturnsHome = await page.locator('.home-header').isVisible()
@@ -157,7 +161,7 @@ async function guestSetupFlow(page, shot) {
   result.quickEstimateReset = (await page.locator('.quick-pay__amount').innerText()).trim() === 'A$1,004.72'
 
   // 2. 薪資頁「填滿本週」→ 設定閘門，不會用任何預設費率產生班表
-  await tab(page, '薪資')
+  await tab(page, '日曆')
   await page.waitForTimeout(300)
   if (shot) await shot('payroll-not-configured')
   await payrollView(page, '本週')
@@ -258,7 +262,7 @@ async function dayEditorFlow(page) {
   try {
     await page.reload({ waitUntil: 'networkidle' })
     await page.waitForTimeout(600)
-    await tab(page, '薪資')
+    await tab(page, '日曆')
     await toastGone(page)
     await day(15).click()
     await sheet.waitFor()
@@ -404,7 +408,7 @@ async function payslipFlow(page) {
     })
     result.lifeModeShiftFirst = String(firstModule).includes('today-shift')
     await shot('8b-dashboard-life-mode')
-    await tab(page, '薪資')
+    await tab(page, '日曆')
     await payrollView(page, '設定')
     await page.locator('.work-setup-card').scrollIntoViewIfNeeded()
     await shot('9-payroll-setup-card')

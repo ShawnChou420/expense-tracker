@@ -919,8 +919,8 @@
     "setWorkplace": "Add your workplace for one-tap directions",
     "editWorkplace": "Edit workplace",
     "workplaceTitle": "Workplace",
-    "workplacePlaceholder": "e.g. Baiada Pendle Hill or a full address",
-    "workplaceHint": "Only used to open map directions. Saved in your work setup.",
+    "workplacePlaceholder": "Baiada Poultry Pty Ltd - Hanwood Processing Plant",
+    "workplaceHint": "Enter a business name or full address. Only used to open map directions. Saved in your work setup.",
     "workplaceCleared": "Workplace removed"
   },
   "dayLife": {

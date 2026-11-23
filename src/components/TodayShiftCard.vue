@@ -211,6 +211,9 @@ const restMessage = computed(() =>
       <div class="today-shift__place-form">
         <van-field
           v-model="workplaceDraft"
+          type="textarea"
+          rows="1"
+          autosize
           :placeholder="t('shiftCard.workplacePlaceholder')"
           :maxlength="WORKPLACE_MAX_LENGTH"
           :aria-label="t('shiftCard.workplaceTitle')"
@@ -229,6 +232,7 @@ const restMessage = computed(() =>
 }
 .today-shift {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   margin-top: 14px;
   padding: 16px;
@@ -371,7 +375,9 @@ const restMessage = computed(() =>
 }
 .today-shift__nav {
   display: flex;
+  align-items: stretch;
   gap: 8px;
+  min-width: 0;
 }
 .today-shift__go {
   display: flex;
@@ -381,7 +387,7 @@ const restMessage = computed(() =>
   gap: 6px;
   min-width: 0;
   min-height: var(--touch-target);
-  padding: 0 12px;
+  padding: 8px 12px;
   border-radius: 12px;
   background: var(--color-primary);
   color: #fff;
@@ -389,10 +395,19 @@ const restMessage = computed(() =>
   font-weight: 800;
   text-decoration: none;
 }
+.today-shift__go .van-icon {
+  flex: none;
+}
 .today-shift__go span {
+  display: -webkit-box;
+  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 .today-shift__place-edit {
   display: grid;

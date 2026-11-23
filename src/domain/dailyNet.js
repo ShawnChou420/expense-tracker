@@ -3,6 +3,7 @@ import { getExpenseCategory, getExpenseOccurrences } from './expenses.js'
 import { dollarsToCents, sumCents } from './money.js'
 import { getChargeReceivedCents } from './trips.js'
 import { formatCalendarAmount } from '../utils/calendarMoney.js'
+import { CLASSIFICATIONS, ENTRY_TYPES } from './finances.js'
 
 /**
  * 生活日曆的「每日淨收支」。
@@ -19,6 +20,9 @@ import { formatCalendarAmount } from '../utils/calendarMoney.js'
  * - 已實現投資虧損：使用者決定「虧出去的就是少了」，計入每日淨額，但和生活支出分開列
  *   （investmentLossItems），首頁 Dashboard 的生活支出統計仍不含它。
  * - 發薪入帳（salary deposits）是實際入帳，不計入預估淨額，只列在明細供對照。
+ * - 通用手動交易（3.0）：一般收入（已入帳＋預計）計入 incomeItems；外幣支出併入生活支出；
+ *   已實現投資獲利與投資虧損同一行口徑（investmentCents = 虧損，investmentGainCents = 獲利）；
+ *   退款、資金移轉不計入淨額；外幣沒有匯率的不計入，只列在 unconvertedItems。
  *
  * 之後若要加「實際現金流」模式（ACTUAL_CASH：依收款／付款日），另寫一個函式並沿用同樣的回傳格式。
  */
@@ -32,11 +36,16 @@ export const DAILY_NET_MODES = Object.freeze({ ESTIMATED: 'ESTIMATED' })
  * @property {number} expenseCents 生活支出（已付＋待付）
  * @property {number} plannedExpenseCents 其中尚未付款的部分
  * @property {number} investmentLossCents 已實現投資虧損
+ * @property {number} incomeCents 一般收入（3.0 手動交易）
+ * @property {number} investmentGainCents 已實現投資獲利
  * @property {number} netCents
  * @property {Array<any>} workItems
  * @property {Array<any>} fareItems
  * @property {Array<any>} expenseItems
  * @property {Array<any>} investmentLossItems
+ * @property {Array<any>} incomeItems
+ * @property {Array<any>} investmentGainItems
+ * @property {Array<any>} unconvertedItems 外幣沒有匯率（不計入 netCents）
  * @property {Array<any>} salaryDeposits 當日發薪入帳（不計入 netCents）
  */
 
@@ -49,11 +58,16 @@ function emptyDay(date) {
     expenseCents: 0,
     plannedExpenseCents: 0,
     investmentLossCents: 0,
+    incomeCents: 0,
+    investmentGainCents: 0,
     netCents: 0,
     workItems: [],
     fareItems: [],
     expenseItems: [],
     investmentLossItems: [],
+    incomeItems: [],
+    investmentGainItems: [],
+    unconvertedItems: [],
     salaryDeposits: [],
   }
 }
@@ -68,7 +82,9 @@ export function hasDailyNetActivity(day) {
     (day.workItems.length > 0 ||
       day.fareItems.length > 0 ||
       day.expenseItems.length > 0 ||
-      day.investmentLossItems.length > 0),
+      day.investmentLossItems.length > 0 ||
+      day.incomeItems.length > 0 ||
+      day.investmentGainItems.length > 0),
   )
 }
 
@@ -80,6 +96,7 @@ export function hasDailyNetActivity(day) {
  *   trips?: Array<any>,
  *   expenses?: Array<any>,
  *   salaryDeposits?: Array<any> | null,
+ *   entries?: Array<any>,
  *   passengerNames?: Record<string, string>,
  * }} sources
  * @returns {Map<string, DailyNet>}
@@ -90,6 +107,7 @@ export function getEstimatedDailyNet({
   trips = [],
   expenses = [],
   salaryDeposits = null,
+  entries = [],
   passengerNames = {},
 }) {
   /** @type {Map<string, DailyNet>} */
@@ -160,6 +178,32 @@ export function getEstimatedDailyNet({
     })
   }
 
+  for (const entry of entries) {
+    if (!entry || entry.type === ENTRY_TYPES.TRANSFER || !isDateInRange(entry.date, range)) continue
+    if (entry.classification === CLASSIFICATIONS.REFUND) continue
+    const item = {
+      entryId: entry.id,
+      title: entry.title || '',
+      category: entry.category,
+      amountCents: entry.convertedAudCents,
+      amountMinor: entry.amountMinor,
+      currency: entry.currency,
+      status: entry.status === 'SETTLED' ? 'PAID' : 'PLANNED',
+    }
+    if (!Number.isSafeInteger(entry.convertedAudCents)) {
+      dayOf(entry.date).unconvertedItems.push({ ...item, type: entry.type })
+      continue
+    }
+    if (entry.type === ENTRY_TYPES.EXPENSE) {
+      dayOf(entry.date).expenseItems.push({ ...item, occurrenceId: entry.id, sourceId: entry.id })
+    } else if (entry.classification === CLASSIFICATIONS.INVESTMENT_PNL) {
+      // 投資獲利只算已實現（已入帳）的，和投資虧損只記已付一致
+      if (entry.status === 'SETTLED') dayOf(entry.date).investmentGainItems.push(item)
+    } else {
+      dayOf(entry.date).incomeItems.push(item)
+    }
+  }
+
   for (const day of days.values()) {
     day.workCents = sumCents(day.workItems.map((item) => item.grossCents))
     day.fareCents = sumCents(day.fareItems.map((item) => item.amountCents))
@@ -168,7 +212,15 @@ export function getEstimatedDailyNet({
       day.expenseItems.filter((item) => item.status !== 'PAID').map((item) => item.amountCents),
     )
     day.investmentLossCents = sumCents(day.investmentLossItems.map((item) => item.amountCents))
-    day.netCents = day.workCents + day.fareCents - day.expenseCents - day.investmentLossCents
+    day.incomeCents = sumCents(day.incomeItems.map((item) => item.amountCents))
+    day.investmentGainCents = sumCents(day.investmentGainItems.map((item) => item.amountCents))
+    day.netCents =
+      day.workCents +
+      day.fareCents +
+      day.incomeCents -
+      day.expenseCents -
+      day.investmentLossCents +
+      day.investmentGainCents
   }
   return days
 }

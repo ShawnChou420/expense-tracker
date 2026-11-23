@@ -919,8 +919,8 @@
     "setWorkplace": "職場を設定してワンタップでナビ",
     "editWorkplace": "職場を編集",
     "workplaceTitle": "職場",
-    "workplacePlaceholder": "例：Baiada Pendle Hill または住所",
-    "workplaceHint": "地図のナビを開くためだけに使います。勤務設定に保存されます。",
+    "workplacePlaceholder": "Baiada Poultry Pty Ltd - Hanwood Processing Plant",
+    "workplaceHint": "会社名または住所を入力してください。地図のナビを開くためだけに使い、勤務設定に保存されます。",
     "workplaceCleared": "職場を削除しました"
   },
   "dayLife": {

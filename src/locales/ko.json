@@ -919,8 +919,8 @@
     "setWorkplace": "근무지를 설정하고 한 번에 길찾기",
     "editWorkplace": "근무지 수정",
     "workplaceTitle": "근무지",
-    "workplacePlaceholder": "예: Baiada Pendle Hill 또는 전체 주소",
-    "workplaceHint": "지도 길찾기를 여는 데만 사용하며, 근무 설정에 저장됩니다.",
+    "workplacePlaceholder": "Baiada Poultry Pty Ltd - Hanwood Processing Plant",
+    "workplaceHint": "회사 이름이나 전체 주소를 입력하세요. 지도 길찾기를 여는 데만 사용하며, 근무 설정에 저장됩니다.",
     "workplaceCleared": "근무지를 지웠어요"
   },
   "dayLife": {

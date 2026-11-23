@@ -238,6 +238,8 @@ onMounted(load)
 <style scoped>
 .fuel-card {
   display: grid;
+  /* 欄寬不被長店名或地址撐開 */
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   margin-top: 14px;
   padding: 16px;

@@ -436,7 +436,7 @@ async function handleSignedIn() {
       notifyLedgerChanged()
       notifyShoppingChanged()
     }
-    // 顯示名稱只用於帳號卡，讀取失敗不影響登入
+    // 顯示名稱用於帳號卡與首頁問候，讀取失敗不影響登入
     const signedInToken = authToken.value
     accountRepository.get().then((account) => {
       // 回應前已登出或換帳號就丟棄，避免名稱殘留在訪客畫面
@@ -1687,6 +1687,7 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       :visa-journey="visaJourney"
       :visa-progress="visaProgress"
       :display-currency="dashboardCurrency"
+      :nickname="accountNickname"
       @change-currency="showCurrencyPicker = true"
       @visa-setup="visaSetupOpen = true"
       @import-history="openHistoryWizard"

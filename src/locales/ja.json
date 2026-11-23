@@ -275,7 +275,9 @@
     "targetNote": "個人的な記録用であり、ビザの資格を示すものではありません。",
     "saveTarget": "目標を保存",
     "currencyAria": "表示通貨：{currency}（タップで変更）",
-    "quickActionsAria": "クイック操作"
+    "quickActionsAria": "クイック操作",
+    "hideAmounts": "金額を隠す",
+    "showAmounts": "金額を表示"
   },
   "payroll": {
     "title": "給与とシフト",
@@ -853,6 +855,13 @@
     "afternoon": "こんにちは",
     "evening": "こんばんは"
   },
+  "greetingNamed": {
+    "working": "{name}さん、お仕事おつかれさまです",
+    "lateNight": "{name}さん、夜も遅いのでゆっくり休んでね",
+    "morning": "おはよう、{name}さん",
+    "afternoon": "こんにちは、{name}さん",
+    "evening": "こんばんは、{name}さん"
+  },
   "onboarding": {
     "setup": {
       "title": "勤務設定を完了",
@@ -900,6 +909,8 @@
     "paidTime": "支払対象 {duration}（予測）",
     "smokoDeducted": "・Smoko 控除 {duration}",
     "estimatedGross": "予測税引前給与",
+    "earnedSoFar": "ここまでの稼ぎ（目安）",
+    "fullShiftEstimate": "シフト全体の見込み {amount}",
     "adjustTimes": "出退勤時間を調整",
     "noRates": "給与レートが未設定です。給与明細をアップロードするか手動で設定してください。",
     "uploadPayslip": "給与明細をアップロード",

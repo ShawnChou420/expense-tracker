@@ -870,7 +870,7 @@ defineExpose({ openTripForm })
 <style scoped>
 .trip-page {
   width: 100%;
-  color: #1b2a3b;
+  color: var(--color-heading);
 }
 .trip-page__header,
 .overview__top,
@@ -921,7 +921,7 @@ defineExpose({ openTripForm })
   font-size: 14px;
 }
 .quick-person small {
-  color: #657588;
+  color: var(--color-muted);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -941,7 +941,7 @@ defineExpose({ openTripForm })
   border: 1px solid #d6e1ed;
   border-radius: 10px;
   background: #fff;
-  color: #345474;
+  color: var(--color-text-secondary);
   font: inherit;
   font-size: 13px;
 }
@@ -980,9 +980,9 @@ defineExpose({ openTripForm })
   gap: 8px;
   margin-top: 10px;
   padding: 3px;
-  border: 1px solid #e6edf5;
+  border: 1px solid var(--color-border);
   border-radius: 14px;
-  background: #f8fafc;
+  background: var(--color-surface-muted);
 }
 .week-switcher button {
   width: 42px;
@@ -990,7 +990,7 @@ defineExpose({ openTripForm })
   border: 0;
   border-radius: 10px;
   background: #fff;
-  color: #345474;
+  color: var(--color-text-secondary);
   font-size: 17px;
   box-shadow: 0 2px 5px rgba(29, 66, 106, 0.06);
 }
@@ -1004,17 +1004,17 @@ defineExpose({ openTripForm })
   font-weight: 800;
 }
 .week-switcher__label span {
-  color: #8290a0;
+  color: var(--color-subtle);
   font-size: 11px;
 }
 .overview__hero {
   display: grid;
   gap: 3px;
   padding: 12px 2px 11px;
-  border-bottom: 1px solid #edf1f5;
+  border-bottom: 1px solid var(--color-border-soft);
 }
 .overview__hero span {
-  color: #657588;
+  color: var(--color-muted);
   font-size: 13px;
 }
 .overview__hero strong {
@@ -1036,7 +1036,7 @@ defineExpose({ openTripForm })
 }
 .overview__empty {
   margin: 10px 2px 0;
-  color: #657588;
+  color: var(--color-muted);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -1052,7 +1052,7 @@ defineExpose({ openTripForm })
   min-width: 0;
 }
 .summary-stat span:not(.stat-dot) {
-  color: #657588;
+  color: var(--color-muted);
   font-size: 12px;
 }
 .summary-stat strong {
@@ -1114,7 +1114,7 @@ defineExpose({ openTripForm })
 .trip-card {
   margin-top: 11px;
   padding: 17px;
-  border: 1px solid #e8eef5;
+  border: 1px solid var(--color-border);
   border-radius: 18px;
   background: #fff;
   box-shadow: 0 5px 16px rgba(29, 66, 106, 0.035);
@@ -1144,7 +1144,7 @@ defineExpose({ openTripForm })
 .trip-card__charges {
   margin-top: 15px;
   padding: 4px 0;
-  border-top: 1px solid #f0f3f6;
+  border-top: 1px solid var(--color-border-soft);
 }
 .charge-row {
   gap: 8px;
@@ -1188,7 +1188,7 @@ defineExpose({ openTripForm })
   gap: 8px;
   margin-top: 8px;
   padding-top: 10px;
-  border-top: 1px solid #f0f3f6;
+  border-top: 1px solid var(--color-border-soft);
 }
 .trip-card__actions button {
   min-height: 38px;
@@ -1206,7 +1206,7 @@ defineExpose({ openTripForm })
 .pending-list,
 .passenger-stats {
   padding: 5px 16px;
-  border: 1px solid #e8eef5;
+  border: 1px solid var(--color-border);
   border-radius: 17px;
   background: #fff;
 }
@@ -1227,7 +1227,7 @@ defineExpose({ openTripForm })
 }
 .people-section {
   overflow: hidden;
-  border: 1px solid #e8eef5;
+  border: 1px solid var(--color-border);
   border-radius: 17px;
   background: #fff;
 }
@@ -1289,7 +1289,7 @@ defineExpose({ openTripForm })
   min-height: 58px;
   padding: 8px 0;
   border: 0;
-  border-top: 1px solid #edf1f5;
+  border-top: 1px solid var(--color-border-soft);
   background: #fff;
   text-align: left;
   color: #44556a;
@@ -1359,7 +1359,7 @@ defineExpose({ openTripForm })
   height: 40px;
   border: 0;
   border-radius: 50%;
-  background: #f0f3f6;
+  background: var(--color-border-soft);
   color: #607080;
   font-size: 17px;
 }
@@ -1468,7 +1468,7 @@ defineExpose({ openTripForm })
 .person-choices :deep(.van-checkbox) {
   min-height: 48px;
   padding: 0 13px;
-  border: 1px solid #e1e9f1;
+  border: 1px solid var(--color-border);
   border-radius: 10px;
   background: #fff;
 }
@@ -1485,7 +1485,7 @@ defineExpose({ openTripForm })
   display: grid;
   gap: 8px;
   padding: 14px 0;
-  border-bottom: 1px solid #edf1f5;
+  border-bottom: 1px solid var(--color-border-soft);
 }
 .charge-editor__row:last-child {
   border-bottom: 0;
@@ -1496,7 +1496,7 @@ defineExpose({ openTripForm })
 }
 .charge-editor__row :deep(.van-field) {
   padding: 9px 12px;
-  border: 1px solid #e1e9f1;
+  border: 1px solid var(--color-border);
   border-radius: 9px;
   background: #fbfcfe;
 }

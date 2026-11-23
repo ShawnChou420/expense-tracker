@@ -3,7 +3,7 @@
 // 金額直接用班表上已算好的稅前薪資（useShiftCalculator），不在這裡重新計薪。
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getFocusShift } from '../domain/today.js'
+import { getEarnedSoFar, getFocusShift } from '../domain/today.js'
 import { describeStart, formatDateLabel, formatDuration } from '../i18n/format.js'
 
 const props = defineProps({
@@ -56,6 +56,10 @@ const shiftLabel = computed(() =>
     ? `${shift.value.startTime} → ${shift.value.endTime}${shift.value.crossesMidnight ? t('shiftCard.nextDay') : ''}`
     : '',
 )
+// 上班中：依經過時間估算「今天已賺」，跟著首頁時鐘每分鐘更新
+const earned = computed(() =>
+  focus.value.kind === 'current' ? getEarnedSoFar(shift.value, props.now) : null,
+)
 const restMessage = computed(() =>
   focus.value.kind === 'leave' ? t('shiftCard.leaveMessage') : t('shiftCard.restMessage'),
 )
@@ -88,7 +92,15 @@ const restMessage = computed(() =>
             {{ t('shiftCard.smokoDeducted', { duration: formatDuration(shift.smokoDeductMinutes) }) }}
           </template>
         </span>
-        <span v-if="payReady" class="today-shift__pay">
+        <span v-if="payReady && earned" class="today-shift__earned">
+          <small>{{ t('shiftCard.earnedSoFar') }}</small>
+          <strong>{{ currency }} {{ money(earned.earnedCents) }}</strong>
+          <span class="today-shift__bar" aria-hidden="true"
+            ><i :style="{ width: `${Math.round(earned.fraction * 100)}%` }"></i
+          ></span>
+          <small>{{ t('shiftCard.fullShiftEstimate', { amount: `${currency} ${money(shift.grossCents)}` }) }}</small>
+        </span>
+        <span v-else-if="payReady" class="today-shift__pay">
           <small>{{ t('shiftCard.estimatedGross') }}</small>
           <strong>{{ currency }} {{ money(shift.grossCents) }}</strong>
         </span>
@@ -159,7 +171,7 @@ const restMessage = computed(() =>
 }
 .today-shift--active {
   border: 1px solid #b9d3f5;
-  background: linear-gradient(180deg, #f4f9ff, #fff 70%);
+  background: linear-gradient(180deg, #f4f9ff, var(--color-surface) 70%);
 }
 .today-shift__head {
   display: flex;
@@ -242,6 +254,38 @@ const restMessage = computed(() =>
   font-size: 18px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
+}
+.today-shift__earned {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border);
+}
+.today-shift__earned small {
+  color: var(--color-muted);
+  font-size: var(--font-caption);
+}
+.today-shift__earned strong {
+  color: var(--color-income);
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.today-shift__bar {
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--color-border);
+}
+.today-shift__bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-income);
+  transition: width var(--motion-fast) ease-out;
 }
 .today-shift__setup {
   display: grid;

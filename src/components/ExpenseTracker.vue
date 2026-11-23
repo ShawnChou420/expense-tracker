@@ -648,7 +648,7 @@ defineExpose({ openForm })
 <style scoped>
 .expense-page {
   width: 100%;
-  color: #1b2a3b;
+  color: var(--color-heading);
 }
 .page-header,
 .overview-top,
@@ -693,8 +693,8 @@ defineExpose({ openForm })
   margin-top: 10px;
   padding: 3px;
   border-radius: 13px;
-  border: 1px solid #e6edf5;
-  background: #f8fafc;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
   text-align: center;
 }
 .week-switcher button {
@@ -702,7 +702,7 @@ defineExpose({ openForm })
   height: 42px;
   border: 0;
   background: transparent;
-  color: #345474;
+  color: var(--color-text-secondary);
   font-size: 15px;
 }
 .week-switcher span {
@@ -713,7 +713,7 @@ defineExpose({ openForm })
   display: block;
   margin-top: 2px;
   font-size: 10px;
-  color: #8290a0;
+  color: var(--color-subtle);
   font-weight: 400;
 }
 .overview-amount {
@@ -722,7 +722,7 @@ defineExpose({ openForm })
   padding: 12px 3px 10px;
 }
 .overview-amount span {
-  color: #657588;
+  color: var(--color-muted);
   font-size: 13px;
 }
 .overview-amount strong {
@@ -741,23 +741,23 @@ defineExpose({ openForm })
   flex-wrap: wrap;
   gap: 6px 12px;
   padding-top: 10px;
-  border-top: 1px solid #edf1f5;
-  color: #657588;
+  border-top: 1px solid var(--color-border-soft);
+  color: var(--color-muted);
   font-size: 12px;
 }
 .overview-bottom strong {
   margin-left: 5px;
-  color: #1b2a3b;
+  color: var(--color-heading);
   font-size: 14px;
 }
 .overview-note {
   margin: 8px 0 0;
-  color: #8290a0;
+  color: var(--color-subtle);
   font-size: 12px;
 }
 .overview-empty {
   margin: 10px 2px 0;
-  color: #657588;
+  color: var(--color-muted);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -778,7 +778,7 @@ defineExpose({ openForm })
   letter-spacing: -0.02em;
 }
 .section-heading small {
-  color: #8290a0;
+  color: var(--color-subtle);
   font-size: 12px;
 }
 .category-section {
@@ -789,14 +789,14 @@ defineExpose({ openForm })
 }
 .category-breakdown {
   padding: 4px 16px;
-  border: 1px solid #e6edf5;
+  border: 1px solid var(--color-border);
   border-radius: 20px;
   background: #fff;
 }
 .category-row {
   gap: 12px;
   min-height: 52px;
-  border-bottom: 1px solid #edf1f5;
+  border-bottom: 1px solid var(--color-border-soft);
   font-size: 13px;
 }
 .category-row:last-child {
@@ -830,11 +830,11 @@ defineExpose({ openForm })
 }
 .filter-row button {
   flex: none;
-  border: 1px solid #e6edf5;
+  border: 1px solid var(--color-border);
   border-radius: 999px;
   padding: 8px 14px;
   background: #fff;
-  color: #657588;
+  color: var(--color-muted);
   font-size: 12px;
   font-weight: 700;
 }
@@ -855,14 +855,14 @@ defineExpose({ openForm })
   text-align: center;
 }
 .empty-card span {
-  color: #8290a0;
+  color: var(--color-subtle);
   font-size: 12px;
   line-height: 1.5;
 }
 .expense-card {
   margin: 0 0 10px;
   padding: 16px;
-  border: 1px solid #e6edf5;
+  border: 1px solid var(--color-border);
   border-radius: 19px;
   background: #fff;
   box-shadow: 0 4px 14px #1d426a0a;
@@ -888,7 +888,7 @@ defineExpose({ openForm })
   font-size: 14px;
 }
 .expense-card__info span {
-  color: #8290a0;
+  color: var(--color-subtle);
   font-size: 11px;
 }
 .expense-card__amount {
@@ -905,7 +905,7 @@ defineExpose({ openForm })
   flex-wrap: wrap;
   margin-top: 14px;
   padding-top: 12px;
-  border-top: 1px solid #edf1f5;
+  border-top: 1px solid var(--color-border-soft);
 }
 .status-pill {
   flex: none;
@@ -934,7 +934,7 @@ defineExpose({ openForm })
 .expense-card__note {
   flex: 1;
   overflow: hidden;
-  color: #8290a0;
+  color: var(--color-subtle);
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -950,7 +950,7 @@ defineExpose({ openForm })
   padding: 0 7px;
   border: 0;
   background: transparent;
-  color: #345474;
+  color: var(--color-text-secondary);
   font-size: 12px;
   font-weight: 700;
 }
@@ -980,7 +980,7 @@ defineExpose({ openForm })
   border: 0;
   border-radius: 50%;
   background: #eaf1f9;
-  color: #345474;
+  color: var(--color-text-secondary);
 }
 .sheet-scroll {
   overflow: auto;
@@ -1076,10 +1076,10 @@ defineExpose({ openForm })
   gap: 6px;
   min-height: 65px;
   padding: 6px 2px;
-  border: 1px solid #e6edf5;
+  border: 1px solid var(--color-border);
   border-radius: 12px;
   background: #fff;
-  color: #657588;
+  color: var(--color-muted);
   font-size: 10px;
 }
 .group-picker button .van-icon {
@@ -1101,10 +1101,10 @@ defineExpose({ openForm })
 .frequency-picker button {
   min-height: 38px;
   padding: 0 12px;
-  border: 1px solid #e6edf5;
+  border: 1px solid var(--color-border);
   border-radius: 11px;
   background: #fff;
-  color: #657588;
+  color: var(--color-muted);
   font-size: 12px;
   font-weight: 700;
 }
@@ -1116,7 +1116,7 @@ defineExpose({ openForm })
 }
 .form-hint {
   margin: 10px 4px 0;
-  color: #657588;
+  color: var(--color-muted);
   font-size: 11px;
   line-height: 1.5;
 }
@@ -1133,10 +1133,10 @@ defineExpose({ openForm })
 }
 .status-picker button {
   min-height: 43px;
-  border: 1px solid #e6edf5;
+  border: 1px solid var(--color-border);
   border-radius: 11px;
   background: #fff;
-  color: #657588;
+  color: var(--color-muted);
   font-weight: 700;
 }
 .status-picker button.selected {
@@ -1146,13 +1146,13 @@ defineExpose({ openForm })
 }
 .status-hint {
   margin: 9px 4px 0;
-  color: #8290a0;
+  color: var(--color-subtle);
   font-size: 11px;
 }
 .sheet-footer {
   flex: none;
   padding: 12px 16px 14px;
-  border-top: 1px solid #e6edf5;
+  border-top: 1px solid var(--color-border);
   background: #fff;
 }
 .sheet-footer .van-button {

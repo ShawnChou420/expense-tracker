@@ -52,3 +52,13 @@ export function formatCentsIn(cents, currency) {
   const rounded = Number(Math.abs(value).toFixed(info.decimals))
   return `${value < 0 && rounded !== 0 ? '-' : ''}${info.symbol}${text}`
 }
+
+/**
+ * 隱藏金額：保留幣別符號，把數字（含正負號）換成 •••，不透露金額大小。
+ * @param {string} text formatCentsIn 的結果，例如 "$1,240.00"、"-NT$300"
+ */
+export function maskAmount(text) {
+  return String(text)
+    .replace(/^-/, '')
+    .replace(/[\d.,]+/, '•••')
+}

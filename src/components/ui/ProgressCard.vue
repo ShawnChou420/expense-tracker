@@ -78,7 +78,7 @@ const width = computed(() => `${Math.max(0, Math.min(100, props.percent))}%`)
 .progress-card__badge {
   padding: 1px 8px;
   border-radius: 999px;
-  background: #eef2f7;
+  background: var(--color-border-soft);
   color: var(--color-muted);
   font-size: var(--font-caption);
   font-style: normal;

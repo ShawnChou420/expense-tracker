@@ -57,7 +57,8 @@ import TodayShiftCard from './TodayShiftCard.vue'
 import FuelPriceCard from './FuelPriceCard.vue'
 import TodaySection from './TodaySection.vue'
 import { getFocusShift, getGreetingKey } from '../domain/today.js'
-import { formatCentsIn } from '../domain/displayCurrency.js'
+import { formatCentsIn, maskAmount } from '../domain/displayCurrency.js'
+import { amountsHidden, toggleAmountsHidden } from '../services/amountPrivacy.js'
 const IncomeTrendChart = defineAsyncComponent(() => import('./IncomeTrendChart.vue'))
 const ExpenseDonutChart = defineAsyncComponent(() => import('./ExpenseDonutChart.vue'))
 
@@ -78,6 +79,8 @@ const props = defineProps({
   visaProgress: { type: Object, default: null },
   // 顯示幣別（resolveDisplayCurrency 的結果）；金額仍以 AUD 計算，只在顯示時換算
   displayCurrency: { type: Object, default: () => ({ code: 'AUD', rate: 1, flag: '🇦🇺', fallback: false }) },
+  // 會員的顯示名稱；有設定時問候語會帶上名字
+  nickname: { type: String, default: '' },
 })
 const emit = defineEmits([
   'mark-work-date',
@@ -91,8 +94,12 @@ const emit = defineEmits([
   'import-history',
   'change-currency',
 ])
-/** AUD cents → 目前顯示幣別的金額文字 */
-const money = (/** @type {number} */ cents) => formatCentsIn(cents, props.displayCurrency)
+/** AUD cents → 目前顯示幣別的金額文字；開啟「隱藏金額」時換成 ••• */
+const money = (/** @type {number} */ cents) => {
+  const text = formatCentsIn(cents, props.displayCurrency)
+  // 隱藏金額只開放會員（訪客標頭空間不夠，也沒有開關可以關掉）
+  return authToken.value && amountsHidden.value ? maskAmount(text) : text
+}
 
 const { t, locale } = useI18n()
 const today = formatLocalDate(new Date())
@@ -100,9 +107,11 @@ const today = formatLocalDate(new Date())
 const now = ref(new Date())
 const liveToday = computed(() => formatLocalDate(now.value))
 let clockTimer = null
-const greeting = computed(() =>
-  t(`greeting.${getGreetingKey(now.value, getFocusShift(props.workRecords, now.value).kind === 'current')}`),
+const greetingKey = computed(() =>
+  getGreetingKey(now.value, getFocusShift(props.workRecords, now.value).kind === 'current'),
 )
+const greeting = computed(() => t(`greeting.${greetingKey.value}`))
+const greetingName = computed(() => (authToken.value ? props.nickname.trim() : ''))
 const liveDateLabel = computed(() => {
   void locale.value // 切換語言時重新格式化
   return formatLongDate(now.value)
@@ -528,8 +537,21 @@ async function saveTarget() {
       </div>
       <div v-else class="home-header__titles">
         <span class="home-header__eyebrow">{{ liveDateLabel }}</span>
-        <h1>{{ greeting }}</h1>
+        <i18n-t v-if="greetingName" :keypath="`greetingNamed.${greetingKey}`" tag="h1" scope="global">
+          <template #name><span class="home-header__name">{{ greetingName }}</span></template>
+        </i18n-t>
+        <h1 v-else>{{ greeting }}</h1>
       </div>
+      <button
+        v-if="!guestWelcome && authToken"
+        type="button"
+        class="home-header__privacy"
+        :aria-label="amountsHidden ? t('dashboard.showAmounts') : t('dashboard.hideAmounts')"
+        :aria-pressed="amountsHidden"
+        @click="toggleAmountsHidden"
+      >
+        <van-icon :name="amountsHidden ? 'closed-eye' : 'eye-o'" aria-hidden="true" />
+      </button>
       <button
         v-if="!guestWelcome"
         type="button"
@@ -1028,7 +1050,7 @@ async function saveTarget() {
               :percentage="workProgress.progressPercent"
               :show-pivot="false"
               color="#1989fa"
-              track-color="#e6edf5"
+              track-color="var(--color-border)"
             />
             <p class="goal-result">{{ t('dashboard.daysToGo', { count: workProgress.remaining }) }}</p></template
           >
@@ -1160,7 +1182,7 @@ async function saveTarget() {
   min-width: 0;
 }
 .home-header__eyebrow {
-  color: var(--color-primary);
+  color: var(--color-accent-warm);
   font-size: var(--font-caption);
   font-weight: 800;
   letter-spacing: 0.04em;
@@ -1171,6 +1193,15 @@ async function saveTarget() {
   font-size: clamp(22px, 6.6vw, var(--font-title));
   font-weight: 800;
   line-height: 1.2;
+}
+.home-header__name {
+  display: inline-block;
+  max-width: 9em;
+  overflow: hidden;
+  color: var(--color-accent-warm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 .home-header p {
   margin: 4px 0 0;
@@ -1183,6 +1214,30 @@ async function saveTarget() {
   font-weight: 800;
   letter-spacing: 0.02em;
   line-height: var(--touch-target);
+}
+.home-header__privacy {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  margin-left: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-muted);
+  font-size: 20px;
+  cursor: pointer;
+}
+.home-header__privacy[aria-pressed='true'] {
+  color: var(--color-primary);
+}
+.home-header__privacy:focus-visible {
+  outline: 3px solid rgba(18, 104, 218, 0.28);
+  outline-offset: 2px;
+}
+.home-header__privacy + .home-header__customize {
+  margin-left: 0;
 }
 .home-header__customize {
   display: inline-flex;
@@ -1551,7 +1606,7 @@ async function saveTarget() {
   border: 1px solid var(--color-border);
   border-radius: 11px;
   background: #fff;
-  color: #345474;
+  color: var(--color-text-secondary);
   font: inherit;
   font-size: 13px;
   font-weight: 700;
@@ -1575,8 +1630,8 @@ async function saveTarget() {
   height: 42px;
   border: 1px solid var(--color-border);
   border-radius: 11px;
-  background: #f8fafc;
-  color: #345474;
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
 }
 .period-nav strong {
   text-align: center;
@@ -1682,7 +1737,7 @@ async function saveTarget() {
   font-size: var(--font-caption);
 }
 .goal-values strong {
-  color: #1b2a3b;
+  color: var(--color-heading);
   font-size: 18px;
   overflow-wrap: anywhere;
 }
@@ -1742,7 +1797,7 @@ async function saveTarget() {
   border: 0;
   border-bottom: 1px solid var(--color-border);
   background: none;
-  color: #345474;
+  color: var(--color-text-secondary);
   font-size: 13px;
   text-align: left;
 }
@@ -1767,7 +1822,7 @@ async function saveTarget() {
   border: 0;
   border-bottom: 1px solid var(--color-border);
   background: none;
-  color: #345474;
+  color: var(--color-text-secondary);
   text-align: left;
   font-size: 13px;
 }

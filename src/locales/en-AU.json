@@ -275,7 +275,9 @@
     "targetNote": "For personal tracking only — this doesn't determine visa eligibility.",
     "saveTarget": "Save target",
     "currencyAria": "Display currency: {currency}, tap to change",
-    "quickActionsAria": "Quick actions"
+    "quickActionsAria": "Quick actions",
+    "hideAmounts": "Hide amounts",
+    "showAmounts": "Show amounts"
   },
   "payroll": {
     "title": "Pay & shifts",
@@ -853,6 +855,13 @@
     "afternoon": "Good afternoon",
     "evening": "Good evening"
   },
+  "greetingNamed": {
+    "working": "Keep it up, {name}!",
+    "lateNight": "It's late, {name} — get some rest",
+    "morning": "Morning, {name}",
+    "afternoon": "Afternoon, {name}",
+    "evening": "Evening, {name}"
+  },
   "onboarding": {
     "setup": {
       "title": "Finish work setup",
@@ -900,6 +909,8 @@
     "paidTime": "Estimated paid time {duration}",
     "smokoDeducted": "· smoko deducted {duration}",
     "estimatedGross": "Estimated gross pay",
+    "earnedSoFar": "Earned so far (approx.)",
+    "fullShiftEstimate": "Full shift est. {amount}",
     "adjustTimes": "Adjust start/finish times",
     "noRates": "No pay rates yet — upload a payslip or set them manually.",
     "uploadPayslip": "Upload payslip",

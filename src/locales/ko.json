@@ -275,7 +275,9 @@
     "targetNote": "개인 추적용이며 비자 자격을 의미하지 않습니다.",
     "saveTarget": "목표 저장",
     "currencyAria": "표시 통화: {currency}, 눌러서 변경",
-    "quickActionsAria": "빠른 작업"
+    "quickActionsAria": "빠른 작업",
+    "hideAmounts": "금액 숨기기",
+    "showAmounts": "금액 표시"
   },
   "payroll": {
     "title": "급여 및 근무표",
@@ -853,6 +855,13 @@
     "afternoon": "좋은 오후예요",
     "evening": "좋은 저녁이에요"
   },
+  "greetingNamed": {
+    "working": "{name}님, 근무 중이네요. 힘내세요",
+    "lateNight": "{name}님, 늦었어요. 푹 쉬세요",
+    "morning": "좋은 아침이에요, {name}님",
+    "afternoon": "안녕하세요, {name}님",
+    "evening": "좋은 저녁이에요, {name}님"
+  },
   "onboarding": {
     "setup": {
       "title": "근무 설정 완료",
@@ -900,6 +909,8 @@
     "paidTime": "예상 유급 시간 {duration}",
     "smokoDeducted": "· Smoko 공제 {duration}",
     "estimatedGross": "예상 세전 급여",
+    "earnedSoFar": "지금까지 번 돈 (추정)",
+    "fullShiftEstimate": "근무 전체 예상 {amount}",
     "adjustTimes": "출퇴근 시간 조정",
     "noRates": "급여 요율이 없어요. 급여명세서를 올리거나 직접 설정하세요.",
     "uploadPayslip": "급여명세서 올리기",

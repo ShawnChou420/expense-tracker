@@ -275,7 +275,9 @@
     "targetNote": "僅供個人追蹤，不代表簽證資格。",
     "saveTarget": "儲存追蹤目標",
     "currencyAria": "顯示幣別：{currency}，點擊切換",
-    "quickActionsAria": "快捷操作"
+    "quickActionsAria": "快捷操作",
+    "hideAmounts": "隱藏金額",
+    "showAmounts": "顯示金額"
   },
   "payroll": {
     "title": "薪資與班表",
@@ -853,6 +855,13 @@
     "afternoon": "午安",
     "evening": "晚安"
   },
+  "greetingNamed": {
+    "working": "{name}，上班辛苦了",
+    "lateNight": "夜深了，{name}記得休息",
+    "morning": "早安，{name}",
+    "afternoon": "午安，{name}",
+    "evening": "晚安，{name}"
+  },
   "onboarding": {
     "setup": {
       "title": "完成工作設定",
@@ -900,6 +909,8 @@
     "paidTime": "預估計薪 {duration}",
     "smokoDeducted": "· 已扣 Smoko {duration}",
     "estimatedGross": "預估稅前薪資",
+    "earnedSoFar": "今天已經賺了（約）",
+    "fullShiftEstimate": "整班預估 {amount}",
     "adjustTimes": "調整上下班時間",
     "noRates": "尚未設定薪資費率，請先上傳 Payslip 或手動設定。",
     "uploadPayslip": "上傳 Payslip",

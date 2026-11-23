@@ -3,6 +3,7 @@ import {
   addDays,
   describeStart,
   formatDuration,
+  getEarnedSoFar,
   getFocusShift,
   getGreeting,
   getTaskProgress,
@@ -113,5 +114,35 @@ describe('待辦', () => {
       total: 2,
     })
     expect(addDays('2026-11-30', 1)).toBe('2026-12-01')
+  })
+})
+
+describe('getEarnedSoFar', () => {
+  const shift = toShift(day('2026-11-23', '07:00', '15:00')) // 8 小時、$250
+
+  it('依經過時間比例分攤預估稅前薪資', () => {
+    expect(getEarnedSoFar(shift, new Date(2026, 10, 23, 9, 0))).toEqual({
+      earnedCents: 6250,
+      fraction: 0.25,
+    })
+  })
+
+  it('開始前是 0，下班後是整個班的金額', () => {
+    expect(getEarnedSoFar(shift, new Date(2026, 10, 23, 6, 0)).earnedCents).toBe(0)
+    expect(getEarnedSoFar(shift, new Date(2026, 10, 23, 18, 0))).toEqual({
+      earnedCents: 25000,
+      fraction: 1,
+    })
+  })
+
+  it('跨午夜的夜班也照實際經過時間計算', () => {
+    const nightShift = toShift(night) // 23:50 → 06:00，共 370 分鐘、$212.50
+    const result = getEarnedSoFar(nightShift, new Date(2026, 10, 19, 2, 55))
+    expect(result.fraction).toBeCloseTo(185 / 370)
+    expect(result.earnedCents).toBe(10625)
+  })
+
+  it('沒有班時回傳 0', () => {
+    expect(getEarnedSoFar(null, new Date())).toEqual({ earnedCents: 0, fraction: 0 })
   })
 })

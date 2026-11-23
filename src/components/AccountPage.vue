@@ -299,7 +299,7 @@ async function deleteAccount() {
   max-height: min(90dvh, 820px);
   overflow-y: auto;
   padding: 20px var(--page-horizontal-padding, 18px) calc(24px + env(safe-area-inset-bottom));
-  background: #f5f8fc;
+  background: var(--color-surface-muted);
 }
 .account-page__header {
   display: flex;
@@ -308,7 +308,7 @@ async function deleteAccount() {
 }
 .account-page__header h2 {
   margin: 0;
-  color: #1b2a3b;
+  color: var(--color-heading);
   font-size: 20px;
 }
 .account-page__header button {
@@ -316,7 +316,7 @@ async function deleteAccount() {
   height: 40px;
   border: 0;
   background: transparent;
-  color: #657588;
+  color: var(--color-muted);
 }
 .account-page__loading {
   justify-content: center;
@@ -339,7 +339,7 @@ async function deleteAccount() {
 }
 .account-card-block h3 {
   margin: 0;
-  color: #1b2a3b;
+  color: var(--color-heading);
   font-size: 16px;
   font-weight: 800;
 }
@@ -356,13 +356,13 @@ async function deleteAccount() {
 }
 .account-page__facts dt {
   flex: none;
-  color: #657588;
+  color: var(--color-muted);
   font-size: 13px;
 }
 .account-page__facts dd {
   overflow: hidden;
   margin: 0;
-  color: #1b2a3b;
+  color: var(--color-heading);
   font-size: 14px;
   font-weight: 700;
   text-overflow: ellipsis;
@@ -374,7 +374,7 @@ async function deleteAccount() {
 }
 .account-page__form :deep(.van-field) {
   border-radius: 12px;
-  background: #f5f8fc;
+  background: var(--color-surface-muted);
 }
 .account-page__username {
   position: absolute;
@@ -405,7 +405,7 @@ async function deleteAccount() {
 .account-page small,
 .account-page__error {
   margin: 0;
-  color: #657588;
+  color: var(--color-muted);
   font-size: 13px;
   line-height: 1.5;
 }

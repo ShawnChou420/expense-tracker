@@ -57,7 +57,7 @@ const { t } = useI18n()
   border: 1px solid var(--color-border);
   border-radius: 11px;
   background: #fff;
-  color: #345474;
+  color: var(--color-text-secondary);
   font: inherit;
   font-size: 13px;
   font-weight: 700;
@@ -80,8 +80,8 @@ const { t } = useI18n()
   height: var(--touch-target);
   border: 1px solid var(--color-border);
   border-radius: 11px;
-  background: #f8fafc;
-  color: #345474;
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
 }
 .period-switcher__nav strong {
   text-align: center;

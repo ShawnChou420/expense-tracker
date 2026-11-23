@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   classificationOf,
   createFinancialEntry,
+  filterFinanceItems,
+  financeItemSign,
+  getCustomRange,
+  groupFinanceItemsByDate,
   getFinanceItems,
   getFinanceSummary,
   getSettledEntryTransactions,
@@ -304,5 +308,71 @@ describe('getFinanceItems', () => {
       ['EXPENSE', '2026-11-16', 'ACTUAL'],
     ])
     expect(new Set(items.map((item) => item.key)).size).toBe(items.length)
+  })
+})
+
+describe('finances page helpers', () => {
+  const items = getFinanceItems({
+    range: week,
+    workRecords: [shift('2026-11-17', 250)],
+    salaryDeposits: [deposit('2026-11-20', 42000)],
+    trips: [trip('2026-11-18', [{ passengerId: 'p1', amountCents: 3000, payments: [] }])],
+    expenses: [
+      createExpense({
+        date: '2026-11-19',
+        amountCents: 1000,
+        group: 'FINANCE',
+        category: 'INVESTMENT_LOSS',
+        status: 'PAID',
+        frequency: 'NONE',
+      }),
+    ],
+    entries: [
+      entry({ id: 'gain', date: '2026-11-19', category: 'INVESTMENT_GAIN', amountMinor: 500 }),
+      entry({
+        id: 'tw',
+        date: '2026-11-21',
+        type: 'TRANSFER',
+        category: 'TRANSFER',
+        currency: 'TWD',
+        amountMinor: 100000,
+      }),
+    ],
+  })
+
+  it('filters by kind and never lists estimated pay', () => {
+    const ids = (filter) =>
+      filterFinanceItems(items, filter).map((item) => item.sourceType + ':' + item.kind)
+    expect(ids('ALL')).not.toContain('WORK_ESTIMATE:INCOME')
+    expect(ids('ALL')).toHaveLength(5)
+    expect(ids('INCOME').sort()).toEqual(['FINANCIAL_ENTRY:INVESTMENT', 'SALARY_DEPOSIT:INCOME'])
+    expect(ids('EXPENSE')).toEqual(['EXPENSE:INVESTMENT'])
+    expect(ids('FARE')).toEqual(['TRIP_CHARGE:FARE'])
+  })
+
+  it('signs: gain +, loss −, transfer 0', () => {
+    const bySource = Object.fromEntries(items.map((item) => [item.key, financeItemSign(item)]))
+    expect(bySource['FINANCIAL_ENTRY:gain']).toBe(1)
+    expect(bySource['FINANCIAL_ENTRY:tw']).toBe(0)
+    expect(Object.entries(bySource).find(([key]) => key.startsWith('EXPENSE:'))?.[1]).toBe(-1)
+  })
+
+  it('groups by date, newest first', () => {
+    expect(groupFinanceItemsByDate(filterFinanceItems(items)).map((group) => group.date)).toEqual([
+      '2026-11-21',
+      '2026-11-20',
+      '2026-11-19',
+      '2026-11-18',
+    ])
+  })
+
+  it('validates custom ranges', () => {
+    expect(getCustomRange('2026-11-01', '2026-11-30')).toEqual({
+      start: '2026-11-01',
+      end: '2026-11-30',
+    })
+    expect(getCustomRange('2026-11-30', '2026-11-01')).toBeNull()
+    expect(getCustomRange('2025-01-01', '2026-11-30')).toBeNull()
+    expect(getCustomRange('', '2026-11-30')).toBeNull()
   })
 })

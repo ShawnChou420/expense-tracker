@@ -487,3 +487,67 @@ export function missingById(guestItems, memberItems) {
   const ids = new Set(memberItems.map((item) => String(item.id)))
   return guestItems.filter((item) => !ids.has(String(item.id)))
 }
+
+export const FINANCE_FILTERS = Object.freeze(['ALL', 'INCOME', 'EXPENSE', 'FARE'])
+
+/**
+ * 收支頁清單篩選。預估薪資（WORK_ESTIMATE）不在清單裡，只在「預估薪資」卡另列。
+ * - 收入：一般收入、薪資入帳、投資獲利；支出：支出（含外幣）、投資虧損；車資：車資應收
+ * - 全部：以上加上資金移轉
+ * @param {Array<FinanceItem>} items
+ * @param {string} filter
+ */
+export function filterFinanceItems(items, filter = 'ALL') {
+  return items.filter((item) => {
+    if (item.sourceType === 'WORK_ESTIMATE') return false
+    const isGain = item.kind === 'INVESTMENT' && item.sourceType === 'FINANCIAL_ENTRY'
+    const isLoss = item.kind === 'INVESTMENT' && item.sourceType === 'EXPENSE'
+    if (filter === 'INCOME') return item.kind === 'INCOME' || isGain
+    if (filter === 'EXPENSE') return item.kind === 'EXPENSE' || isLoss
+    if (filter === 'FARE') return item.kind === 'FARE'
+    return true
+  })
+}
+
+/**
+ * 金額方向：收入、獲利、車資為 +；支出、虧損為 −；移轉為 0（不計收支）。
+ * @param {FinanceItem} item
+ * @returns {1 | -1 | 0}
+ */
+export function financeItemSign(item) {
+  if (item.kind === 'TRANSFER') return 0
+  if (item.kind === 'EXPENSE') return -1
+  if (item.kind === 'INVESTMENT') return item.sourceType === 'EXPENSE' ? -1 : 1
+  return 1
+}
+
+/**
+ * 依日期分組（新到舊）。
+ * @param {Array<FinanceItem>} items
+ * @returns {Array<{ date: string, items: Array<FinanceItem> }>}
+ */
+export function groupFinanceItemsByDate(items) {
+  /** @type {Map<string, Array<FinanceItem>>} */
+  const groups = new Map()
+  for (const item of items) {
+    const list = groups.get(item.date) || []
+    list.push(item)
+    groups.set(item.date, list)
+  }
+  return [...groups.entries()]
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([date, list]) => ({ date, items: list }))
+}
+
+/**
+ * 自訂期間：兩個日期都有效且起日不晚於迄日，最長 366 天；否則回傳 null。
+ * @param {string} start
+ * @param {string} end
+ */
+export function getCustomRange(start, end) {
+  const from = parseLocalDate(start)
+  const to = parseLocalDate(end)
+  if (!from || !to || from > to) return null
+  if ((to.getTime() - from.getTime()) / 86400000 > 366) return null
+  return { start, end }
+}

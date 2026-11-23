@@ -37,6 +37,7 @@ import { formatDailyNet, getEstimatedDailyNet, hasDailyNetActivity } from './dom
 import { useLedgerSnapshot } from './composables/useLedgerSnapshot.js'
 import DayLifeCard from './components/DayLifeCard.vue'
 import FinancialEntrySheet from './components/FinancialEntrySheet.vue'
+import FinancesPage from './components/FinancesPage.vue'
 import { formatLocalDate, getCalendarDateRange, getMonthRange, getWeekRange } from './domain/date.js'
 import { centsToDollars } from './domain/money.js'
 import { getWeeklyPaySummary } from './domain/weeklyPay.js'
@@ -2321,6 +2322,14 @@ const markDesignatedWorkDate = ({ date, marked }) => {
     </van-popup>
     </section>
 
+    <FinancesPage
+      v-show="activeTab === 'finances'"
+      :active="activeTab === 'finances'"
+      :work-records="records"
+      :display-currency="dashboardCurrency"
+      :exchange-rates="exchangeRates"
+      @navigate="activeTab = $event"
+    />
     <TripTracker v-show="activeTab === 'trips'" ref="tripTrackerRef" />
     <ExpenseTracker v-show="activeTab === 'expenses'" ref="expenseTrackerRef" />
     <MorePage v-show="activeTab === 'more'" @navigate="handlePageNavigate" />

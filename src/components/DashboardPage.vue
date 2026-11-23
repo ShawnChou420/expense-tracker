@@ -51,6 +51,7 @@ import {
   salaryDepositRepository,
   subscribeToLedgerChanges,
   tripRepository,
+  financialEntryRepository,
 } from '../repositories/appRepositories.js'
 import VisaJourneyCard from './VisaJourneyCard.vue'
 import TodayShiftCard from './TodayShiftCard.vue'
@@ -120,6 +121,8 @@ const anchor = ref(today)
 const trips = ref([])
 const expenses = ref([])
 const salaryDeposits = ref(null)
+// 通用手動交易（一般收入、外幣支出）：首頁實際收入與存款目標會納入已入帳的一般收入
+const entries = ref([])
 const sortedSalaryDeposits = computed(() =>
   [...(salaryDeposits.value || [])].sort((a, b) => b.paidAt.localeCompare(a.paidAt)),
 )
@@ -167,6 +170,7 @@ const thisWeekSummary = computed(() =>
     trips: trips.value,
     expenses: expenses.value,
     salaryDeposits: salaryDeposits.value,
+    entries: entries.value,
   }),
 )
 const incomeYearProgress = computed(() =>
@@ -194,6 +198,7 @@ const summary = computed(() =>
     trips: trips.value,
     expenses: expenses.value,
     salaryDeposits: salaryDeposits.value,
+    entries: entries.value,
   }),
 )
 // 支出分布圖的分類名稱依目前語系顯示（資料只存 id）
@@ -204,7 +209,12 @@ const localizedDistribution = computed(() => {
   return { ...distribution, chart: distribution.chart.map(localize), detail: distribution.detail.map(localize) }
 })
 const transactions = computed(() =>
-  getActualTransactions({ trips: trips.value, expenses: expenses.value, salaryDeposits: salaryDeposits.value }),
+  getActualTransactions({
+    trips: trips.value,
+    expenses: expenses.value,
+    salaryDeposits: salaryDeposits.value,
+    entries: entries.value,
+  }),
 )
 const saving = computed(() => getSavingProgress(savingGoal.value, transactions.value, today))
 const workProgress = computed(() =>
@@ -366,15 +376,17 @@ async function removeSalary(deposit) {
 
 async function refreshLedger() {
   const identity = authToken.value
-  const [nextTrips, nextExpenses, nextDeposits] = await Promise.all([
+  const [nextTrips, nextExpenses, nextDeposits, nextEntries] = await Promise.all([
     tripRepository.list(),
     expenseRepository.list(),
     salaryDepositRepository.list(),
+    financialEntryRepository.list().catch(() => []),
   ])
   if (identity !== authToken.value) return
   trips.value = nextTrips
   expenses.value = nextExpenses
   salaryDeposits.value = nextDeposits
+  entries.value = nextEntries || []
 }
 async function refreshDashboardData() {
   const identity = authToken.value
@@ -449,6 +461,7 @@ watch(authToken, async () => {
   trips.value = []
   expenses.value = []
   salaryDeposits.value = null
+  entries.value = []
   savingGoal.value = null
   workDayTarget.value = null
   try {

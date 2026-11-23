@@ -18,6 +18,8 @@ export function subscribeToLedgerChanges(listener) {
 const passengers = createInMemoryPassengerRepository()
 const trips = createInMemoryTripRepository()
 const expenses = createInMemoryExpenseRepository()
+// 通用手動交易（一般收入、移轉、外幣支出）：訪客同樣只存在記憶體
+const entries = createInMemoryExpenseRepository()
 
 // These adapters remain in memory only; the wrapper shares their single instance across pages.
 export const passengerRepository = {
@@ -110,11 +112,38 @@ export const salaryDepositRepository = {
   },
 }
 
+export const financialEntryRepository = {
+  list: () => (authToken.value ? apiRequest('/financial-entries') : entries.list()),
+  async save(entry) {
+    // 會員以後端回傳為準（換算後的 AUD cents 由後端計算）
+    const saved = authToken.value
+      ? await apiRequest(`/financial-entries/${encodeURIComponent(entry.id)}`, {
+          method: 'PUT',
+          body: entry,
+        })
+      : await entries.save(entry)
+    notify()
+    return saved
+  },
+  async remove(id) {
+    if (authToken.value)
+      await apiRequest(`/financial-entries/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    else await entries.remove(id)
+    notify()
+  },
+}
+
 export async function getGuestLedgerSnapshot() {
-  const [guestPassengers, guestTrips, guestExpenses] = await Promise.all([
+  const [guestPassengers, guestTrips, guestExpenses, guestEntries] = await Promise.all([
     passengers.list(),
     trips.list(),
     expenses.list(),
+    entries.list(),
   ])
-  return { passengers: guestPassengers, trips: guestTrips, expenses: guestExpenses }
+  return {
+    passengers: guestPassengers,
+    trips: guestTrips,
+    expenses: guestExpenses,
+    entries: guestEntries,
+  }
 }

@@ -19,7 +19,7 @@ import { ensureBackGuard, registerPageBack } from './services/backNavigation.js'
 import { authEmail, authToken, signOut, clearSession, apiRequest, restoreSavedSession, waitForBackendReady, sessionExpired, reportEvent, isSuperAdmin } from './services/authSession.js'
 import { startPerfPhase } from './services/perfTrace.js'
 import { useWorkRecordsPersistence } from './composables/useWorkRecordsPersistence.js'
-import { getGuestLedgerSnapshot, notifyLedgerChanged, passengerRepository, tripRepository, expenseRepository, salaryDepositRepository } from './repositories/appRepositories.js'
+import { getGuestLedgerSnapshot, notifyLedgerChanged, passengerRepository, tripRepository, expenseRepository, salaryDepositRepository, financialEntryRepository } from './repositories/appRepositories.js'
 import { dashboardSettingsRepository, getGuestDashboardSettings } from './repositories/inMemoryDashboardSettingsRepository.js'
 import { leaveBlackoutRepository, getGuestLeaveBlackouts } from './repositories/leaveBlackoutRepository.js'
 import { shoppingRepository, getGuestShoppingItems, notifyShoppingChanged } from './repositories/shoppingRepository.js'
@@ -331,12 +331,14 @@ async function handleSignedIn() {
     const guestShopping = getGuestShoppingItems()
     const guestVisa = getGuestVisaJourney()
     const guestNotices = getGuestBlackoutNotices()
-    const [memberWork, memberPassengers, memberTrips, memberExpenses, memberSettings, memberBlackouts, memberVisa, memberNotices] = await Promise.all([
+    const [memberWork, memberPassengers, memberTrips, memberExpenses, memberSettings, memberBlackouts, memberVisa, memberNotices, memberEntries] = await Promise.all([
       apiRequest('/work-records'), passengerRepository.list(), tripRepository.list(), expenseRepository.list(),
       apiRequest('/dashboard-settings'), leaveBlackoutRepository.list(),
       // 讀取失敗時是 undefined，不可當成「沒有設定」而用訪客資料覆蓋
       visaJourneyRepository.load().catch(() => undefined),
       blackoutNoticeRepository.list().catch(() => undefined),
+      // 讀取失敗時是 undefined：不匯入，避免無法比對而重複
+      financialEntryRepository.list().catch(() => undefined),
     ])
     let memberShopping = null
     try { memberShopping = await shoppingRepository.list() } catch { showToast(t('app.shoppingUnavailable')) }
@@ -351,12 +353,12 @@ async function handleSignedIn() {
     const memberHasPaySetup =
       Boolean(memberProfile) || inferLegacyWorkProfile(existingRates).payStatus !== PAY_STATUS.NOT_CONFIGURED
     const hasGuestData = guestWork.length || guestLedger.passengers.length || guestLedger.trips.length ||
-      guestLedger.expenses.length || guestSettings.savingGoal || guestSettings.workDayTarget || guestBlackouts.length || (memberShopping && guestShopping.length) ||
+      guestLedger.expenses.length || (memberEntries && guestLedger.entries.length) || guestSettings.savingGoal || guestSettings.workDayTarget || guestBlackouts.length || (memberShopping && guestShopping.length) ||
       (guestVisa && memberVisa === null) || (guestNotices.length && memberNotices) ||
       guestWorkSetup.payslips.length || (guestHasPaySetup && !memberHasPaySetup)
     // 有匯入訪客資料時，下面要重新讀取；沒有匯入就直接重用剛讀到的資料，不重複請求
     let imported = false
-    const memberHasData = memberWork.length || memberPassengers.length || memberTrips.length || memberExpenses.length || memberBlackouts.length || memberShopping?.length
+    const memberHasData = memberWork.length || memberPassengers.length || memberTrips.length || memberExpenses.length || memberEntries?.length || memberBlackouts.length || memberShopping?.length
     if (hasGuestData) {
       try {
         await showConfirmDialog({
@@ -373,6 +375,10 @@ async function handleSignedIn() {
         for (const passenger of missing(guestLedger.passengers, memberPassengers)) await passengerRepository.save(passenger)
         for (const trip of missing(guestLedger.trips, memberTrips)) await tripRepository.save(trip)
         for (const expense of missing(guestLedger.expenses, memberExpenses)) await expenseRepository.save(expense)
+        // 通用手動交易：以 client id 比對，後端也是 upsert，重送不會重複
+        if (memberEntries) {
+          for (const entry of missing(guestLedger.entries, memberEntries)) await financialEntryRepository.save(entry)
+        }
         for (const record of missing(guestWork, memberWork)) await apiRequest(`/work-records/${encodeURIComponent(record.id)}`, { method: 'PUT', body: record })
         for (const blackout of guestBlackouts.filter((item) =>
           !memberBlackouts.some((member) => member.date === item.date))) {
@@ -984,6 +990,7 @@ const dailyNetByDate = computed(() =>
     trips: ledger.trips.value,
     expenses: ledger.expenses.value,
     salaryDeposits: ledger.salaryDeposits.value,
+    entries: ledger.entries.value,
     passengerNames: passengerNames.value,
   }),
 )

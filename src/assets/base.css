@@ -19,7 +19,7 @@
   --radius-large: 20px;
   --radius-hero: 24px;
   --radius-button: 14px;
-  /* 色彩：主色藍不變；中性色改成暖色（米白底、暖灰字），文字色皆通過 WCAG AA 對比 */
+  /* 色彩（Soft Blue Fintech）；文字色皆通過 WCAG AA 對比 */
   --color-primary: #1268da;
   --color-primary-bright: #2383ee;
   --color-primary-soft: #eaf2fd;
@@ -33,23 +33,13 @@
   --color-pending: #a86412;
   --color-pending-bar: #c17a19;
   --color-pending-soft: #fdf3e4;
-  /* 暖色點綴（紅土色）：只用在裝飾與問候，不代表收入／支出 */
-  --color-accent-warm: #b84a33;
-  --color-accent-warm-soft: #fbeee8;
-  --color-muted: #73685d;
-  --color-subtle: #8a7f73;
-  --color-text-secondary: #4f4439;
-  --color-background: #f7f4ee;
+  --color-muted: #667582;
+  --color-background: #f7f8fa;
   --color-surface: #fff;
-  --color-surface-muted: #faf7f2;
-  --color-heading: #2a2420;
-  --color-border: #ebe4d8;
-  --color-border-soft: #f1ebe1;
-  /* 卡片以邊框區隔，陰影只留一點暖色層次 */
-  --shadow-card: 0 1px 2px rgba(74, 52, 30, 0.06);
-  /* 紙張質感：米白底上很淡的點陣 */
-  --page-texture: radial-gradient(rgba(120, 92, 60, 0.08) 1px, transparent 1.2px);
-  --page-texture-size: 18px 18px;
+  --color-heading: #17212b;
+  --color-border: #e5e9ed;
+  /* 卡片以邊框區隔，陰影只留一點層次 */
+  --shadow-card: 0 1px 2px rgba(16, 42, 67, 0.05);
   /* 版面 */
   --page-inset: 16px;
   --page-section-gap: 20px;
@@ -93,9 +83,7 @@ body {
     var(--van-tabbar-height, 50px) + var(--page-section-gap) + env(safe-area-inset-bottom, 0px)
   );
   padding-left: max(var(--page-inset), env(safe-area-inset-left, 0px));
-  background-color: var(--color-background);
-  background-image: var(--page-texture);
-  background-size: var(--page-texture-size);
+  background: var(--color-background);
 }
 
 .app-page__header {

@@ -1,10 +1,12 @@
 <script setup>
 // 首頁「今日工作」：正在上班／今天稍後／今天剛下班／下一班／休息。
 // 金額直接用班表上已算好的稅前薪資（useShiftCalculator），不在這裡重新計薪。
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getEarnedSoFar, getFocusShift } from '../domain/today.js'
 import { describeStart, formatDateLabel, formatDuration } from '../i18n/format.js'
+import { buildDirectionsUrl } from '../domain/navigation.js'
+import { WORKPLACE_MAX_LENGTH } from '../domain/workProfile.js'
 
 const props = defineProps({
   records: { type: Array, required: true },
@@ -13,8 +15,17 @@ const props = defineProps({
   payReady: Boolean,
   money: { type: Function, required: true },
   currency: { type: String, default: 'AUD' },
+  // 工作地點（工作設定裡的名稱或地址）；有設定才顯示「導航到工作地點」
+  workplace: { type: String, default: null },
 })
-const emit = defineEmits(['open-payroll', 'import-payslip', 'work-setup', 'add-shift', 'adjust-shift'])
+const emit = defineEmits([
+  'open-payroll',
+  'import-payslip',
+  'work-setup',
+  'add-shift',
+  'adjust-shift',
+  'save-workplace',
+])
 
 const { t } = useI18n()
 const focus = computed(() => getFocusShift(props.records, props.now))
@@ -60,6 +71,17 @@ const shiftLabel = computed(() =>
 const earned = computed(() =>
   focus.value.kind === 'current' ? getEarnedSoFar(shift.value, props.now) : null,
 )
+const directionsUrl = computed(() => buildDirectionsUrl(props.workplace))
+const workplaceOpen = ref(false)
+const workplaceDraft = ref('')
+function editWorkplace() {
+  workplaceDraft.value = props.workplace || ''
+  workplaceOpen.value = true
+}
+function saveWorkplace() {
+  emit('save-workplace', workplaceDraft.value)
+}
+
 const restMessage = computed(() =>
   focus.value.kind === 'leave' ? t('shiftCard.leaveMessage') : t('shiftCard.restMessage'),
 )
@@ -155,6 +177,48 @@ const restMessage = computed(() =>
       <span>{{ t('shiftCard.noUpcoming') }}</span>
       <van-icon name="arrow" aria-hidden="true" />
     </button>
+    <div v-if="shift" class="today-shift__nav">
+      <a
+        v-if="directionsUrl"
+        class="today-shift__go"
+        :href="directionsUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <van-icon name="guide-o" aria-hidden="true" />
+        <span>{{ t('shiftCard.navigate', { place: workplace }) }}</span>
+      </a>
+      <button
+        v-if="directionsUrl"
+        type="button"
+        class="today-shift__place-edit"
+        :aria-label="t('shiftCard.editWorkplace')"
+        @click="editWorkplace"
+      >
+        <van-icon name="edit" aria-hidden="true" />
+      </button>
+      <button v-else type="button" class="today-shift__place-set" @click="editWorkplace">
+        <van-icon name="location-o" aria-hidden="true" />{{ t('shiftCard.setWorkplace') }}
+      </button>
+    </div>
+    <van-dialog
+      v-model:show="workplaceOpen"
+      :title="t('shiftCard.workplaceTitle')"
+      show-cancel-button
+      :confirm-button-text="t('common.save')"
+      @confirm="saveWorkplace"
+    >
+      <div class="today-shift__place-form">
+        <van-field
+          v-model="workplaceDraft"
+          :placeholder="t('shiftCard.workplacePlaceholder')"
+          :maxlength="WORKPLACE_MAX_LENGTH"
+          :aria-label="t('shiftCard.workplaceTitle')"
+          clearable
+        />
+        <p>{{ t('shiftCard.workplaceHint') }}</p>
+      </div>
+    </van-dialog>
   </section>
 </template>
 
@@ -171,7 +235,7 @@ const restMessage = computed(() =>
 }
 .today-shift--active {
   border: 1px solid #b9d3f5;
-  background: linear-gradient(180deg, #f4f9ff, var(--color-surface) 70%);
+  background: linear-gradient(180deg, #f4f9ff, #fff 70%);
 }
 .today-shift__head {
   display: flex;
@@ -304,6 +368,73 @@ const restMessage = computed(() =>
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+.today-shift__nav {
+  display: flex;
+  gap: 8px;
+}
+.today-shift__go {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: var(--touch-target);
+  padding: 0 12px;
+  border-radius: 12px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  text-decoration: none;
+}
+.today-shift__go span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.today-shift__place-edit {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  color: var(--color-muted);
+  font-size: 18px;
+  cursor: pointer;
+}
+.today-shift__place-set {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--touch-target);
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--color-primary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.today-shift__go:focus-visible,
+.today-shift__place-edit:focus-visible,
+.today-shift__place-set:focus-visible {
+  outline: 3px solid rgba(18, 104, 218, 0.28);
+  outline-offset: 2px;
+}
+.today-shift__place-form {
+  padding: 8px 16px 4px;
+}
+.today-shift__place-form p {
+  margin: 6px 0 0;
+  color: var(--color-muted);
+  font-size: var(--font-caption);
+  line-height: 1.5;
 }
 .today-shift__next {
   display: flex;

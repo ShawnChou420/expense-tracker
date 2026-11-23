@@ -80,6 +80,7 @@ export const WEEKDAYS = [
  *   dayTimes: Record<string, { startTime: string, endTime: string }>,
  *   offDayRule: string,
  *   smoko: SmokoSetting,
+ *   workplace: string | null,
  * }} WorkProfile
  */
 
@@ -107,7 +108,22 @@ export function createEmptyWorkProfile() {
     /** 沒有排班的日子：SKIP＝不建立紀錄；LEAVE＝建立休假紀錄 */
     offDayRule: 'SKIP',
     smoko: { mode: 'AUTO', count: 1, minutes: 30, paid: false },
+    // 工作地點（名稱或地址），首頁「導航到工作地點」用；沒設定就是 null
+    workplace: null,
   }
+}
+
+export const WORKPLACE_MAX_LENGTH = 120
+
+/**
+ * 整理工作地點文字：去掉多餘空白、限制長度；空白就是 null。
+ * @param {unknown} value
+ * @returns {string | null}
+ */
+export function normalizeWorkplace(value) {
+  if (typeof value !== 'string') return null
+  const text = value.replace(/\s+/g, ' ').trim().slice(0, WORKPLACE_MAX_LENGTH)
+  return text || null
 }
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
@@ -210,6 +226,7 @@ export function normalizeWorkProfile(raw) {
       minutes: smokoMinutes,
       paid: raw.smoko?.paid === true,
     },
+    workplace: normalizeWorkplace(raw.workplace),
   }
 }
 

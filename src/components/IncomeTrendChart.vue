@@ -81,13 +81,13 @@ function renderChart() {
       scales: {
         x: {
           grid: { display: false },
-          ticks: { maxTicksLimit: 6, maxRotation: 0, color: '#73685d' },
+          ticks: { maxTicksLimit: 6, maxRotation: 0, color: '#657588' },
         },
         y: {
           beginAtZero: true,
           ticks: {
             maxTicksLimit: 5,
-            color: '#73685d',
+            color: '#657588',
             // 跟著首頁的金額格式（顯示幣別、隱藏金額）；整數刻度省略 .00
             callback: (value) => props.format(Math.round(Number(value) * 100)).replace(/\.00$/, ''),
           },

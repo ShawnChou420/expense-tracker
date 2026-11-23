@@ -303,7 +303,7 @@ const primaryLabel = computed(() => {
 .auth-sheet__header h2 {
   flex: 1;
   margin: 0;
-  color: var(--color-heading);
+  color: #1b2a3b;
   font-size: 20px;
 }
 .auth-sheet__header button {
@@ -311,17 +311,17 @@ const primaryLabel = computed(() => {
   height: 40px;
   border: 0;
   background: transparent;
-  color: var(--color-muted);
+  color: #657588;
   font-size: 18px;
 }
 .auth-sheet__header .auth-sheet__back {
   margin-left: -10px;
-  color: var(--color-heading);
+  color: #1b2a3b;
 }
 .auth-sheet p,
 .auth-sheet small {
   margin: 0;
-  color: var(--color-muted);
+  color: #657588;
   font-size: 13px;
   line-height: 1.5;
 }
@@ -338,7 +338,7 @@ const primaryLabel = computed(() => {
   padding: 12px 14px;
   border-radius: 12px;
   background: #eef5fe;
-  color: var(--color-heading);
+  color: #1b2a3b;
   font-size: 14px;
   line-height: 1.5;
 }
@@ -357,7 +357,7 @@ const primaryLabel = computed(() => {
 .auth-sheet__code {
   display: grid;
   gap: 6px;
-  color: var(--color-heading);
+  color: #1b2a3b;
   font-size: 14px;
   font-weight: 700;
 }
@@ -367,7 +367,7 @@ const primaryLabel = computed(() => {
   box-sizing: border-box;
   border: 1.5px solid #d6dee8;
   border-radius: 12px;
-  color: var(--color-heading);
+  color: #1b2a3b;
   font: inherit;
   font-size: 28px;
   font-weight: 800;
@@ -425,7 +425,7 @@ const primaryLabel = computed(() => {
 }
 .auth-sheet__consent {
   margin: 0;
-  color: var(--color-muted);
+  color: #657588;
   font-size: 13px;
 }
 .auth-sheet__consent .auth-sheet__link {
@@ -444,7 +444,7 @@ const primaryLabel = computed(() => {
   font-weight: 700;
 }
 .auth-sheet__link {
-  color: var(--color-muted);
+  color: #657588;
 }
 .auth-sheet__rules {
   display: flex;

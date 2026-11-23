@@ -79,8 +79,8 @@ const props = defineProps({
   visaProgress: { type: Object, default: null },
   // 顯示幣別（resolveDisplayCurrency 的結果）；金額仍以 AUD 計算，只在顯示時換算
   displayCurrency: { type: Object, default: () => ({ code: 'AUD', rate: 1, flag: '🇦🇺', fallback: false }) },
-  // 會員的顯示名稱；有設定時問候語會帶上名字
-  nickname: { type: String, default: '' },
+  // 工作設定裡的工作地點（名稱或地址）
+  workplace: { type: String, default: null },
 })
 const emit = defineEmits([
   'mark-work-date',
@@ -93,6 +93,7 @@ const emit = defineEmits([
   'visa-setup',
   'import-history',
   'change-currency',
+  'save-workplace',
 ])
 /** AUD cents → 目前顯示幣別的金額文字；開啟「隱藏金額」時換成 ••• */
 const money = (/** @type {number} */ cents) => {
@@ -107,11 +108,9 @@ const today = formatLocalDate(new Date())
 const now = ref(new Date())
 const liveToday = computed(() => formatLocalDate(now.value))
 let clockTimer = null
-const greetingKey = computed(() =>
-  getGreetingKey(now.value, getFocusShift(props.workRecords, now.value).kind === 'current'),
+const greeting = computed(() =>
+  t(`greeting.${getGreetingKey(now.value, getFocusShift(props.workRecords, now.value).kind === 'current')}`),
 )
-const greeting = computed(() => t(`greeting.${greetingKey.value}`))
-const greetingName = computed(() => (authToken.value ? props.nickname.trim() : ''))
 const liveDateLabel = computed(() => {
   void locale.value // 切換語言時重新格式化
   return formatLongDate(now.value)
@@ -537,10 +536,7 @@ async function saveTarget() {
       </div>
       <div v-else class="home-header__titles">
         <span class="home-header__eyebrow">{{ liveDateLabel }}</span>
-        <i18n-t v-if="greetingName" :keypath="`greetingNamed.${greetingKey}`" tag="h1" scope="global">
-          <template #name><span class="home-header__name">{{ greetingName }}</span></template>
-        </i18n-t>
-        <h1 v-else>{{ greeting }}</h1>
+        <h1>{{ greeting }}</h1>
       </div>
       <button
         v-if="!guestWelcome && authToken"
@@ -608,6 +604,8 @@ async function saveTarget() {
         :pay-ready="setup.payReady"
         :money="money"
         :currency="displayCurrency.code"
+        :workplace="workplace"
+        @save-workplace="emit('save-workplace', $event)"
         @open-payroll="emit('navigate', 'payroll')"
         @import-payslip="emit('import-payslip')"
         @work-setup="emit('work-setup', 1)"
@@ -1050,7 +1048,7 @@ async function saveTarget() {
               :percentage="workProgress.progressPercent"
               :show-pivot="false"
               color="#1989fa"
-              track-color="var(--color-border)"
+              track-color="#e6edf5"
             />
             <p class="goal-result">{{ t('dashboard.daysToGo', { count: workProgress.remaining }) }}</p></template
           >
@@ -1182,7 +1180,7 @@ async function saveTarget() {
   min-width: 0;
 }
 .home-header__eyebrow {
-  color: var(--color-accent-warm);
+  color: var(--color-primary);
   font-size: var(--font-caption);
   font-weight: 800;
   letter-spacing: 0.04em;
@@ -1193,15 +1191,6 @@ async function saveTarget() {
   font-size: clamp(22px, 6.6vw, var(--font-title));
   font-weight: 800;
   line-height: 1.2;
-}
-.home-header__name {
-  display: inline-block;
-  max-width: 9em;
-  overflow: hidden;
-  color: var(--color-accent-warm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: bottom;
 }
 .home-header p {
   margin: 4px 0 0;
@@ -1606,7 +1595,7 @@ async function saveTarget() {
   border: 1px solid var(--color-border);
   border-radius: 11px;
   background: #fff;
-  color: var(--color-text-secondary);
+  color: #345474;
   font: inherit;
   font-size: 13px;
   font-weight: 700;
@@ -1630,8 +1619,8 @@ async function saveTarget() {
   height: 42px;
   border: 1px solid var(--color-border);
   border-radius: 11px;
-  background: var(--color-surface-muted);
-  color: var(--color-text-secondary);
+  background: #f8fafc;
+  color: #345474;
 }
 .period-nav strong {
   text-align: center;
@@ -1737,7 +1726,7 @@ async function saveTarget() {
   font-size: var(--font-caption);
 }
 .goal-values strong {
-  color: var(--color-heading);
+  color: #1b2a3b;
   font-size: 18px;
   overflow-wrap: anywhere;
 }
@@ -1797,7 +1786,7 @@ async function saveTarget() {
   border: 0;
   border-bottom: 1px solid var(--color-border);
   background: none;
-  color: var(--color-text-secondary);
+  color: #345474;
   font-size: 13px;
   text-align: left;
 }
@@ -1822,7 +1811,7 @@ async function saveTarget() {
   border: 0;
   border-bottom: 1px solid var(--color-border);
   background: none;
-  color: var(--color-text-secondary);
+  color: #345474;
   text-align: left;
   font-size: 13px;
 }

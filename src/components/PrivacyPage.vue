@@ -94,7 +94,7 @@ const emit = defineEmits(['update:show'])
   overflow-y: auto;
   padding: 20px var(--page-horizontal-padding, 18px) calc(24px + env(safe-area-inset-bottom));
   background: #fff;
-  color: var(--color-heading);
+  color: #1b2a3b;
 }
 .privacy__header {
   display: flex;
@@ -107,7 +107,7 @@ const emit = defineEmits(['update:show'])
   font-size: 20px;
 }
 .privacy__header small {
-  color: var(--color-muted);
+  color: #657588;
   font-size: 12px;
 }
 .privacy__header button {
@@ -116,7 +116,7 @@ const emit = defineEmits(['update:show'])
   height: 40px;
   border: 0;
   background: transparent;
-  color: var(--color-muted);
+  color: #657588;
 }
 .privacy h3 {
   margin: 0 0 6px;

@@ -8,6 +8,8 @@ import { getPayslipHighlights } from './payslip/summary.js'
  *
  * 規則依 Home Affairs「How to count specified work」（2026-11 查閱）：
  * - 二簽：至少 3 個月 = 88 個日曆天；三簽：至少 6 個月 = 179 個日曆天，都包含全職期間的週末或休息日。
+ * - 二簽新制（Home Affairs 2026-11-17 公告，見 SECOND_VISA_RULE_CHANGE）：2027-03-01 起二簽改為 120 天；
+ *   2027-02-28 前完成指定工作「並」遞交申請的人，仍適用 88 天（過渡期）。三簽不變。
  * - 需完成「該職務全職員工在 88／179 天內的正常工作天數」；兼職按比例折算。
  * - 一個日曆天最多算一天；無薪的假日與請假不能算。打工度假的工作沒有有薪假，請假一律視為無薪。
  * - 總期間不能短於 3／6 個日曆月。
@@ -21,6 +23,22 @@ export const VISA_GOALS = /** @type {const} */ ({
   SECOND: { id: 'SECOND', label: '集二簽', months: 3, minDays: 88, priorStage: 'FIRST' },
   THIRD: { id: 'THIRD', label: '集三簽', months: 6, minDays: 179, priorStage: 'SECOND' },
 })
+
+/**
+ * 二簽指定工作天數的新制（Home Affairs 2026-11-17 公告）。日期與天數集中在這裡，官方調整時只改這裡。
+ * 120 天如何換算成全職工作天，官方細則尚未公布：先比照 88 天的算法（日曆天、每週 5 天全職）估算，需以 Home Affairs 公告確認。
+ */
+export const SECOND_VISA_RULE_CHANGE = {
+  announcedOn: '2026-11-17',
+  registrationOpens: '2026-12-01',
+  /** 過渡期：這天以前完成指定工作並遞交申請，仍適用 88 天 */
+  transitionalDeadline: '2027-02-28',
+  effectiveFrom: '2027-03-01',
+  legacyMinDays: 88,
+  newMinDays: 120,
+  sourceUrl:
+    'https://www.homeaffairs.gov.au/News-subsite/Pages/2026-Nov/working-holiday-maker-visa-application-rules-are-changing.aspx',
+}
 
 export const VISA_SUBCLASSES = ['417', '462']
 export const VISA_STAGES = [
@@ -136,20 +154,63 @@ const round1 = (/** @type {number} */ value) => Math.round(value * 10) / 10
  *   today: string,
  * }} input
  */
-export function getVisaJourneyProgress({
-  settings,
-  records = [],
-  payslips = [],
-  profile = null,
-  today,
-}) {
+export function getVisaJourneyProgress(input) {
+  const { settings, today } = input
   if (!settings || !settings.goal || settings.goal === 'NONE') return null
-  const goal = VISA_GOALS[settings.goal]
+  const rule = SECOND_VISA_RULE_CHANGE
+  if (settings.goal !== 'SECOND') {
+    const result = computeProgress(VISA_GOALS[settings.goal], input)
+    result.reviewItems.push(registrationItem(today))
+    return { ...result, rule: null }
+  }
+  // 二簽：先用 88 天估算；過渡期內預計能在期限前完成，才沿用 88 天，否則改用 120 天
+  const legacy = computeProgress(VISA_GOALS.SECOND, input)
+  const finishesInTime =
+    legacy.status === 'LIKELY_MET' ||
+    (legacy.estimate.date !== null && legacy.estimate.date <= rule.transitionalDeadline)
+  if (today <= rule.transitionalDeadline && finishesInTime) {
+    legacy.reviewItems.push({
+      code: 'SECOND_VISA_TRANSITION',
+      message: `二簽過渡期：要在 ${rule.transitionalDeadline} 前完成 ${rule.legacyMinDays} 天指定工作，並在同一天以前遞交二簽申請，才適用 ${rule.legacyMinDays} 天；來不及就改為 ${rule.newMinDays} 天，並需要先登記、獲選。`,
+    })
+    return { ...legacy, rule: { id: 'TRANSITIONAL', deadline: rule.transitionalDeadline } }
+  }
+  const next = computeProgress(
+    { ...VISA_GOALS.SECOND, months: null, minDays: rule.newMinDays },
+    input,
+  )
+  next.assumptions.push(
+    `${rule.effectiveFrom} 起二簽指定工作由 ${rule.legacyMinDays} 天提高到 ${rule.newMinDays} 天；之前完成的指定工作仍然計入。${rule.newMinDays} 天的全職天數換算比照舊制估算，需以 Home Affairs 公告確認。`,
+  )
+  next.reviewItems.push(registrationItem(today))
+  return { ...next, rule: { id: 'NEW', effectiveFrom: rule.effectiveFrom } }
+}
+
+/** 新制登記與邀請：二簽、三簽都適用（英國護照除外） @param {string} today */
+function registrationItem(today) {
+  const rule = SECOND_VISA_RULE_CHANGE
+  return {
+    code: 'REGISTRATION_REQUIRED',
+    message:
+      today < rule.effectiveFrom
+        ? `${rule.registrationOpens} 起開放登記；${rule.effectiveFrom} 起申請下一張 WHM 簽證前，必須先登記、獲選並完成指定工作（英國護照除外）。登記不保證獲選。`
+        : `申請下一張 WHM 簽證前，必須先登記、獲選並完成指定工作（英國護照除外）。登記不保證獲選。`,
+  }
+}
+
+/**
+ * 依某個天數規則計算進度。
+ * @param {{ id: string, label: string, months: number | null, minDays: number, priorStage: string }} goal
+ * @param {{ settings: VisaJourneySettings, records?: Array<any>, payslips?: Array<any>, profile?: any, today: string }} input
+ */
+function computeProgress(goal, { settings, records = [], payslips = [], profile = null, today }) {
   const requiredWorkDays = getRequiredWorkDays(goal.minDays)
   /** @type {Array<{ code: string, message: string, dates?: string[] }>} */
   const reviewItems = []
   const assumptions = [
-    `依官方規則，${goal.label}需要至少 ${goal.months} 個月（${goal.minDays} 個日曆天）的指定工作。`,
+    goal.months
+      ? `依官方規則，${goal.label}需要至少 ${goal.months} 個月（${goal.minDays} 個日曆天）的指定工作。`
+      : `依官方規則，${goal.label}需要至少 ${goal.minDays} 天的指定工作。`,
     `以每週 ${FULL_TIME_DAYS_PER_WEEK} 天全職換算，約需 ${requiredWorkDays} 個完整工作天；實際標準以你的職務與產業為準。`,
     '工作行業與工作地點郵遞區號是否屬於指定工作，需自行對照 Home Affairs 公告。',
     '請假（事假、病假、Holiday 等）一律視為無薪，不計入工作天。',

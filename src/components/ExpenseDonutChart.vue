@@ -89,11 +89,11 @@ watch(
   pointer-events: none;
 }
 .donut-center small {
-  color: var(--color-muted);
+  color: #657588;
   font-size: 12px;
 }
 .donut-center strong {
-  color: var(--color-heading);
+  color: #1b2a3b;
   font-size: clamp(18px, 5vw, 24px);
   font-weight: 800;
   overflow-wrap: anywhere;

@@ -19,6 +19,7 @@ import {
   getSmokoInputs,
   inferLegacyWorkProfile,
   normalizeWorkProfile,
+  normalizeWorkplace,
   planFill,
   setWeekdayShifts,
   describeShiftDay,
@@ -411,5 +412,23 @@ describe('當天快速調整', () => {
       cleaningEndTime: null,
     })
     expect(getPlannedShift(profile, '2026-11-10')).toMatchObject({ isCleaningDay: false })
+  })
+})
+
+describe('workplace', () => {
+  it('預設沒有工作地點', () => {
+    expect(createEmptyWorkProfile().workplace).toBeNull()
+  })
+
+  it('整理空白、空字串與非字串都視為未設定', () => {
+    expect(normalizeWorkplace('  Baiada   Pendle Hill ')).toBe('Baiada Pendle Hill')
+    expect(normalizeWorkplace('   ')).toBeNull()
+    expect(normalizeWorkplace(42)).toBeNull()
+    expect(normalizeWorkplace('x'.repeat(200))).toHaveLength(120)
+  })
+
+  it('normalizeWorkProfile 保留工作地點，舊資料沒有這個欄位時是 null', () => {
+    expect(normalizeWorkProfile({ workplace: 'Baiada Hanwood' }).workplace).toBe('Baiada Hanwood')
+    expect(normalizeWorkProfile({}).workplace).toBeNull()
   })
 })

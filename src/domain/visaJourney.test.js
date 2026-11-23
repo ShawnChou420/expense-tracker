@@ -303,3 +303,68 @@ describe('batch leave', () => {
     expect('leavePaid' in sick).toBe(false)
   })
 })
+
+describe('二簽新制：2027-03-01 起 120 天（Home Affairs 2026-11-17 公告）', () => {
+  const codes = (/** @type {any} */ result) => result.reviewItems.map((item) => item.code)
+
+  it('預計在 2027-02-28 前完成：沿用 88 天，並提醒要在期限前遞件', () => {
+    const result = progress({
+      settings: settings(),
+      records: weekdays('2026-08-03', '2026-08-30'),
+      profile,
+      today: '2026-08-30',
+    })
+    expect(result.minDays).toBe(88)
+    expect(result.requiredWorkDays).toBe(63)
+    expect(result.rule).toEqual({ id: 'TRANSITIONAL', deadline: '2027-02-28' })
+    expect(codes(result)).toContain('SECOND_VISA_TRANSITION')
+  })
+
+  it('來不及在 2027-02-28 前完成：改用 120 天（約 86 個全職工作天）', () => {
+    // 2027-01-04 才開始：88 個日曆天最快 2027-04-01 才滿，已經過了過渡期
+    const result = progress({
+      settings: settings({ workStart: '2027-01-04' }),
+      records: weekdays('2027-01-04', '2027-02-05'),
+      profile,
+      today: '2027-02-05',
+    })
+    expect(result.minDays).toBe(120)
+    expect(result.requiredWorkDays).toBe(86)
+    expect(result.rule).toEqual({ id: 'NEW', effectiveFrom: '2027-03-01' })
+    expect(codes(result)).toContain('REGISTRATION_REQUIRED')
+    // 不得早於 120 個日曆天
+    expect(result.estimate.date >= addDays('2027-01-04', 119)).toBe(true)
+  })
+
+  it('過了 2027-02-28 一律用 120 天，之前完成的指定工作仍計入', () => {
+    const result = progress({
+      settings: settings(),
+      records: weekdays('2026-08-03', '2026-12-18'),
+      profile,
+      today: '2027-03-10',
+    })
+    expect(result.minDays).toBe(120)
+    expect(result.creditedDays).toBeGreaterThan(63)
+    expect(result.rule.id).toBe('NEW')
+  })
+
+  it('還沒有資料、無法估算完成日時，用 120 天（避免低估）', () => {
+    const result = progress({
+      settings: settings({ workStart: '2026-11-16' }),
+      today: '2026-11-16',
+    })
+    expect(result.minDays).toBe(120)
+  })
+
+  it('三簽不變：仍是 179 天，但也要先登記、獲選', () => {
+    const result = progress({
+      settings: settings({ goal: 'THIRD', stage: 'SECOND' }),
+      records: weekdays('2026-08-03', '2026-08-14'),
+      profile,
+      today: '2026-08-14',
+    })
+    expect(result.minDays).toBe(179)
+    expect(result.rule).toBeNull()
+    expect(codes(result)).toContain('REGISTRATION_REQUIRED')
+  })
+})

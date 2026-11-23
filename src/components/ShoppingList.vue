@@ -971,7 +971,7 @@ async function confirmComplete() {
   border: 0;
   border-radius: 10px;
   background: transparent;
-  color: var(--color-text-secondary);
+  color: #52667e;
   font-size: 14px;
   font-weight: 700;
 }
@@ -1069,7 +1069,7 @@ async function confirmComplete() {
 .shopping-row__remaining {
   flex: none;
   max-width: 65px;
-  color: var(--color-text-secondary);
+  color: #52667e;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -1082,7 +1082,7 @@ async function confirmComplete() {
   height: 44px;
   border: 0;
   background: none;
-  color: var(--color-text-secondary);
+  color: #52667e;
   font-size: 20px;
 }
 .shopping-completed {
@@ -1100,7 +1100,7 @@ async function confirmComplete() {
   padding: 0 10px;
   border-radius: 10px;
   background: #eaf3fe;
-  color: var(--color-text-secondary);
+  color: #345474;
   font-size: 12px;
 }
 .shopping-undo span {
@@ -1137,7 +1137,7 @@ async function confirmComplete() {
   border: 0;
   border-radius: 10px;
   background: transparent;
-  color: var(--color-text-secondary);
+  color: #52667e;
   font-size: 14px;
   font-weight: 700;
 }

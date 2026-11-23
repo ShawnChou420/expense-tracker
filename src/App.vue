@@ -436,7 +436,7 @@ async function handleSignedIn() {
       notifyLedgerChanged()
       notifyShoppingChanged()
     }
-    // 顯示名稱用於帳號卡與首頁問候，讀取失敗不影響登入
+    // 顯示名稱只用於帳號卡，讀取失敗不影響登入
     const signedInToken = authToken.value
     accountRepository.get().then((account) => {
       // 回應前已登出或換帳號就丟棄，避免名稱殘留在訪客畫面
@@ -729,6 +729,12 @@ const onDateSelect = async (date) => {
   visibleMonth.value = `${year}-${month}`
   loadSelectedDate()
   daySheetOpen.value = true
+}
+
+// 首頁今日班表的「工作地點」：存進工作設定（會員寫回帳號，訪客只在這次開啟期間）
+async function saveWorkplace(workplace) {
+  const saved = await workSetup.saveProfile({ ...workSetup.profile.value, workplace })
+  showToast(saved.workplace ? t('common.saved') : t('shiftCard.workplaceCleared'))
 }
 
 // 首頁「調整上下班時間」：不切換分頁，直接打開那天的當天面板並捲到時間欄位
@@ -1687,7 +1693,8 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       :visa-journey="visaJourney"
       :visa-progress="visaProgress"
       :display-currency="dashboardCurrency"
-      :nickname="accountNickname"
+      :workplace="workSetup.profile.value.workplace"
+      @save-workplace="saveWorkplace"
       @change-currency="showCurrencyPicker = true"
       @visa-setup="visaSetupOpen = true"
       @import-history="openHistoryWizard"

@@ -65,7 +65,7 @@ const emit = defineEmits(['click'])
 .stat-card__badge {
   padding: 1px 7px;
   border-radius: 999px;
-  background: var(--color-border-soft);
+  background: #eef2f7;
   color: var(--color-muted);
   font-size: var(--font-caption);
   font-style: normal;

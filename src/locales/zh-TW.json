@@ -706,7 +706,9 @@
     "source": "資料來源：NSW FuelCheck，價格以加油站現場為準。",
     "justUpdated": "剛剛更新",
     "minutesAgo": "{minutes} 分鐘前更新",
-    "hoursAgo": "{hours} 小時前更新"
+    "hoursAgo": "{hours} 小時前更新",
+    "navigateTo": "導航到 {name}",
+    "showDistance": "改用目前位置，顯示距離"
   },
   "more": {
     "title": "更多",
@@ -788,7 +790,7 @@
       "NONE": "目前不集簽"
     },
     "goalDetails": {
-      "SECOND": "3 個月，最低 88 天日曆期間等值",
+      "SECOND": "2027/2/28 前完成並遞件：88 天；之後：120 天",
       "THIRD": "6 個月，最低 179 天日曆期間等值",
       "NONE": "首頁不顯示進度，工作紀錄照常保留"
     },
@@ -828,7 +830,9 @@
     "workStartHint": "填實際開始做指定工作（符合行業與郵遞區號）的日期。",
     "alreadyStarted": "我已經開始集簽",
     "setupDisclaimer": "進度只是依你的紀錄做的個人估算，不代表 Home Affairs 的認定。",
-    "saveAndTrack": "儲存並開始追蹤"
+    "saveAndTrack": "儲存並開始追蹤",
+    "ruleTransitional": "過渡期：{date} 前完成 88 天並遞交二簽申請才適用 88 天，來不及就改為 120 天。",
+    "ruleNew": "{date} 起二簽改為 120 天，申請前需先登記並獲選；之前完成的工作仍計入。"
   },
   "language": {
     "label": "語言",
@@ -854,13 +858,6 @@
     "morning": "早安",
     "afternoon": "午安",
     "evening": "晚安"
-  },
-  "greetingNamed": {
-    "working": "{name}，上班辛苦了",
-    "lateNight": "夜深了，{name}記得休息",
-    "morning": "早安，{name}",
-    "afternoon": "午安，{name}",
-    "evening": "晚安，{name}"
   },
   "onboarding": {
     "setup": {
@@ -917,7 +914,14 @@
     "manualSetup": "手動設定",
     "next": "下一班 · {when}",
     "adjustNext": "調整下一班時間",
-    "noUpcoming": "還沒有之後的班表，記錄一下"
+    "noUpcoming": "還沒有之後的班表，記錄一下",
+    "navigate": "導航到 {place}",
+    "setWorkplace": "設定工作地點，一鍵導航",
+    "editWorkplace": "修改工作地點",
+    "workplaceTitle": "工作地點",
+    "workplacePlaceholder": "例如 Baiada Pendle Hill 或完整地址",
+    "workplaceHint": "只用來開啟地圖導航；會存在你的工作設定。",
+    "workplaceCleared": "已清除工作地點"
   },
   "dayLife": {
     "loadFailed": "生活紀錄暫時載入不了：{error}",

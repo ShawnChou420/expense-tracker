@@ -11,6 +11,7 @@ import {
   isValidPostcode,
   normalizeFuelPrefs,
 } from '../domain/fuel.js'
+import { buildDirectionsUrl, stationDestination } from '../domain/navigation.js'
 import { useI18n } from 'vue-i18n'
 import { localizeMessage } from '../i18n/messages.js'
 
@@ -205,8 +206,27 @@ onMounted(load)
             <strong>{{ formatFuelPrice(station.priceTenths) }}</strong>
             <small>¢/L</small>
           </span>
+          <a
+            v-if="buildDirectionsUrl(stationDestination(station))"
+            class="fuel-card__nav"
+            :href="buildDirectionsUrl(stationDestination(station))"
+            target="_blank"
+            rel="noopener noreferrer"
+            :aria-label="t('fuel.navigateTo', { name: station.name })"
+          >
+            <van-icon name="guide-o" aria-hidden="true" />
+          </a>
         </li>
       </ol>
+      <button
+        v-if="prefs.mode !== 'GPS' && stations.length"
+        type="button"
+        class="fuel-card__distance"
+        :disabled="locating"
+        @click="useCurrentLocation"
+      >
+        <van-icon name="aim" aria-hidden="true" />{{ t('fuel.showDistance') }}
+      </button>
       <p v-if="gap" class="fuel-card__hint">{{ t('fuel.cheaperBy', { gap }) }}</p>
       <p v-if="result?.stale" class="fuel-card__hint">{{ t('fuel.stale') }}</p>
     </template>
@@ -373,6 +393,36 @@ onMounted(load)
   color: var(--color-heading);
   font-size: 20px;
   font-variant-numeric: tabular-nums;
+}
+.fuel-card__nav {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  margin-right: -6px;
+  border-radius: 12px;
+  color: var(--color-primary);
+  font-size: 22px;
+  text-decoration: none;
+}
+.fuel-card__nav:focus-visible {
+  outline: 3px solid rgba(18, 104, 218, 0.28);
+}
+.fuel-card__distance {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 6px;
+  min-height: var(--touch-target);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-primary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
 }
 .fuel-card__price small {
   color: var(--color-muted);

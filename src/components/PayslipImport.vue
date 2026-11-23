@@ -743,7 +743,7 @@ function confirmImport() {
   flex: none;
   padding: 2px 8px;
   border-radius: 999px;
-  background: var(--color-border-soft);
+  background: #eef2f7;
   color: var(--color-muted);
   font-size: 11px;
   font-style: normal;
@@ -762,7 +762,7 @@ function confirmImport() {
   color: var(--color-pending);
 }
 .rate-row--NOT_OBSERVED {
-  background: var(--color-surface-muted);
+  background: #f8fafc;
 }
 .rate-row__values {
   display: flex;

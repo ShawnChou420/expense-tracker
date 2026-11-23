@@ -85,6 +85,11 @@ const estimateText = computed(() => {
         {{ t('visa.requirement', { workDays: progress.requiredWorkDays, minDays: progress.minDays }) }}
         <template v-if="progress.counts?.historicalDays">{{ t('visa.historicalDays', { count: progress.counts.historicalDays }) }}</template>
       </p>
+      <p v-if="progress.rule" class="visa-card__rule" role="note">
+        <van-icon name="info-o" aria-hidden="true" />
+        <span v-if="progress.rule.id === 'TRANSITIONAL'">{{ t('visa.ruleTransitional', { date: progress.rule.deadline }) }}</span>
+        <span v-else>{{ t('visa.ruleNew', { date: progress.rule.effectiveFrom }) }}</span>
+      </p>
       <p class="visa-card__estimate">
         <van-icon name="clock-o" />
         <span v-if="estimateText">{{ estimateText }}</span>
@@ -238,6 +243,21 @@ const estimateText = computed(() => {
   color: var(--color-pending);
   font: inherit;
   font-size: 13px;
+}
+.visa-card__rule {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-medium);
+  background: var(--color-pending-soft);
+  color: var(--color-pending);
+  font-size: var(--font-caption);
+  line-height: 1.5;
+}
+.visa-card__rule .van-icon {
+  flex: none;
+  margin-top: 2px;
 }
 .visa-card__review.is-quiet {
   background: var(--color-background);

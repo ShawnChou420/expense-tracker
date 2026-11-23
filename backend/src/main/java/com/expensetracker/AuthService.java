@@ -246,6 +246,7 @@ public class AuthService {
         "DELETE FROM passenger WHERE user_seq = ?",
         "DELETE FROM payslip_import WHERE user_seq = ?", // 參照 salary_deposit，先刪
         "DELETE FROM work_profile WHERE user_seq = ?",
+        "DELETE FROM financial_entry WHERE user_seq = ?",
         "DELETE FROM expense_payment WHERE user_seq = ?",
         "DELETE FROM expense_record WHERE user_seq = ?",
         "DELETE FROM salary_deposit WHERE user_seq = ?",

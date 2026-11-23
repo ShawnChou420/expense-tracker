@@ -57,7 +57,8 @@ import TodayShiftCard from './TodayShiftCard.vue'
 import FuelPriceCard from './FuelPriceCard.vue'
 import TodaySection from './TodaySection.vue'
 import { getFocusShift, getGreetingKey } from '../domain/today.js'
-import { formatCentsIn } from '../domain/displayCurrency.js'
+import { formatCentsIn, maskAmount } from '../domain/displayCurrency.js'
+import { amountsHidden, toggleAmountsHidden } from '../services/amountPrivacy.js'
 const IncomeTrendChart = defineAsyncComponent(() => import('./IncomeTrendChart.vue'))
 const ExpenseDonutChart = defineAsyncComponent(() => import('./ExpenseDonutChart.vue'))
 
@@ -78,6 +79,8 @@ const props = defineProps({
   visaProgress: { type: Object, default: null },
   // 顯示幣別（resolveDisplayCurrency 的結果）；金額仍以 AUD 計算，只在顯示時換算
   displayCurrency: { type: Object, default: () => ({ code: 'AUD', rate: 1, flag: '🇦🇺', fallback: false }) },
+  // 工作設定裡的工作地點（名稱或地址）
+  workplace: { type: String, default: null },
 })
 const emit = defineEmits([
   'mark-work-date',
@@ -90,9 +93,14 @@ const emit = defineEmits([
   'visa-setup',
   'import-history',
   'change-currency',
+  'save-workplace',
 ])
-/** AUD cents → 目前顯示幣別的金額文字 */
-const money = (/** @type {number} */ cents) => formatCentsIn(cents, props.displayCurrency)
+/** AUD cents → 目前顯示幣別的金額文字；開啟「隱藏金額」時換成 ••• */
+const money = (/** @type {number} */ cents) => {
+  const text = formatCentsIn(cents, props.displayCurrency)
+  // 隱藏金額只開放會員（訪客標頭空間不夠，也沒有開關可以關掉）
+  return authToken.value && amountsHidden.value ? maskAmount(text) : text
+}
 
 const { t, locale } = useI18n()
 const today = formatLocalDate(new Date())
@@ -531,6 +539,16 @@ async function saveTarget() {
         <h1>{{ greeting }}</h1>
       </div>
       <button
+        v-if="!guestWelcome && authToken"
+        type="button"
+        class="home-header__privacy"
+        :aria-label="amountsHidden ? t('dashboard.showAmounts') : t('dashboard.hideAmounts')"
+        :aria-pressed="amountsHidden"
+        @click="toggleAmountsHidden"
+      >
+        <van-icon :name="amountsHidden ? 'closed-eye' : 'eye-o'" aria-hidden="true" />
+      </button>
+      <button
         v-if="!guestWelcome"
         type="button"
         class="home-header__customize"
@@ -586,6 +604,8 @@ async function saveTarget() {
         :pay-ready="setup.payReady"
         :money="money"
         :currency="displayCurrency.code"
+        :workplace="workplace"
+        @save-workplace="emit('save-workplace', $event)"
         @open-payroll="emit('navigate', 'payroll')"
         @import-payslip="emit('import-payslip')"
         @work-setup="emit('work-setup', 1)"
@@ -1183,6 +1203,30 @@ async function saveTarget() {
   font-weight: 800;
   letter-spacing: 0.02em;
   line-height: var(--touch-target);
+}
+.home-header__privacy {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  margin-left: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-muted);
+  font-size: 20px;
+  cursor: pointer;
+}
+.home-header__privacy[aria-pressed='true'] {
+  color: var(--color-primary);
+}
+.home-header__privacy:focus-visible {
+  outline: 3px solid rgba(18, 104, 218, 0.28);
+  outline-offset: 2px;
+}
+.home-header__privacy + .home-header__customize {
+  margin-left: 0;
 }
 .home-header__customize {
   display: inline-flex;

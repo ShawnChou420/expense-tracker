@@ -275,7 +275,9 @@
     "targetNote": "For personal tracking only — this doesn't determine visa eligibility.",
     "saveTarget": "Save target",
     "currencyAria": "Display currency: {currency}, tap to change",
-    "quickActionsAria": "Quick actions"
+    "quickActionsAria": "Quick actions",
+    "hideAmounts": "Hide amounts",
+    "showAmounts": "Show amounts"
   },
   "payroll": {
     "title": "Pay & shifts",
@@ -704,7 +706,9 @@
     "source": "Source: NSW FuelCheck. Prices at the station prevail.",
     "justUpdated": "Just updated",
     "minutesAgo": "Updated {minutes} min ago",
-    "hoursAgo": "Updated {hours} h ago"
+    "hoursAgo": "Updated {hours} h ago",
+    "navigateTo": "Directions to {name}",
+    "showDistance": "Use my location to show distance"
   },
   "more": {
     "title": "More",
@@ -786,7 +790,7 @@
       "NONE": "Not tracking for now"
     },
     "goalDetails": {
-      "SECOND": "3 months — at least the equivalent of 88 calendar days",
+      "SECOND": "88 days if completed and lodged by 28 Feb 2027; 120 days after",
       "THIRD": "6 months — at least the equivalent of 179 calendar days",
       "NONE": "Progress is hidden on home; work records are kept"
     },
@@ -826,7 +830,9 @@
     "workStartHint": "The date you actually started specified work (eligible industry and postcode).",
     "alreadyStarted": "I've already started",
     "setupDisclaimer": "Progress is a personal estimate from your records, not a Home Affairs decision.",
-    "saveAndTrack": "Save and start tracking"
+    "saveAndTrack": "Save and start tracking",
+    "ruleTransitional": "Transition: 88 days only applies if you finish and lodge your second visa by {date}. Otherwise it becomes 120 days.",
+    "ruleNew": "From {date} the second visa needs 120 days, and you must register and be selected first. Work done earlier still counts."
   },
   "language": {
     "label": "Language",
@@ -900,13 +906,22 @@
     "paidTime": "Estimated paid time {duration}",
     "smokoDeducted": "· smoko deducted {duration}",
     "estimatedGross": "Estimated gross pay",
+    "earnedSoFar": "Earned so far (approx.)",
+    "fullShiftEstimate": "Full shift est. {amount}",
     "adjustTimes": "Adjust start/finish times",
     "noRates": "No pay rates yet — upload a payslip or set them manually.",
     "uploadPayslip": "Upload payslip",
     "manualSetup": "Set manually",
     "next": "Next shift · {when}",
     "adjustNext": "Adjust next shift",
-    "noUpcoming": "No upcoming shifts — add one"
+    "noUpcoming": "No upcoming shifts — add one",
+    "navigate": "Directions to {place}",
+    "setWorkplace": "Add your workplace for one-tap directions",
+    "editWorkplace": "Edit workplace",
+    "workplaceTitle": "Workplace",
+    "workplacePlaceholder": "e.g. Baiada Pendle Hill or a full address",
+    "workplaceHint": "Only used to open map directions. Saved in your work setup.",
+    "workplaceCleared": "Workplace removed"
   },
   "dayLife": {
     "loadFailed": "Couldn't load the daily log: {error}",

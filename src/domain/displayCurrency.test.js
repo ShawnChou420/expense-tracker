@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatCentsIn, resolveDisplayCurrency } from './displayCurrency.js'
+import { formatCentsIn, maskAmount, resolveDisplayCurrency } from './displayCurrency.js'
 
 const rates = { AUD: 1, TWD: 21.3, USD: 0.66, KRW: 905.5 }
 
@@ -21,5 +21,13 @@ describe('display currency', () => {
     const currency = resolveDisplayCurrency('TWD', { AUD: 1 })
     expect(currency).toMatchObject({ code: 'AUD', fallback: true, requested: 'TWD' })
     expect(formatCentsIn(100000, currency)).toBe('$1,000.00')
+  })
+})
+
+describe('maskAmount', () => {
+  it('保留幣別符號，數字與正負號都換成 •••', () => {
+    expect(maskAmount('$1,240.00')).toBe('$•••')
+    expect(maskAmount('-NT$300')).toBe('NT$•••')
+    expect(maskAmount('¥12,000')).toBe('¥•••')
   })
 })

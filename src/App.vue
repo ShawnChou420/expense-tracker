@@ -731,6 +731,12 @@ const onDateSelect = async (date) => {
   daySheetOpen.value = true
 }
 
+// 首頁今日班表的「工作地點」：存進工作設定（會員寫回帳號，訪客只在這次開啟期間）
+async function saveWorkplace(workplace) {
+  const saved = await workSetup.saveProfile({ ...workSetup.profile.value, workplace })
+  showToast(saved.workplace ? t('common.saved') : t('shiftCard.workplaceCleared'))
+}
+
 // 首頁「調整上下班時間」：不切換分頁，直接打開那天的當天面板並捲到時間欄位
 // （同一個面板、同一套薪資計算與未儲存提醒）
 async function openDayEditorFromHome(date) {
@@ -1687,6 +1693,8 @@ const markDesignatedWorkDate = ({ date, marked }) => {
       :visa-journey="visaJourney"
       :visa-progress="visaProgress"
       :display-currency="dashboardCurrency"
+      :workplace="workSetup.profile.value.workplace"
+      @save-workplace="saveWorkplace"
       @change-currency="showCurrencyPicker = true"
       @visa-setup="visaSetupOpen = true"
       @import-history="openHistoryWizard"

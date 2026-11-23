@@ -80,6 +80,22 @@ export function getFocusShift(records, now) {
   return { kind: 'none', shift: null }
 }
 
+/**
+ * 上班中「今天已賺」：班表預估稅前薪資 × 已經過的時間比例（四捨五入到 cents）。
+ * 只是讓人有感的即時估計：不知道 Smoko／休息的實際時段，也不區分班內不同加成，
+ * 所以按整個班的時間平均分攤；開始前是 0，下班後就是整個班的預估金額。
+ * @param {{ start: Date, end: Date, grossCents: number } | null} shift toShift 的結果
+ * @param {Date} now
+ * @returns {{ earnedCents: number, fraction: number }}
+ */
+export function getEarnedSoFar(shift, now) {
+  if (!shift) return { earnedCents: 0, fraction: 0 }
+  const total = shift.end.getTime() - shift.start.getTime()
+  const elapsed = now.getTime() - shift.start.getTime()
+  const fraction = total > 0 ? Math.min(1, Math.max(0, elapsed / total)) : 0
+  return { earnedCents: Math.round((shift.grossCents || 0) * fraction), fraction }
+}
+
 /** 分鐘 → 「6 小時 10 分」 */
 export function formatDuration(/** @type {number} */ minutes) {
   const total = Math.max(0, Math.round(Number(minutes) || 0))

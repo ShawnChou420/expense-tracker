@@ -275,7 +275,9 @@
     "targetNote": "개인 추적용이며 비자 자격을 의미하지 않습니다.",
     "saveTarget": "목표 저장",
     "currencyAria": "표시 통화: {currency}, 눌러서 변경",
-    "quickActionsAria": "빠른 작업"
+    "quickActionsAria": "빠른 작업",
+    "hideAmounts": "금액 숨기기",
+    "showAmounts": "금액 표시"
   },
   "payroll": {
     "title": "급여 및 근무표",
@@ -704,7 +706,9 @@
     "source": "출처: NSW FuelCheck. 실제 가격은 주유소 표시가 우선합니다.",
     "justUpdated": "방금 업데이트",
     "minutesAgo": "{minutes}분 전 업데이트",
-    "hoursAgo": "{hours}시간 전 업데이트"
+    "hoursAgo": "{hours}시간 전 업데이트",
+    "navigateTo": "{name}까지 길찾기",
+    "showDistance": "현재 위치로 거리 표시"
   },
   "more": {
     "title": "더 보기",
@@ -786,7 +790,7 @@
       "NONE": "지금은 안 함"
     },
     "goalDetails": {
-      "SECOND": "3개월, 최소 88일(달력 기준) 상당",
+      "SECOND": "2027/2/28까지 완료·신청 시 88일, 이후 120일",
       "THIRD": "6개월, 최소 179일(달력 기준) 상당",
       "NONE": "홈에 진행을 표시하지 않으며 근무 기록은 유지돼요"
     },
@@ -826,7 +830,9 @@
     "workStartHint": "실제로 지정 근무(해당 업종·우편번호)를 시작한 날짜를 입력하세요.",
     "alreadyStarted": "이미 시작했어요",
     "setupDisclaimer": "진행도는 기록을 바탕으로 한 개인 추정치이며 내무부의 판단이 아닙니다.",
-    "saveAndTrack": "저장하고 기록 시작"
+    "saveAndTrack": "저장하고 기록 시작",
+    "ruleTransitional": "전환 기간: {date}까지 88일을 마치고 세컨드 비자를 신청해야 88일이 적용돼요. 늦으면 120일이에요.",
+    "ruleNew": "{date}부터 세컨드 비자는 120일이며, 신청 전에 등록·선정이 필요해요. 이전에 한 일도 인정돼요."
   },
   "language": {
     "label": "언어",
@@ -900,13 +906,22 @@
     "paidTime": "예상 유급 시간 {duration}",
     "smokoDeducted": "· Smoko 공제 {duration}",
     "estimatedGross": "예상 세전 급여",
+    "earnedSoFar": "지금까지 번 돈 (추정)",
+    "fullShiftEstimate": "근무 전체 예상 {amount}",
     "adjustTimes": "출퇴근 시간 조정",
     "noRates": "급여 요율이 없어요. 급여명세서를 올리거나 직접 설정하세요.",
     "uploadPayslip": "급여명세서 올리기",
     "manualSetup": "직접 설정",
     "next": "다음 근무 · {when}",
     "adjustNext": "다음 근무 시간 조정",
-    "noUpcoming": "예정된 근무가 없어요. 기록해 보세요"
+    "noUpcoming": "예정된 근무가 없어요. 기록해 보세요",
+    "navigate": "{place}까지 길찾기",
+    "setWorkplace": "근무지를 설정하고 한 번에 길찾기",
+    "editWorkplace": "근무지 수정",
+    "workplaceTitle": "근무지",
+    "workplacePlaceholder": "예: Baiada Pendle Hill 또는 전체 주소",
+    "workplaceHint": "지도 길찾기를 여는 데만 사용하며, 근무 설정에 저장됩니다.",
+    "workplaceCleared": "근무지를 지웠어요"
   },
   "dayLife": {
     "loadFailed": "생활 기록을 불러오지 못했습니다: {error}",

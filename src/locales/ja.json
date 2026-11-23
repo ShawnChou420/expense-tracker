@@ -275,7 +275,9 @@
     "targetNote": "個人的な記録用であり、ビザの資格を示すものではありません。",
     "saveTarget": "目標を保存",
     "currencyAria": "表示通貨：{currency}（タップで変更）",
-    "quickActionsAria": "クイック操作"
+    "quickActionsAria": "クイック操作",
+    "hideAmounts": "金額を隠す",
+    "showAmounts": "金額を表示"
   },
   "payroll": {
     "title": "給与とシフト",
@@ -704,7 +706,9 @@
     "source": "出典：NSW FuelCheck。実際の価格はスタンドの表示が優先されます。",
     "justUpdated": "たった今更新",
     "minutesAgo": "{minutes} 分前に更新",
-    "hoursAgo": "{hours} 時間前に更新"
+    "hoursAgo": "{hours} 時間前に更新",
+    "navigateTo": "{name} へのルート",
+    "showDistance": "現在地を使って距離を表示"
   },
   "more": {
     "title": "その他",
@@ -786,7 +790,7 @@
       "NONE": "今は対象外"
     },
     "goalDetails": {
-      "SECOND": "3 か月（暦日 88 日相当以上）",
+      "SECOND": "2027/2/28までに完了・申請：88日、それ以降：120日",
       "THIRD": "6 か月（暦日 179 日相当以上）",
       "NONE": "ホームに進捗を表示しません。勤務記録はそのまま残ります"
     },
@@ -826,7 +830,9 @@
     "workStartHint": "指定業務（対象の業種・郵便番号）を実際に始めた日付を入力してください。",
     "alreadyStarted": "すでに始めています",
     "setupDisclaimer": "進捗は記録に基づく個人的な試算であり、内務省の判断ではありません。",
-    "saveAndTrack": "保存して記録を開始"
+    "saveAndTrack": "保存して記録を開始",
+    "ruleTransitional": "移行期間：{date}までに88日を終えてセカンドを申請した場合のみ88日。間に合わなければ120日になります。",
+    "ruleNew": "{date}からセカンドは120日。申請前に登録・選出が必要です。それ以前の仕事もカウントされます。"
   },
   "language": {
     "label": "言語",
@@ -900,13 +906,22 @@
     "paidTime": "支払対象 {duration}（予測）",
     "smokoDeducted": "・Smoko 控除 {duration}",
     "estimatedGross": "予測税引前給与",
+    "earnedSoFar": "ここまでの稼ぎ（目安）",
+    "fullShiftEstimate": "シフト全体の見込み {amount}",
     "adjustTimes": "出退勤時間を調整",
     "noRates": "給与レートが未設定です。給与明細をアップロードするか手動で設定してください。",
     "uploadPayslip": "給与明細をアップロード",
     "manualSetup": "手動で設定",
     "next": "次のシフト・{when}",
     "adjustNext": "次のシフトを調整",
-    "noUpcoming": "今後のシフトがありません。登録しましょう"
+    "noUpcoming": "今後のシフトがありません。登録しましょう",
+    "navigate": "{place} へのルート",
+    "setWorkplace": "職場を設定してワンタップでナビ",
+    "editWorkplace": "職場を編集",
+    "workplaceTitle": "職場",
+    "workplacePlaceholder": "例：Baiada Pendle Hill または住所",
+    "workplaceHint": "地図のナビを開くためだけに使います。勤務設定に保存されます。",
+    "workplaceCleared": "職場を削除しました"
   },
   "dayLife": {
     "loadFailed": "生活記録を読み込めませんでした：{error}",

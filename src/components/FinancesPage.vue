@@ -54,6 +54,8 @@ const entries = ref([])
 const salaryDeposits = ref(null)
 const loading = ref(false)
 const loadError = ref('')
+// 一般收入（financial_entry）讀不到時（例如後端還沒更新）：其他收支照常顯示，只提示這一項
+const entriesUnavailable = ref(false)
 
 const range = computed(() =>
   period.value === 'custom'
@@ -180,7 +182,7 @@ async function refresh() {
       expenseRepository.list(),
       passengerRepository.list(),
       salaryDepositRepository.list().catch(() => null),
-      financialEntryRepository.list(),
+      financialEntryRepository.list().catch(() => null),
     ])
     if (current !== seq) return
     trips.value = nextTrips || []
@@ -188,6 +190,7 @@ async function refresh() {
     passengers.value = nextPassengers || []
     salaryDeposits.value = nextDeposits
     entries.value = nextEntries || []
+    entriesUnavailable.value = nextEntries === null
     loadError.value = ''
   } catch (error) {
     if (current === seq) loadError.value = /** @type {Error} */ (error).message
@@ -287,6 +290,9 @@ defineExpose({ openSheet })
     </section>
 
     <p v-if="loadError" class="finances-page__error">{{ loadError }}</p>
+    <p v-else-if="entriesUnavailable" class="finances-page__error" data-testid="finances-entries-unavailable">
+      {{ t('finances.page.entriesUnavailable') }}
+    </p>
 
     <section class="actual app-page__card" data-testid="finances-actual">
       <div class="actual__net">

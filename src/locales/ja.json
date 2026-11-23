@@ -1711,7 +1711,8 @@
       "fareOf": "{name} さんの相乗り運賃",
       "badgeUnpaid": "未収",
       "badgePartial": "受取済み {amount}",
-      "badgeReceived": "受取済み"
+      "badgeReceived": "受取済み",
+      "entriesUnavailable": "一般の収入を読み込めません。以下の金額は支出・相乗り運賃・給与の入金のみです。"
     }
   },
   "incomeCategories": {

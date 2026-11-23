@@ -1711,7 +1711,8 @@
       "fareOf": "Fare from {name}",
       "badgeUnpaid": "Unpaid",
       "badgePartial": "Received {amount}",
-      "badgeReceived": "Received"
+      "badgeReceived": "Received",
+      "entriesUnavailable": "Other income can't be loaded right now. The amounts below only include expenses, carpool fares and pay deposits."
     }
   },
   "incomeCategories": {

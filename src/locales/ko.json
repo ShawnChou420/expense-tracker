@@ -1711,7 +1711,8 @@
       "fareOf": "{name} 님 카풀 요금",
       "badgeUnpaid": "미수",
       "badgePartial": "{amount} 받음",
-      "badgeReceived": "받음"
+      "badgeReceived": "받음",
+      "entriesUnavailable": "일반 수입을 지금 불러올 수 없습니다. 아래 금액은 지출, 카풀 요금, 급여 입금만 포함합니다."
     }
   },
   "incomeCategories": {

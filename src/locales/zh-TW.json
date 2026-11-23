@@ -1711,7 +1711,8 @@
       "fareOf": "{name} 的車資",
       "badgeUnpaid": "未收",
       "badgePartial": "已收 {amount}",
-      "badgeReceived": "已收"
+      "badgeReceived": "已收",
+      "entriesUnavailable": "一般收入暫時讀不到，下方金額只含支出、車資與薪資入帳。"
     }
   },
   "incomeCategories": {

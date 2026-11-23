@@ -481,7 +481,8 @@
     "markPayment": "標記實際付款",
     "paymentHint": "到期日 {date}；首頁會依下方付款日計入支出。",
     "confirmPaid": "確認已付款",
-    "quickCategoryAria": "分類"
+    "quickCategoryAria": "分類",
+    "scanReceipt": "掃描收據"
   },
   "trips": {
     "title": "車資紀錄",
@@ -1619,5 +1620,42 @@
     "restoreDefault": "恢復「{name}」預設時間 {start}–{end}",
     "dayEditorNote": "這裡改的是每週固定班表；之後在班表上單獨修改某一天，不會改到這裡。",
     "applyCount": "套用到 {count} 天"
+  },
+  "receipt": {
+    "scanTitle": "掃描收據",
+    "resultTitle": "辨識結果",
+    "lead": "拍下超市收據，在這台裝置上辨識文字。",
+    "tipFlat": "把收據攤平，整張放進畫面",
+    "tipLight": "光線充足，避免反光和陰影",
+    "tipPrivacy": "照片不會上傳，也不會保存",
+    "takePhoto": "拍照",
+    "chooseFromGallery": "從相簿選擇",
+    "cameraHint": "相機打不開時（例如沒有權限），可以改從相簿選擇或手動記帳。",
+    "manualEntry": "改用手動記帳",
+    "preparing": "正在處理照片…",
+    "previewAlt": "收據照片預覽",
+    "rotate": "旋轉",
+    "retake": "重拍",
+    "startRecognition": "開始辨識",
+    "loadingModel": "正在準備辨識引擎…",
+    "recognizing": "正在辨識文字…",
+    "firstTimeDownload": "第一次使用需要下載約 7 MB 的辨識模型，之後會存在這台裝置上。",
+    "resultMeta": "耗時 {seconds} 秒・平均信心 {confidence}%・共 {lines} 行",
+    "noText": "沒有辨識到文字，請在光線充足的地方重拍。",
+    "lowConfidenceLines": "有 {count} 行辨識信心較低（標黃），確認時請特別檢查。",
+    "pocNote": "預覽版：目前只顯示辨識文字，自動整理品項與記帳會在下一版加入。",
+    "scanAnother": "再掃一張",
+    "retry": "重新辨識",
+    "tryAgain": "重新選擇照片",
+    "errors": {
+      "NOT_IMAGE": "這不是圖片檔，請選擇收據照片。",
+      "TOO_LARGE": "照片太大（超過 30 MB），請重拍或選較小的照片。",
+      "UNSUPPORTED": "無法讀取這種圖片格式，請改用相機拍照或選 JPEG／PNG。",
+      "MEMORY": "裝置記憶體不足，請關閉其他 App 後重拍，或靠近一點只拍收據。",
+      "CANCELLED": "沒有選擇照片。",
+      "UNKNOWN": "照片處理失敗，請再試一次。",
+      "OCR_FAILED": "辨識失敗，可以重試或改用手動記帳。",
+      "OFFLINE": "第一次使用需要網路下載辨識模型，請連線後再試。"
+    }
   }
 }

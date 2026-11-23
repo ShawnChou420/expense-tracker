@@ -11,6 +11,6 @@
     "noImplicitAny": false,
     "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["src/domain/**/*.js", "src/repositories/**/*.js"],
+  "include": ["src/domain/**/*.js", "src/repositories/**/*.js", "src/services/receipt/**/*.js"],
   "exclude": ["node_modules", "dist", "android"]
 }

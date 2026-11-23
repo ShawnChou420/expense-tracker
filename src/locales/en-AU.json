@@ -481,7 +481,8 @@
     "markPayment": "Record payment",
     "paymentHint": "Due {date}. The home screen counts it on the payment date below.",
     "confirmPaid": "Confirm payment",
-    "quickCategoryAria": "Category"
+    "quickCategoryAria": "Category",
+    "scanReceipt": "Scan receipt"
   },
   "trips": {
     "title": "Carpool fare records",
@@ -1619,5 +1620,42 @@
     "restoreDefault": "Restore “{name}” default times {start}–{end}",
     "dayEditorNote": "This changes your fixed weekly roster; editing a single day on the roster later won't change it.",
     "applyCount": "Apply to {count} days"
+  },
+  "receipt": {
+    "scanTitle": "Scan receipt",
+    "resultTitle": "Recognition result",
+    "lead": "Take a photo of your supermarket receipt. The text is read on this device.",
+    "tipFlat": "Lay the receipt flat and fit the whole thing in the frame",
+    "tipLight": "Use good light and avoid glare or shadows",
+    "tipPrivacy": "The photo is never uploaded or saved",
+    "takePhoto": "Take photo",
+    "chooseFromGallery": "Choose from photos",
+    "cameraHint": "If the camera won't open (for example, no permission), choose from photos or enter manually.",
+    "manualEntry": "Enter manually instead",
+    "preparing": "Preparing photo…",
+    "previewAlt": "Receipt photo preview",
+    "rotate": "Rotate",
+    "retake": "Retake",
+    "startRecognition": "Read receipt",
+    "loadingModel": "Preparing the text reader…",
+    "recognizing": "Reading text…",
+    "firstTimeDownload": "The first time, about 7 MB of reading data is downloaded and kept on this device.",
+    "resultMeta": "{seconds}s · average confidence {confidence}% · {lines} lines",
+    "noText": "No text was found. Try again in better light.",
+    "lowConfidenceLines": "{count} lines have low confidence (highlighted). Check them carefully.",
+    "pocNote": "Preview: only the raw text is shown for now. Item parsing and logging come in the next version.",
+    "scanAnother": "Scan another",
+    "retry": "Try reading again",
+    "tryAgain": "Choose another photo",
+    "errors": {
+      "NOT_IMAGE": "That isn't an image. Please choose a receipt photo.",
+      "TOO_LARGE": "The photo is too large (over 30 MB). Retake it or choose a smaller one.",
+      "UNSUPPORTED": "This image format can't be read. Use the camera or choose a JPEG/PNG.",
+      "MEMORY": "Not enough memory. Close other apps and retake, or move closer so only the receipt is in frame.",
+      "CANCELLED": "No photo was selected.",
+      "UNKNOWN": "Couldn't process the photo. Please try again.",
+      "OCR_FAILED": "Reading failed. Try again or enter it manually.",
+      "OFFLINE": "The first scan needs internet to download reading data. Connect and try again."
+    }
   }
 }

@@ -200,7 +200,7 @@ function resetTripForm() {
   chargeForms.value = []
 }
 
-function openTripForm(trip, passengerId = null) {
+function openTripForm(trip, passengerId = null, options = {}) {
   if (trip) {
     editingTripId.value = trip.id
     tripForm.value = {
@@ -219,7 +219,7 @@ function openTripForm(trip, passengerId = null) {
     }))
   } else {
     resetTripForm()
-    tripForm.value.date = selectedWeekDate.value
+    tripForm.value.date = options.date || selectedWeekDate.value
     if (passengerId) selectedPassengerIds.value = [passengerId]
   }
   showTripForm.value = true

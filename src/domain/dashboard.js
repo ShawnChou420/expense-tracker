@@ -2,6 +2,7 @@ import { formatLocalDate, getWeekRange, isDateInRange, parseLocalDate } from './
 import { EXPENSE_GROUPS } from './expenses.js'
 import { dollarsToCents, sumCents } from './money.js'
 import { getChargeReceivedCents } from './trips.js'
+import { getSettledEntryTransactions } from './finances.js'
 
 export const EXPENSE_COLORS = Object.freeze({
   HOUSING: '#1976d2',
@@ -35,8 +36,17 @@ export function getDatesInRange(range) {
   return dates
 }
 
-/** @param {{ trips?: Array<any>, expenses?: Array<any>, salaryDeposits?: Array<any> | null }} sources */
-export function getActualTransactions({ trips = [], expenses = [], salaryDeposits = null }) {
+/**
+ * 實際收支（依收款／付款日）。entries：通用手動交易，只有已入帳、有 AUD 金額的一般收入與外幣支出會加入；
+ * 投資獲利、退款、移轉、預計收入、未換算外幣都不算。不傳 entries 時結果與 3.0 之前相同。
+ * @param {{ trips?: Array<any>, expenses?: Array<any>, salaryDeposits?: Array<any> | null, entries?: Array<any> }} sources
+ */
+export function getActualTransactions({
+  trips = [],
+  expenses = [],
+  salaryDeposits = null,
+  entries = [],
+}) {
   const tripIncome = trips.flatMap((trip) =>
     (trip.charges || []).flatMap((charge) => {
       if (Array.isArray(charge.payments)) {
@@ -64,8 +74,9 @@ export function getActualTransactions({ trips = [], expenses = [], salaryDeposit
         Number.isSafeInteger(deposit.amountCents),
     )
     .map((deposit) => ({ date: deposit.paidAt, amountCents: deposit.amountCents, kind: 'salary' }))
-  const income = [...tripIncome, ...salaryIncome]
-  const outgoings = expenses.flatMap((expense) => {
+  const manual = getSettledEntryTransactions(entries)
+  const income = [...tripIncome, ...salaryIncome, ...manual.income]
+  const legacyOutgoings = expenses.flatMap((expense) => {
     if (expense.category === 'INVESTMENT_LOSS') return []
     if (Array.isArray(expense.payments)) {
       return expense.payments
@@ -89,6 +100,7 @@ export function getActualTransactions({ trips = [], expenses = [], salaryDeposit
       .filter((date) => parseLocalDate(date))
       .map((date) => ({ date, amountCents: expense.amountCents, group: expense.group }))
   })
+  const outgoings = [...legacyOutgoings, ...manual.outgoings]
   return { income, outgoings }
 }
 
@@ -125,15 +137,16 @@ export function getExpenseDistribution(outgoings, range) {
   return { totalCents, detail, chart }
 }
 
-/** @param {{ range: {start: string, end: string} | null, workRecords?: Array<any>, trips?: Array<any>, expenses?: Array<any>, salaryDeposits?: Array<any> | null }} sources */
+/** @param {{ range: {start: string, end: string} | null, workRecords?: Array<any>, trips?: Array<any>, expenses?: Array<any>, salaryDeposits?: Array<any> | null, entries?: Array<any> }} sources */
 export function getDashboardSummary({
   range,
   workRecords = [],
   trips = [],
   expenses = [],
   salaryDeposits = null,
+  entries = [],
 }) {
-  const { income, outgoings } = getActualTransactions({ trips, expenses, salaryDeposits })
+  const { income, outgoings } = getActualTransactions({ trips, expenses, salaryDeposits, entries })
   const periodIncome = income.filter((entry) => isDateInRange(entry.date, range))
   const periodOutgoings = outgoings.filter((entry) => isDateInRange(entry.date, range))
   const periodWorkRecords = workRecords.filter(
@@ -162,6 +175,11 @@ export function getDashboardSummary({
         .filter((entry) => entry.date === date && entry.kind === 'salary')
         .map((entry) => entry.amountCents),
     )
+    const otherCents = sumCents(
+      periodIncome
+        .filter((entry) => entry.date === date && entry.kind === 'other')
+        .map((entry) => entry.amountCents),
+    )
     const workCents = sumCents(
       workRecords
         .filter((record) => record.workDate === date && record.shiftType !== 'leave')
@@ -169,9 +187,10 @@ export function getDashboardSummary({
     )
     return {
       date,
-      actualCents: tripCents + salaryCents,
+      actualCents: tripCents + salaryCents + otherCents,
       tripCents,
       salaryCents,
+      otherCents,
       estimatedCents: workCents,
     }
   })

@@ -103,7 +103,8 @@ function selectCurrentWeek() {
   filter.value = 'ALL'
 }
 
-function openForm(expense) {
+/** @param {any} [expense] 編輯的紀錄；@param {{ date?: string }} [options] 新增時預設日期（日曆當日操作） */
+function openForm(expense, options = {}) {
   const source = expense && expenses.value.find((record) => record.id === expense.sourceId)
   editingId.value = source?.id || null
   form.value = source
@@ -120,7 +121,7 @@ function openForm(expense) {
           source.payments?.find((payment) => payment.occurrenceDate === source.date)?.paidAt ||
           source.date,
       }
-    : { ...emptyForm(), date: selectedDate.value }
+    : { ...emptyForm(), date: options.date || selectedDate.value }
   showAllCategories.value = false
   moreOptionsOpen.value = Boolean(
     source && (source.frequency !== 'NONE' || source.note || source.status !== 'PAID'),

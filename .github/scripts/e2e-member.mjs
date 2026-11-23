@@ -137,7 +137,7 @@ try {
   check('staysSignedInAfterReload', true)
 
   // 5. 填滿此月：預覽 → 確認
-  await tab('薪資')
+  await tab('日曆')
   await page.getByRole('button', { name: '填滿此月' }).click()
   await page.getByText(/加入 \d+ 筆紀錄/).waitFor()
   const planned = await page.locator('.fill__list li').count()
@@ -180,7 +180,7 @@ try {
   await signIn('login')
   check('payslipRestored', await page.getByText('最近一期薪資').isVisible())
   await shot('member-home-after-relogin')
-  await tab('薪資')
+  await tab('日曆')
   const settingsView = page.getByRole('tab', { name: '設定', exact: true })
   if (await settingsView.count()) await settingsView.click()
   await page.locator('.work-setup-card').scrollIntoViewIfNeeded()
@@ -204,6 +204,9 @@ try {
   await day(15).click() // 11/15 週日，沒有班表
   await sheet.waitFor()
   await page.waitForTimeout(300)
+  // 3.0：點日期先看當日摘要，按「新增班表／編輯班表」才進入時間編輯
+  await sheet.locator('[data-testid="day-edit-shift"]').click()
+  await page.waitForTimeout(200)
   await times.nth(0).fill('0900')
   await times.nth(0).press('Enter')
   await times.nth(1).fill('17:00')
@@ -223,7 +226,7 @@ try {
   await page.waitForTimeout(2500) // 等班表寫入後端
   await page.reload({ waitUntil: 'networkidle' })
   await page.getByText('最近一期薪資').waitFor({ timeout: 15000 })
-  await tab('薪資')
+  await tab('日曆')
   await day(15).click()
   await sheet.waitFor()
   await page.waitForTimeout(400)

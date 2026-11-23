@@ -1,5 +1,5 @@
 <script setup>
-// 首頁快捷操作：三個等寬按鈕，每個都直接連到既有頁面或表單。
+// 首頁快捷操作：等寬按鈕（依數量分欄），每個都直接連到既有頁面或表單。
 defineProps({
   actions: { type: Array, required: true }, // [{ key, label, icon }]
 })
@@ -7,7 +7,11 @@ const emit = defineEmits(['select'])
 </script>
 
 <template>
-  <nav class="quick-actions" :aria-label="$t('dashboard.quickActionsAria')">
+  <nav
+    class="quick-actions"
+    :style="{ '--quick-action-count': actions.length }"
+    :aria-label="$t('dashboard.quickActionsAria')"
+  >
     <button
       v-for="action in actions"
       :key="action.key"
@@ -24,8 +28,8 @@ const emit = defineEmits(['select'])
 <style scoped>
 .quick-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(var(--quick-action-count, 3), minmax(0, 1fr));
+  gap: 8px;
 }
 .quick-actions__item {
   display: grid;
@@ -33,7 +37,7 @@ const emit = defineEmits(['select'])
   gap: 8px;
   min-width: 0;
   min-height: 84px;
-  padding: 14px 6px 12px;
+  padding: 12px 4px 10px;
   border: 1px solid var(--color-border);
   border-radius: var(--page-card-radius);
   background: var(--color-surface);
@@ -63,7 +67,8 @@ const emit = defineEmits(['select'])
   font-size: 21px;
 }
 .quick-actions__label {
-  font-size: 13px;
+  overflow-wrap: anywhere;
+  font-size: 12px;
   font-weight: 700;
   line-height: 1.3;
   text-align: center;

@@ -305,6 +305,7 @@ function onHeroAction() {
 const quickActions = computed(() => [
   { key: 'shift', label: t('dashboard.addShift'), icon: 'calendar-o' },
   { key: 'expense', label: t('dashboard.addExpense'), icon: 'records' },
+  { key: 'income', label: t('dashboard.addIncome'), icon: 'gold-coin-o' },
   { key: 'trip', label: t('dashboard.addTrip'), icon: 'logistics' },
 ])
 

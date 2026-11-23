@@ -15,7 +15,8 @@ describe('toMinorUnits', () => {
     expect(toMinorUnits('0.01', 'AUD')).toBe(1)
   })
   it('rejects invalid, zero, negative, too many decimals and unknown currencies', () => {
-    for (const value of ['', 'abc', '0', '-5', '1.234', '1e3']) expect(toMinorUnits(value, 'AUD')).toBeNull()
+    for (const value of ['', 'abc', '0', '-5', '1.234', '1e3'])
+      expect(toMinorUnits(value, 'AUD')).toBeNull()
     expect(toMinorUnits('10', 'JPY')).toBeNull()
   })
 })
@@ -48,8 +49,18 @@ describe('fx conversion', () => {
     })
     expect(resolveConversion({ amountMinor: 500, currency: 'TWD' }).convertedAudCents).toBeNull()
     expect(
-      resolveConversion({ amountMinor: 1000, currency: 'USD', fxRate: '1.5', fxRateDate: '2026-11-20' }),
-    ).toEqual({ convertedAudCents: 1500, fxRate: '1.5', fxRateDate: '2026-11-20', fxSource: 'MANUAL' })
+      resolveConversion({
+        amountMinor: 1000,
+        currency: 'USD',
+        fxRate: '1.5',
+        fxRateDate: '2026-11-20',
+      }),
+    ).toEqual({
+      convertedAudCents: 1500,
+      fxRate: '1.5',
+      fxRateDate: '2026-11-20',
+      fxSource: 'MANUAL',
+    })
   })
   it('formats the original amount in its own currency', () => {
     expect(formatOriginalAmount(150000, 'TWD')).toBe('NT$1,500')

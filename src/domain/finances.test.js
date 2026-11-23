@@ -85,7 +85,12 @@ describe('P0 1：一般收入只進已確認收入，不影響薪資、集簽、
   })
 
   it('home dashboard actual income includes settled income; without entries nothing changes', () => {
-    const base = { range: week, trips: [], expenses: [], salaryDeposits: [deposit('2026-11-20', 90000)] }
+    const base = {
+      range: week,
+      trips: [],
+      expenses: [],
+      salaryDeposits: [deposit('2026-11-20', 90000)],
+    }
     const legacy = getDashboardSummary(base)
     expect(legacy.actualIncomeCents).toBe(90000)
     expect(getDashboardSummary({ ...base, entries: [] })).toEqual(legacy)
@@ -255,7 +260,12 @@ describe('P0 6：資金移轉不算收入或支出', () => {
   })
 
   it('planned income is a receivable, not confirmed income', () => {
-    const bonus = entry({ date: '2026-11-21', category: 'BONUS', status: 'PLANNED', amountMinor: 10000 })
+    const bonus = entry({
+      date: '2026-11-21',
+      category: 'BONUS',
+      status: 'PLANNED',
+      amountMinor: 10000,
+    })
     const summary = getFinanceSummary({ range: week, entries: [bonus] })
     expect(summary.confirmedIncomeCents).toBe(0)
     expect(summary.receivable.plannedIncomeCents).toBe(10000)

@@ -277,7 +277,8 @@
     "currencyAria": "表示通貨：{currency}（タップで変更）",
     "quickActionsAria": "クイック操作",
     "hideAmounts": "金額を隠す",
-    "showAmounts": "金額を表示"
+    "showAmounts": "金額を表示",
+    "addIncome": "収入を追加"
   },
   "payroll": {
     "title": "給与とシフト",
@@ -1619,5 +1620,59 @@
     "restoreDefault": "「{name}」の既定時間 {start}–{end} に戻す",
     "dayEditorNote": "ここで変えるのは毎週の固定シフトです。後でシフト表の特定の日を変えても、ここには反映されません。",
     "applyCount": "{count} 日に適用"
+  },
+  "finances": {
+    "addIncome": "収入を追加",
+    "editEntry": "記録を編集",
+    "addEntry": "収支を記録",
+    "typeAria": "記録の種類",
+    "typeIncome": "収入",
+    "typeExpense": "外貨の支出",
+    "typeTransfer": "資金移動",
+    "currencyAria": "通貨",
+    "category": "カテゴリ",
+    "statusAria": "状態",
+    "statusSettled": "入金済み",
+    "statusPlanned": "予定",
+    "statusPaid": "支払済み",
+    "titleLabel": "説明",
+    "titlePlaceholder": "例：自転車を売った",
+    "amountAria": "金額",
+    "fxRate": "為替レート",
+    "fxRateLabel": "1 {currency} = ? AUD",
+    "useTodayRate": "今日のレートを使う",
+    "fxNoRate": "レートがない場合は換算せず、AUD の合計にも含めません。",
+    "fxConverted": "約 {amount}",
+    "fxAutoDate": "自動レートは {date} のもので、取引日のレートとは限りません。",
+    "fxUnavailable": "現在レートを取得できません。手入力するか空欄のままにしてください。",
+    "transferHint": "資金移動（例：台湾ドル口座から豪ドル口座）は収入でも支出でもなく、記録のみです。",
+    "incomeHint": "一般の収入は給与試算、ビザ日数、労働時間、年間給与に影響しません。",
+    "investmentGainHint": "確定した投資利益は投資成績として別に表示し、一般の収入には含めません。",
+    "refundHint": "返金は別に表示し、収入にも支出の減額にも含めません。",
+    "foreignExpenseHint": "豪ドルの支出（定期支出を含む）は支出ページで記録してください。ここでは台湾ドル・米ドルの単発支出を記録します。",
+    "save": "保存",
+    "saved": "保存しました",
+    "deleted": "削除しました",
+    "deleteConfirm": "この記録を削除しますか？",
+    "unconverted": "未換算",
+    "errors": {
+      "date": "有効な日付を選んでください",
+      "type": "記録の種類を選んでください",
+      "status": "状態を選んでください",
+      "currency": "現在は AUD・TWD・USD のみ対応しています",
+      "category": "カテゴリを選んでください",
+      "audExpense": "豪ドルの支出は支出ページで記録してください",
+      "amount": "0 より大きい有効な金額を入力してください",
+      "fxRate": "為替レートが正しくありません（0 より大きく、小数 10 桁まで）"
+    }
+  },
+  "incomeCategories": {
+    "SIDE_JOB": "副業",
+    "SECONDHAND_SALE": "中古品の売却",
+    "BONUS": "ボーナス",
+    "GIFT": "お祝い・贈与",
+    "REFUND": "返金",
+    "INVESTMENT_GAIN": "確定した投資利益",
+    "OTHER_INCOME": "その他の収入"
   }
 }

@@ -277,7 +277,8 @@
     "currencyAria": "Display currency: {currency}, tap to change",
     "quickActionsAria": "Quick actions",
     "hideAmounts": "Hide amounts",
-    "showAmounts": "Show amounts"
+    "showAmounts": "Show amounts",
+    "addIncome": "Add income"
   },
   "payroll": {
     "title": "Pay & shifts",
@@ -1619,5 +1620,59 @@
     "restoreDefault": "Restore “{name}” default times {start}–{end}",
     "dayEditorNote": "This changes your fixed weekly roster; editing a single day on the roster later won't change it.",
     "applyCount": "Apply to {count} days"
+  },
+  "finances": {
+    "addIncome": "Add income",
+    "editEntry": "Edit entry",
+    "addEntry": "Add entry",
+    "typeAria": "Entry type",
+    "typeIncome": "Income",
+    "typeExpense": "Foreign expense",
+    "typeTransfer": "Transfer",
+    "currencyAria": "Currency",
+    "category": "Category",
+    "statusAria": "Status",
+    "statusSettled": "Received",
+    "statusPlanned": "Expected",
+    "statusPaid": "Paid",
+    "titleLabel": "Description",
+    "titlePlaceholder": "e.g. Sold my bike",
+    "amountAria": "Amount",
+    "fxRate": "Exchange rate",
+    "fxRateLabel": "1 {currency} = ? AUD",
+    "useTodayRate": "Use today's rate",
+    "fxNoRate": "Without a rate it is not converted and not included in AUD totals.",
+    "fxConverted": "About {amount}",
+    "fxAutoDate": "The automatic rate is from {date}, not necessarily the transaction date.",
+    "fxUnavailable": "No rate available right now. Enter one manually or leave it blank.",
+    "transferHint": "A transfer (e.g. TWD account to AUD account) is neither income nor expense; it is just recorded.",
+    "incomeHint": "Other income does not affect pay estimates, visa days, hours or year-to-date pay.",
+    "investmentGainHint": "Realised investment gains are shown under investment performance, not as income.",
+    "refundHint": "Refunds are listed separately: not income, and not deducted from expenses.",
+    "foreignExpenseHint": "Record AUD expenses (including recurring ones) on the Expenses page. Use this for one-off TWD or USD expenses.",
+    "save": "Save",
+    "saved": "Saved",
+    "deleted": "Deleted",
+    "deleteConfirm": "Delete this entry?",
+    "unconverted": "Not converted",
+    "errors": {
+      "date": "Choose a valid date",
+      "type": "Choose an entry type",
+      "status": "Choose a status",
+      "currency": "Only AUD, TWD and USD are supported for now",
+      "category": "Choose a category",
+      "audExpense": "Record AUD expenses on the Expenses page",
+      "amount": "Enter a valid amount greater than 0",
+      "fxRate": "Invalid exchange rate (greater than 0, up to 10 decimals)"
+    }
+  },
+  "incomeCategories": {
+    "SIDE_JOB": "Side job",
+    "SECONDHAND_SALE": "Second-hand sale",
+    "BONUS": "Bonus",
+    "GIFT": "Gift",
+    "REFUND": "Refund",
+    "INVESTMENT_GAIN": "Realised investment gain",
+    "OTHER_INCOME": "Other income"
   }
 }

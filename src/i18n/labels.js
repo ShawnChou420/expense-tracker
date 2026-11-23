@@ -19,3 +19,5 @@ export const leaveTypeShortLabel = (/** @type {string} */ id, /** @type {string=
   labelOr(`leaveTypesShort.${id}`, fallback)
 export const rateLabel = (/** @type {string} */ key, /** @type {string=} */ fallback) =>
   labelOr(`payrollPage.rates.${key}`, fallback)
+export const incomeCategoryLabel = (/** @type {string} */ id, /** @type {string=} */ fallback) =>
+  labelOr(`incomeCategories.${id}`, fallback)

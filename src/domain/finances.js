@@ -343,7 +343,8 @@ export function getFinanceSummary(sources) {
     estimatedPayCents: 0,
     refundCents: 0,
     transferCount: 0,
-    unconverted: /** @type {Array<{ currency: string, amountMinor: number, count: number }>} */ ([]),
+    unconverted:
+      /** @type {Array<{ currency: string, amountMinor: number, count: number }>} */ ([]),
   }
   if (!range || !parseLocalDate(range.start) || !parseLocalDate(range.end)) return empty
   const inRange = (/** @type {string} */ date) => isDateInRange(date, range)

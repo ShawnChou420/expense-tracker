@@ -277,7 +277,8 @@
     "currencyAria": "顯示幣別：{currency}，點擊切換",
     "quickActionsAria": "快捷操作",
     "hideAmounts": "隱藏金額",
-    "showAmounts": "顯示金額"
+    "showAmounts": "顯示金額",
+    "addIncome": "新增收入"
   },
   "payroll": {
     "title": "薪資與班表",
@@ -1619,5 +1620,59 @@
     "restoreDefault": "恢復「{name}」預設時間 {start}–{end}",
     "dayEditorNote": "這裡改的是每週固定班表；之後在班表上單獨修改某一天，不會改到這裡。",
     "applyCount": "套用到 {count} 天"
+  },
+  "finances": {
+    "addIncome": "新增收入",
+    "editEntry": "編輯紀錄",
+    "addEntry": "新增收支紀錄",
+    "typeAria": "紀錄類型",
+    "typeIncome": "收入",
+    "typeExpense": "外幣支出",
+    "typeTransfer": "資金移轉",
+    "currencyAria": "幣別",
+    "category": "分類",
+    "statusAria": "狀態",
+    "statusSettled": "已入帳",
+    "statusPlanned": "預計",
+    "statusPaid": "已付",
+    "titleLabel": "說明",
+    "titlePlaceholder": "例如：賣掉腳踏車",
+    "amountAria": "金額",
+    "fxRate": "匯率",
+    "fxRateLabel": "1 {currency} = ? AUD",
+    "useTodayRate": "使用今日匯率",
+    "fxNoRate": "沒有匯率時不換算，也不會併入 AUD 合計。",
+    "fxConverted": "約 {amount}",
+    "fxAutoDate": "自動匯率是 {date} 的匯率，不一定是交易當天。",
+    "fxUnavailable": "目前取不到匯率，可以手動輸入或先留空。",
+    "transferHint": "資金移轉（例如台幣帳戶換到澳幣帳戶）不算收入或支出，只做紀錄。",
+    "incomeHint": "一般收入不會影響薪資試算、集簽天數、工時與年度薪資。",
+    "investmentGainHint": "已實現投資獲利另列在投資績效，不算一般收入。",
+    "refundHint": "退款另列，不算收入，也不抵減支出。",
+    "foreignExpenseHint": "澳幣支出（含固定支出）請在支出頁記錄；這裡記錄台幣、美金的單次支出。",
+    "save": "儲存",
+    "saved": "已儲存",
+    "deleted": "已刪除",
+    "deleteConfirm": "確定刪除這筆紀錄？",
+    "unconverted": "未換算",
+    "errors": {
+      "date": "請選擇有效日期",
+      "type": "請選擇紀錄類型",
+      "status": "請選擇狀態",
+      "currency": "目前只支援 AUD、TWD、USD",
+      "category": "請選擇分類",
+      "audExpense": "澳幣支出請在支出頁記錄",
+      "amount": "請輸入大於 0 的有效金額",
+      "fxRate": "匯率格式不正確（大於 0，最多 10 位小數）"
+    }
+  },
+  "incomeCategories": {
+    "SIDE_JOB": "副業收入",
+    "SECONDHAND_SALE": "二手出售",
+    "BONUS": "獎金",
+    "GIFT": "禮金",
+    "REFUND": "退款",
+    "INVESTMENT_GAIN": "已實現投資獲利",
+    "OTHER_INCOME": "其他收入"
   }
 }

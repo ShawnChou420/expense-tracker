@@ -26,7 +26,8 @@ describe('shared in-memory ledger repositories', () => {
 
 describe('financialEntryRepository (guest)', () => {
   it('keeps guest entries in memory, notifies readers and is part of the guest snapshot', async () => {
-    const { financialEntryRepository, getGuestLedgerSnapshot } = await import('./appRepositories.js')
+    const { financialEntryRepository, getGuestLedgerSnapshot } =
+      await import('./appRepositories.js')
     let updates = 0
     const unsubscribe = subscribeToLedgerChanges(() => {
       updates += 1

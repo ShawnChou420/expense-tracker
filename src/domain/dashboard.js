@@ -41,7 +41,12 @@ export function getDatesInRange(range) {
  * 投資獲利、退款、移轉、預計收入、未換算外幣都不算。不傳 entries 時結果與 3.0 之前相同。
  * @param {{ trips?: Array<any>, expenses?: Array<any>, salaryDeposits?: Array<any> | null, entries?: Array<any> }} sources
  */
-export function getActualTransactions({ trips = [], expenses = [], salaryDeposits = null, entries = [] }) {
+export function getActualTransactions({
+  trips = [],
+  expenses = [],
+  salaryDeposits = null,
+  entries = [],
+}) {
   const tripIncome = trips.flatMap((trip) =>
     (trip.charges || []).flatMap((charge) => {
       if (Array.isArray(charge.payments)) {

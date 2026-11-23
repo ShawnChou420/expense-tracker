@@ -36,6 +36,7 @@ import BlackoutNoticeSheet from './components/BlackoutNoticeSheet.vue'
 import { formatDailyNet, getEstimatedDailyNet, hasDailyNetActivity } from './domain/dailyNet.js'
 import { useLedgerSnapshot } from './composables/useLedgerSnapshot.js'
 import DayLifeCard from './components/DayLifeCard.vue'
+import FinancialEntrySheet from './components/FinancialEntrySheet.vue'
 import { formatLocalDate, getCalendarDateRange, getMonthRange, getWeekRange } from './domain/date.js'
 import { centsToDollars } from './domain/money.js'
 import { getWeeklyPaySummary } from './domain/weeklyPay.js'
@@ -265,11 +266,20 @@ function handlePageNavigate(target) {
 }
 const expenseTrackerRef = ref(null)
 const tripTrackerRef = ref(null)
+// 通用手動交易（一般收入、外幣支出、資金移轉）表單
+const entrySheet = ref({ show: false, entry: null, type: 'INCOME' })
+function openEntrySheet(type = 'INCOME', entry = null) {
+  entrySheet.value = { show: true, entry, type }
+}
 
 // 首頁快捷操作：切到對應頁面，支出與車資直接打開新增表單
 async function handleQuickAction(action) {
   if (action === 'shift') {
     activeTab.value = 'payroll'
+    return
+  }
+  if (action === 'income') {
+    openEntrySheet('INCOME')
     return
   }
   if (action === 'fill-week') {
@@ -2320,6 +2330,12 @@ const markDesignatedWorkDate = ({ date, marked }) => {
     </div>
     <ShoppingList v-show="activeTab === 'shopping'" :active="activeTab === 'shopping'" @navigate="activeTab = $event" />
 
+    <FinancialEntrySheet
+      v-model:show="entrySheet.show"
+      :entry="entrySheet.entry"
+      :default-type="entrySheet.type"
+      :exchange-rates="exchangeRates"
+    />
     <van-tabbar :model-value="tabbarActive" fixed safe-area-inset-bottom :before-change="beforeTabChange" @update:model-value="activeTab = $event">
       <van-tabbar-item name="dashboard" icon="home-o">{{ t('nav.home') }}</van-tabbar-item>
       <van-tabbar-item name="payroll" icon="balance-o">{{ t('app.tabPay') }}</van-tabbar-item>

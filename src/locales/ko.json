@@ -277,7 +277,8 @@
     "currencyAria": "표시 통화: {currency}, 눌러서 변경",
     "quickActionsAria": "빠른 작업",
     "hideAmounts": "금액 숨기기",
-    "showAmounts": "금액 표시"
+    "showAmounts": "금액 표시",
+    "addIncome": "수입 추가"
   },
   "payroll": {
     "title": "급여 및 근무표",
@@ -1619,5 +1620,59 @@
     "restoreDefault": "‘{name}’ 기본 시간 {start}–{end}(으)로 복원",
     "dayEditorNote": "여기서 바꾸는 건 매주 고정 근무표예요. 나중에 근무표에서 하루만 수정해도 여기는 바뀌지 않아요.",
     "applyCount": "{count}일에 적용"
+  },
+  "finances": {
+    "addIncome": "수입 추가",
+    "editEntry": "기록 수정",
+    "addEntry": "수입·지출 기록",
+    "typeAria": "기록 유형",
+    "typeIncome": "수입",
+    "typeExpense": "외화 지출",
+    "typeTransfer": "자금 이체",
+    "currencyAria": "통화",
+    "category": "분류",
+    "statusAria": "상태",
+    "statusSettled": "입금 완료",
+    "statusPlanned": "예정",
+    "statusPaid": "지불 완료",
+    "titleLabel": "설명",
+    "titlePlaceholder": "예: 자전거 판매",
+    "amountAria": "금액",
+    "fxRate": "환율",
+    "fxRateLabel": "1 {currency} = ? AUD",
+    "useTodayRate": "오늘 환율 사용",
+    "fxNoRate": "환율이 없으면 환산하지 않고 AUD 합계에도 포함하지 않습니다.",
+    "fxConverted": "약 {amount}",
+    "fxAutoDate": "자동 환율은 {date} 기준이며 거래일 환율과 다를 수 있습니다.",
+    "fxUnavailable": "지금은 환율을 가져올 수 없습니다. 직접 입력하거나 비워 두세요.",
+    "transferHint": "자금 이체(예: 대만달러 계좌 → 호주달러 계좌)는 수입도 지출도 아니며 기록만 합니다.",
+    "incomeHint": "일반 수입은 급여 계산, 비자 일수, 근무 시간, 연간 급여에 영향을 주지 않습니다.",
+    "investmentGainHint": "실현된 투자 수익은 투자 성과로 따로 표시하며 일반 수입에 포함하지 않습니다.",
+    "refundHint": "환불은 따로 표시하며 수입에도, 지출 차감에도 포함하지 않습니다.",
+    "foreignExpenseHint": "호주달러 지출(정기 지출 포함)은 지출 페이지에서 기록하세요. 여기서는 대만달러·미국달러 단건 지출을 기록합니다.",
+    "save": "저장",
+    "saved": "저장했습니다",
+    "deleted": "삭제했습니다",
+    "deleteConfirm": "이 기록을 삭제할까요?",
+    "unconverted": "환산 안 됨",
+    "errors": {
+      "date": "올바른 날짜를 선택하세요",
+      "type": "기록 유형을 선택하세요",
+      "status": "상태를 선택하세요",
+      "currency": "현재는 AUD, TWD, USD만 지원합니다",
+      "category": "분류를 선택하세요",
+      "audExpense": "호주달러 지출은 지출 페이지에서 기록하세요",
+      "amount": "0보다 큰 올바른 금액을 입력하세요",
+      "fxRate": "환율 형식이 올바르지 않습니다(0보다 크고 소수점 10자리까지)"
+    }
+  },
+  "incomeCategories": {
+    "SIDE_JOB": "부업",
+    "SECONDHAND_SALE": "중고 판매",
+    "BONUS": "보너스",
+    "GIFT": "선물·축하금",
+    "REFUND": "환불",
+    "INVESTMENT_GAIN": "실현 투자 수익",
+    "OTHER_INCOME": "기타 수입"
   }
 }

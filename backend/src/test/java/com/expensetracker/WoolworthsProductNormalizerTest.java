@@ -55,6 +55,28 @@ class WoolworthsProductNormalizerTest {
     }
 
     @Test
+    void longDescriptionsAreTruncatedInsteadOfRejected() {
+        String longName = "Very long name ".repeat(30);
+        String longBrand = "B".repeat(150);
+        String longUrl = "https://www.woolworths.com.au/shop/productdetails/1/" + "x".repeat(600);
+        var result = normalize(HEADER + "1,\"" + longName + "\"," + longBrand + ",,,,2,,,2026-11-19,2026-11-25,"
+            + longUrl + "\n");
+        assertEquals(List.of(), result.errors());
+        var special = result.specials().getFirst();
+        assertEquals(200, special.name().length());
+        assertTrue(special.name().endsWith("…"));
+        assertEquals(100, special.brand().length());
+        assertNull(special.productUrl());
+    }
+
+    @Test
+    void clipDoesNotSplitSurrogatePairs() {
+        String clipped = WoolworthsProductNormalizer.clip("ab😀cd", 4);
+        assertTrue(clipped.length() <= 4);
+        assertEquals("ab…", clipped);
+    }
+
+    @Test
     void sameProductDifferentSizeIsSeparateProductAndNextWeekIsSeparatePromotion() {
         var result = normalize(HEADER
             + "100,Coke,,375ml,,,1,,,2026-11-19,2026-11-25,\n"

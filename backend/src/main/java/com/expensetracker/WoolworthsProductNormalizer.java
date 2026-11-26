@@ -53,7 +53,7 @@ final class WoolworthsProductNormalizer {
     static Special special(int line, Map<String, String> fields) {
         String id = text(fields, "external_product_id", 40, true);
         if (!id.matches("[A-Za-z0-9_-]+")) throw new IllegalArgumentException("external_product_id 只能有英數字、- 或 _");
-        String name = text(fields, "name", 200, true);
+        String name = clip(text(fields, "name", Integer.MAX_VALUE, true), 200);
         Integer regular = price(fields, "regular_price", false);
         Integer sale = price(fields, "sale_price", true);
         if (regular != null && sale > regular) throw new IllegalArgumentException("特價不可高於原價");
@@ -63,11 +63,12 @@ final class WoolworthsProductNormalizer {
         LocalDate start = date(fields, "promotion_start");
         LocalDate end = date(fields, "promotion_end");
         if (end.isBefore(start)) throw new IllegalArgumentException("promotion_end 不可早於 promotion_start");
-        String url = text(fields, "product_url", 500, false);
+        String url = raw(fields, "product_url");
         if (url != null && !url.startsWith("https://www.woolworths.com.au/"))
             throw new IllegalArgumentException("product_url 必須是 https://www.woolworths.com.au/ 開頭");
-        return new Special(line, id, name, text(fields, "brand", 100, false), text(fields, "package_size", 60, false),
-            text(fields, "category", 60, false), regular, sale, text(fields, "unit_price", 60, false), type, start, end, url);
+        if (url != null && url.length() > 500) url = null; // 網址截斷就打不開，太長時不存
+        return new Special(line, id, name, optional(fields, "brand", 100), optional(fields, "package_size", 60),
+            optional(fields, "category", 60), regular, sale, optional(fields, "unit_price", 60), type, start, end, url);
     }
 
     private static String raw(Map<String, String> fields, String field) {
@@ -75,6 +76,19 @@ final class WoolworthsProductNormalizer {
         if (value == null) return null;
         value = value.trim();
         return value.isEmpty() ? null : value;
+    }
+
+    /** 敘述類欄位：超過資料庫欄位長度時截斷（結尾加 …），不整列拒絕 */
+    private static String optional(Map<String, String> fields, String field, int max) {
+        String value = raw(fields, field);
+        return value == null ? null : clip(value, max);
+    }
+
+    static String clip(String value, int max) {
+        if (value.length() <= max) return value;
+        int end = max - 1;
+        if (Character.isHighSurrogate(value.charAt(end - 1))) end--; // 不切斷 emoji 等代理字元
+        return value.substring(0, end).stripTrailing() + "…";
     }
 
     private static String text(Map<String, String> fields, String field, int max, boolean required) {

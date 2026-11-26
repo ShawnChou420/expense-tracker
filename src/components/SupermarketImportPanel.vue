@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { showConfirmDialog, showToast } from 'vant'
 import { formatAud } from '../domain/money.js'
 import { supermarketRepository } from '../repositories/supermarketRepository.js'
+import { mapErrorLines, splitSpecialsCsv } from '../domain/specialsCsv.js'
 
 /**
  * 管理員匯入 Woolworths 本週特價 CSV。先預覽（dryRun，不寫資料庫），確認後才正式匯入。
@@ -19,7 +20,9 @@ const STATUS_LABELS = {
 }
 const TRIGGER_LABELS = { MANUAL: '手動', SCHEDULED: '排程', EXTERNAL: '外部排程' }
 const SOURCE_LABELS = { CSV: 'CSV 上傳', FEED: '資料源' }
-const MAX_BYTES = 200 * 1024
+/** 大檔會在上傳前自動切成多批，這個上限只用來避免誤選到非 CSV 的巨大檔案 */
+const MAX_BYTES = 50 * 1024 * 1024
+const MAX_ERRORS_SHOWN = 100
 
 const csv = ref('')
 const fileName = ref('')
@@ -43,7 +46,7 @@ async function onFile(event) {
   event.target.value = ''
   if (!file) return
   if (file.size > MAX_BYTES) {
-    showToast('檔案太大（上限 200 KB），請分批匯入')
+    showToast('檔案超過 50 MB，請確認選的是 CSV')
     return
   }
   csv.value = await file.text()
@@ -52,24 +55,61 @@ async function onFile(event) {
   preview.value = null
 }
 
-function body(dryRun) {
+const progress = ref('')
+
+function body(batchCsv, dryRun, label = '') {
+  const reference = sourceReference.value.trim()
   return {
-    csv: csv.value,
+    csv: batchCsv,
     regionCode: regionCode.value.trim() || 'NSW',
-    sourceReference: sourceReference.value.trim(),
+    sourceReference: label && reference ? `${reference} ${label}`.slice(0, 200) : reference,
     dryRun,
   }
+}
+
+/** 逐批送出（大檔切成多批，每批都在單次請求上限內） */
+async function eachBatch(dryRun, onResult) {
+  const { batches } = splitSpecialsCsv(csv.value)
+  for (let index = 0; index < batches.length; index++) {
+    const label = batches.length > 1 ? `(${index + 1}/${batches.length})` : ''
+    progress.value = batches.length > 1 ? `第 ${index + 1}／${batches.length} 批` : ''
+    const result = await supermarketRepository.importCsv(body(batches[index].csv, dryRun, label))
+    onResult(result, batches[index])
+  }
+  return batches.length
 }
 
 async function runPreview() {
   if (busy.value || !csv.value.trim()) return
   busy.value = true
   try {
-    preview.value = await supermarketRepository.importCsv(body(true))
+    const { droppedColumns } = splitSpecialsCsv(csv.value)
+    const total = {
+      regionCode: regionCode.value.trim() || 'NSW',
+      rowCount: 0,
+      validCount: 0,
+      errorCount: 0,
+      batchCount: 0,
+      droppedColumns,
+      errors: /** @type {string[]} */ ([]),
+      preview: /** @type {any[]} */ ([]),
+    }
+    total.batchCount = await eachBatch(true, (result, batch) => {
+      total.regionCode = result.regionCode || total.regionCode
+      total.rowCount += result.rowCount || 0
+      total.validCount += result.validCount || 0
+      total.errorCount += result.errorCount || 0
+      total.errors.push(...mapErrorLines(result.errors || [], batch))
+      if (total.preview.length < 20) total.preview.push(...(result.preview || []))
+    })
+    total.errors = total.errors.slice(0, MAX_ERRORS_SHOWN)
+    total.preview = total.preview.slice(0, 20)
+    preview.value = total
   } catch (error) {
     showToast(error.message || '預覽失敗')
   } finally {
     busy.value = false
+    progress.value = ''
   }
 }
 
@@ -86,17 +126,28 @@ async function runImport() {
   }
   busy.value = true
   try {
-    const result = await supermarketRepository.importCsv(body(false))
-    showToast(`匯入${STATUS_LABELS[result.status] || result.status}：${result.importedCount} 筆`)
+    let imported = 0
+    let failedBatches = 0
+    const batchCount = await eachBatch(false, (result) => {
+      imported += result.importedCount || 0
+      if (result.status === 'FAILED') failedBatches++
+    })
+    showToast(
+      failedBatches
+        ? `已匯入 ${imported} 筆，${failedBatches}／${batchCount} 批失敗，請看下方紀錄`
+        : `匯入完成：${imported} 筆`,
+    )
     preview.value = null
     csv.value = ''
     fileName.value = ''
     sourceReference.value = ''
     await loadRuns()
   } catch (error) {
-    showToast(error.message || '匯入失敗')
+    showToast(`${error.message || '匯入失敗'}；已完成的批次會保留，重新匯入同一檔不會重複`)
+    await loadRuns()
   } finally {
     busy.value = false
+    progress.value = ''
   }
 }
 
@@ -176,7 +227,13 @@ function formatTime(iso) {
       >預覽（不寫入）</van-button
     >
 
+    <p v-if="progress" class="specials-import__intro" role="status">處理中：{{ progress }}</p>
+
     <div v-if="preview" class="specials-import__preview" role="status">
+      <p v-if="preview.batchCount > 1">檔案較大，會分 {{ preview.batchCount }} 批上傳。</p>
+      <p v-if="preview.droppedColumns.length">
+        略過匯入用不到的欄位：{{ preview.droppedColumns.join('、') }}
+      </p>
       <p>
         共 {{ preview.rowCount }} 列：可匯入 <strong>{{ preview.validCount }}</strong> 筆，錯誤
         <strong :class="{ 'is-alert': preview.errorCount }">{{ preview.errorCount }}</strong> 筆

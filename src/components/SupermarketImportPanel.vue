@@ -118,6 +118,19 @@ async function syncFeed() {
   }
 }
 
+/** 下載只有欄位名稱的範例檔（UTF-8 BOM，Excel 開啟中文不會亂碼） */
+function downloadTemplate() {
+  const blob = new Blob([`\uFEFF${TEMPLATE}\r\n`], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'woolworths-specials-template.csv'
+  document.body.append(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 function formatTime(iso) {
   return iso ? new Date(iso).toLocaleString('zh-TW', { hour12: false }) : '—'
 }
@@ -132,6 +145,15 @@ function formatTime(iso) {
       YYYY-MM-DD；沒有的欄位留空。第一列必須是欄位名稱：
     </p>
     <code class="specials-import__template">{{ TEMPLATE }}</code>
+    <van-button block plain type="primary" icon="down" @click="downloadTemplate"
+      >下載範例檔（Excel 可開）</van-button
+    >
+    <p class="specials-import__intro">
+      用 Excel 填寫時，請先把 promotion_start、promotion_end 兩欄設成「文字」格式， 避免被改成
+      26/11/2026；存檔選「CSV UTF-8（逗號分隔）」。必填：external_product_id、name、
+      sale_price、promotion_start、promotion_end。promotion_type 可填 HALF_PRICE、PRICE_DROP、
+      MULTI_BUY、OTHER。
+    </p>
 
     <label class="specials-import__file">
       <input type="file" accept=".csv,text/csv" @change="onFile" />
